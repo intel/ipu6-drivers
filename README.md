@@ -14,11 +14,22 @@ This repository supports MIPI cameras through the IPU6 on Intel Tigerlake platfo
 * Driver for LPSS USB controller
 
 ## Build instructions:
-* Tested with kernel 5.4.y
+* Tested with kernel 5.10
 * Check out kernel
 * Copy repo content to kernel source
 * Modify related Kconfig and Makefile
 * Add config in LinuxRoot/drivers/media/i2c/Kconfig
+```
+config PMIC_DSC1
+	tristate "PMIC-CRDG DSC1 gpio control"
+	help
+	  This is a PMIC-CRDG DSC1 driver for power control. This driver
+	  is used to control power for sensor conneted to GPIO, such
+	  as HM11B1, OV01A1S.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called pmic_dsc1.
+```
 ```
 config VIDEO_OV01A1S
 	tristate "OmniVision OV01A1S sensor support"
@@ -50,6 +61,7 @@ config VIDEO_HM11B1
 ```
 obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
 obj-$(CONFIG_VIDEO_HM11B1)  += hm11b1.o
+obj-$(CONFIG_PMIC_DSC1) += pmic_dsc1.o
 ```
 
 * modify drivers/media/pci/Kconfig
@@ -68,18 +80,15 @@ source "drivers/usb/intel_ulpss/Kconfig"
 ```
 * Add to drivers/usb/Makefile
 ```
-obj-$(CONFIG_INTEL_LPSS_USB)   += intel_ulpss/
+obj-$(CONFIG_INTEL_LPSS_USB)  += intel_ulpss/
 ```
 
 * Enable the following settings in .config
 ```
-CONFIG_VIDEO_INTEL_IPU=m
-CONFIG_VIDEO_INTEL_IPU6=y
+CONFIG_VIDEO_INTEL_IPU6=m
 CONFIG_VIDEO_INTEL_IPU_TPG=y
 
-CONFIG_STANDALONE=n
-CONFIG_ACPI_CUSTOM_DSDT=y
-CONFIG_ACPI_CUSTOM_DSDT_FILE="DSDT.hex"
+CONFIG_PMIC_DSC1=m
 
 CONFIG_VIDEO_OV01A1S=m
 CONFIG_VIDEO_HM11B1=m
