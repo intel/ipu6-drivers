@@ -14,37 +14,50 @@ This repository supports MIPI cameras through the IPU6 on Intel Tigerlake platfo
 * Driver for LPSS USB controller
 
 ## Build instructions:
+three ways are available:
+- building with kernel source tree
+- building out of kernel source tree
+- and building with dkms
+
+### build with kernel source tree
 * Tested with kernel 5.10
 * Check out kernel
 * Copy repo content to kernel source
 * Modify related Kconfig and Makefile
 * Add config in LinuxRoot/drivers/media/i2c/Kconfig
 ```
-config PMIC_DSC1
-	tristate "PMIC-CRDG DSC1 gpio control"
-	help
-	  This is a PMIC-CRDG DSC1 driver for power control. This driver
-	  is used to control power for sensor conneted to GPIO, such
-	  as HM11B1, OV01A1S.
+config POWER_CTRL_LOGIC
+        tristate "power control logic driver"
+        depends on GPIO_ACPI
+        help
+          This is a power control logic driver for sensor, the design
+          depends on camera sensor connections.
+          This driver controls power by getting and using managed GPIO
+          pins from ACPI config for sensors, such as HM11B1, OV01A1S.
 
-	  To compile this driver as a module, choose M here: the
-	  module will be called pmic_dsc1.
+          To compile this driver as a module, choose M here: the
+          module will be called power_ctrl_logic.
 ```
 ```
 config VIDEO_OV01A1S
-	tristate "OmniVision OV01A1S sensor support"
-	depends on VIDEO_V4L2 && I2C
-	depends on MEDIA_CAMERA_SUPPORT
-	help
-	  This is a Video4Linux2 sensor driver for the OmniVision
-	  OV01A1S camera.
+        tristate "OmniVision OV01A1S sensor support"
+        depends on POWER_CTRL_LOGIC
+        depends on VIDEO_V4L2 && I2C
+        depends on ACPI || COMPILE_TEST
+        select MEDIA_CONTROLLER
+        select VIDEO_V4L2_SUBDEV_API
+        select V4L2_FWNODE
+        help
+          This is a Video4Linux2 sensor driver for the OmniVision
+          OV01A1S camera.
 
-	  To compile this driver as a module, choose M here: the
-	  module will be called ov01a1s.
+          To compile this driver as a module, choose M here: the
+          module will be called ov01a1s.
 ```
 ```
 config VIDEO_HM11B1
        tristate "Himax HM11B1 sensor support"
+       depends on POWER_CTRL_LOGIC
        depends on VIDEO_V4L2 && I2C
        select MEDIA_CONTROLLER
        select VIDEO_V4L2_SUBDEV_API
@@ -61,7 +74,7 @@ config VIDEO_HM11B1
 ```
 obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
 obj-$(CONFIG_VIDEO_HM11B1)  += hm11b1.o
-obj-$(CONFIG_PMIC_DSC1) += pmic_dsc1.o
+obj-$(CONFIG_POWER_CTRL_LOGIC) += power_ctrl_logic.o
 ```
 
 * modify drivers/media/pci/Kconfig
@@ -88,10 +101,29 @@ obj-$(CONFIG_INTEL_LPSS_USB)  += intel_ulpss/
 CONFIG_VIDEO_INTEL_IPU6=m
 CONFIG_VIDEO_INTEL_IPU_TPG=y
 
-CONFIG_PMIC_DSC1=m
+CONFIG_POWER_CTRL_LOGIC=m
 
 CONFIG_VIDEO_OV01A1S=m
 CONFIG_VIDEO_HM11B1=m
 
 CONFIG_INTEL_LPSS_USB=m
 ```
+
+### build outside kernel source tree
+* requires 5.10 kernel header installed on compiling machine
+
+to compile
+```bash
+$cd ipu6-drivers
+$make -j8
+```
+
+to install and use modules
+```bash
+$sudo make modules_install
+$sudo depmod -a
+```
+
+### build with dkms
+a dkms.conf file is also provided as an example for building with dkms
+which can be used by `dkms` `add`,`build`,`install`
