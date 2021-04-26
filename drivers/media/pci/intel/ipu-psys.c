@@ -349,25 +349,31 @@ static int ipu_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
 	return -ENOTTY;
 }
 
-static void *ipu_dma_buf_vmap(struct dma_buf *dmabuf)
+static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
 	struct dma_buf_attachment *attach;
 	struct ipu_dma_buf_attach *ipu_attach;
+	void *vaddr;
 
 	if (list_empty(&dmabuf->attachments))
-		return NULL;
+		return -1;
 
 	attach = list_last_entry(&dmabuf->attachments,
 				 struct dma_buf_attachment, node);
 	ipu_attach = attach->priv;
 
 	if (!ipu_attach || !ipu_attach->pages || !ipu_attach->npages)
-		return NULL;
+		return -1;
 
-	return vm_map_ram(ipu_attach->pages, ipu_attach->npages, 0);
+	vaddr = vm_map_ram(ipu_attach->pages, ipu_attach->npages, 0);
+	if (!vaddr)
+		return -ENOMEM;
+	dma_buf_map_set_vaddr(map, vaddr);
+
+	return 0;
 }
 
-static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, void *vaddr)
+static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
 	struct dma_buf_attachment *attach;
 	struct ipu_dma_buf_attach *ipu_attach;
@@ -382,7 +388,7 @@ static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, void *vaddr)
 	if (WARN_ON(!ipu_attach || !ipu_attach->pages || !ipu_attach->npages))
 		return;
 
-	vm_unmap_ram(vaddr, ipu_attach->npages);
+	vm_unmap_ram(map->vaddr, ipu_attach->npages);
 }
 
 struct dma_buf_ops ipu_dma_buf_ops = {
@@ -564,6 +570,7 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 {
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
+	struct dma_buf_map map;
 	int ret;
 
 	dbuf = dma_buf_get(fd);
@@ -635,12 +642,13 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
-	kbuf->kaddr = dma_buf_vmap(kbuf->dbuf);
-	if (!kbuf->kaddr) {
-		ret = -EINVAL;
+	ret = dma_buf_vmap(kbuf->dbuf, &map);
+	if (ret) {
 		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
 		goto kbuf_map_fail;
 	}
+
+	kbuf->kaddr = map.vaddr;
 
 	dev_dbg(&psys->adev->dev, "%s kbuf %p fd %d with len %llu mapped\n",
 		__func__, kbuf, fd, kbuf->len);
