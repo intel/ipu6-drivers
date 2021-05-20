@@ -4,7 +4,6 @@
 export EXTERNAL_BUILD = 1
 
 export CONFIG_VIDEO_INTEL_IPU6 = m
-export CONFIG_VIDEO_INTEL_IPU_TPG = y
 obj-y += drivers/media/pci/intel/
 
 export CONFIG_VIDEO_HM11B1 = m

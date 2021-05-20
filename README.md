@@ -99,7 +99,6 @@ obj-$(CONFIG_INTEL_LPSS_USB)  += intel_ulpss/
 * Enable the following settings in .config
 ```
 CONFIG_VIDEO_INTEL_IPU6=m
-CONFIG_VIDEO_INTEL_IPU_TPG=y
 
 CONFIG_POWER_CTRL_LOGIC=m
 
