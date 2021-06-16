@@ -443,12 +443,15 @@ open_failed:
 
 static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 {
+	struct dma_buf_map map = DMA_BUF_MAP_INIT_VADDR(kbuf->kaddr);
+
 	if (!kbuf)
 		return;
 
+
 	kbuf->valid = false;
 	if (kbuf->kaddr)
-		dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
+		dma_buf_vunmap(kbuf->dbuf, &map);
 	if (kbuf->sgt)
 		dma_buf_unmap_attachment(kbuf->db_attach,
 					 kbuf->sgt,
