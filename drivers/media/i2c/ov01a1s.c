@@ -10,7 +10,7 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
-#include "power_ctrl_logic.h"
+#include <linux/vsc.h>
 
 #define OV01A1S_LINK_FREQ_400MHZ	400000000ULL
 #define OV01A1S_SCLK			40000000LL
@@ -564,7 +564,6 @@ static int ov01a1s_start_streaming(struct ov01a1s *ov01a1s)
 	int link_freq_index;
 	int ret = 0;
 
-	power_ctrl_logic_set_power(1);
 	link_freq_index = ov01a1s->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov01a1s_write_reg_list(ov01a1s, reg_list);
@@ -601,7 +600,6 @@ static void ov01a1s_stop_streaming(struct ov01a1s *ov01a1s)
 				OV01A1S_MODE_STANDBY);
 	if (ret)
 		dev_err(&client->dev, "failed to stop streaming");
-	power_ctrl_logic_set_power(0);
 }
 
 static int ov01a1s_set_stream(struct v4l2_subdev *sd, int enable)
@@ -835,11 +833,19 @@ static int ov01a1s_probe(struct i2c_client *client)
 {
 	struct ov01a1s *ov01a1s;
 	int ret = 0;
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
+	s64 link_freq;
 
-	if (power_ctrl_logic_set_power(1)) {
-		dev_dbg(&client->dev, "power control driver not ready.\n");
-		return -EPROBE_DEFER;
+	conf.lane_num = OV01A1S_DATA_LANES;
+	/* frequency unit 100k */
+	conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
+	if (ret) {
+		dev_err(&client->dev, "Acquire VSC failed.\n");
+		return ret;
 	}
+
 	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
 	if (!ov01a1s) {
 		ret = -ENOMEM;
@@ -879,6 +885,7 @@ static int ov01a1s_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 
+	vsc_release_camera_sensor(&status);
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
@@ -887,7 +894,6 @@ static int ov01a1s_probe(struct i2c_client *client)
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
 
-	power_ctrl_logic_set_power(0);
 	return 0;
 
 probe_error_media_entity_cleanup:
@@ -898,7 +904,7 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov01a1s->mutex);
 
 probe_error_ret:
-	power_ctrl_logic_set_power(0);
+	vsc_release_camera_sensor(&status);
 	return ret;
 }
 

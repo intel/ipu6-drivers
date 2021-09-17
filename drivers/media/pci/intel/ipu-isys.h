@@ -16,6 +16,9 @@
 #include "ipu-isys-media.h"
 #include "ipu-isys-csi2.h"
 #include "ipu-isys-csi2-be.h"
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+#include "ipu-isys-tpg.h"
+#endif
 #include "ipu-isys-video.h"
 #include "ipu-pdata.h"
 #include "ipu-fw-isys.h"
@@ -56,7 +59,7 @@
 #define IPU_ISYS_MAX_WIDTH		16384U
 #define IPU_ISYS_MAX_HEIGHT		16384U
 
-#define NR_OF_CSI2_BE_SOC_DEV 1
+#define NR_OF_CSI2_BE_SOC_DEV 8
 
 /* the threshold granularity is 2KB on IPU6 */
 #define IPU6_SRAM_GRANULRITY_SHIFT	11
@@ -130,6 +133,9 @@ struct ipu_isys_sensor_info {
  * @lib_mutex: optional external library mutex
  * @pdata: platform data pointer
  * @csi2: CSI-2 receivers
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+ * @tpg: test pattern generators
+#endif
  * @csi2_be: CSI-2 back-ends
  * @fw: ISYS firmware binary (unsecure firmware)
  * @fw_sgt: fw scatterlist
@@ -169,6 +175,9 @@ struct ipu_isys {
 	struct ipu_isys_pdata *pdata;
 
 	struct ipu_isys_csi2 *csi2;
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	struct ipu_isys_tpg *tpg;
+#endif
 	struct ipu_isys_csi2_be csi2_be;
 	struct ipu_isys_csi2_be_soc csi2_be_soc[NR_OF_CSI2_BE_SOC_DEV];
 	const struct firmware *fw;
@@ -219,7 +228,6 @@ extern const struct v4l2_ioctl_ops ipu_isys_ioctl_ops;
 
 void isys_setup_hw(struct ipu_isys *isys);
 int isys_isr_one(struct ipu_bus_device *adev);
-int ipu_isys_isr_run(void *ptr);
 irqreturn_t isys_isr(struct ipu_bus_device *adev);
 #ifdef IPU_ISYS_GPC
 int ipu_isys_gpc_init_debugfs(struct ipu_isys *isys);

@@ -6,13 +6,8 @@ export EXTERNAL_BUILD = 1
 export CONFIG_VIDEO_INTEL_IPU6 = m
 obj-y += drivers/media/pci/intel/
 
-export CONFIG_VIDEO_HM11B1 = m
-export CONFIG_VIDEO_OV01A1S = m
-export CONFIG_POWER_CTRL_LOGIC = m
+export CONFIG_VIDEO_OV01A10 = m
 obj-y += drivers/media/i2c/
-
-export CONFIG_INTEL_LPSS_USB = m
-obj-y += drivers/usb/intel_ulpss/
 
 KERNEL_SRC := /lib/modules/$(shell uname -r)/build
 MODSRC := $(shell pwd)
