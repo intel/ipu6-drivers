@@ -28,7 +28,7 @@ Three ways are available:
 - Add config in LinuxRoot/drivers/media/i2c/Kconfig
 ```
 config VIDEO_OV01A10
-        tristate "OmniVision OV01A1S sensor support"
+        tristate "OmniVision OV01A10 sensor support"
         depends on POWER_CTRL_LOGIC
         depends on VIDEO_V4L2 && I2C
         depends on ACPI || COMPILE_TEST
