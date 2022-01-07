@@ -18,7 +18,7 @@ two ways are available:
 - building out of kernel source tree
 
 ### build with kernel source tree
-* Tested with kernel 5.13
+* Tested with kernel 5.15
 * Check out kernel
 * Copy repo content (exclude Makefile,drivers/media/i2c/Makefile) to kernel source
 * Modify related Kconfig and Makefile
@@ -58,7 +58,7 @@ CONFIG_VIDEO_OV8856=m
 ```
 
 ### build outside kernel source tree
-* requires 5.13 kernel header installed on compiling machine
+* requires 5.15 kernel header installed on compiling machine
 
 to compile
 ```bash
