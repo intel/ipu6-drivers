@@ -136,15 +136,15 @@ static void ipu_isys_tpg_init_controls(struct v4l2_subdev *sd)
 }
 
 static void tpg_set_ffmt(struct v4l2_subdev *sd,
-			 struct v4l2_subdev_pad_config *cfg,
+			 struct v4l2_subdev_state *sd_state,
 			 struct v4l2_subdev_format *fmt)
 {
 	fmt->format.field = V4L2_FIELD_NONE;
-	*__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->which) = fmt->format;
+	*__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which) = fmt->format;
 }
 
 static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ipu_isys_tpg *tpg = to_ipu_isys_tpg(sd);
@@ -154,7 +154,7 @@ static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
 	int rval;
 
 	mutex_lock(&tpg->asd.mutex);
-	rval = __ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
+	rval = __ipu_isys_subdev_set_ffmt(sd, sd_state, fmt);
 	mutex_unlock(&tpg->asd.mutex);
 
 	if (rval || fmt->which != V4L2_SUBDEV_FORMAT_ACTIVE)

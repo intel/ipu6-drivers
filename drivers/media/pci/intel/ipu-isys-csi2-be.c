@@ -93,7 +93,7 @@ static int get_supported_code_index(u32 code)
 }
 
 static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_selection *sel)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
@@ -103,9 +103,9 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 	    pad->flags & MEDIA_PAD_FL_SOURCE &&
 	    asd->valid_tgts[CSI2_BE_PAD_SOURCE].crop) {
 		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd, cfg, sel->pad, sel->which);
+			__ipu_isys_get_ffmt(sd, sd_state, sel->pad, sel->which);
 		struct v4l2_rect *r = __ipu_isys_get_selection
-		    (sd, cfg, sel->target, CSI2_BE_PAD_SINK, sel->which);
+		    (sd, sd_state, sel->target, CSI2_BE_PAD_SINK, sel->which);
 
 		if (get_supported_code_index(ffmt->code) < 0) {
 			/* Non-bayer formats can't be single line cropped */
@@ -127,15 +127,15 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 		 */
 		sel->r.height = clamp(sel->r.height, IPU_ISYS_MIN_HEIGHT,
 				      r->height);
-		*__ipu_isys_get_selection(sd, cfg, sel->target, sel->pad,
-					  sel->which) = sel->r;
+		*__ipu_isys_get_selection(sd, sd_state, sel->target,
+					sel->pad, sel->which) = sel->r;
 		ipu_isys_subdev_fmt_propagate
-		    (sd, cfg, NULL, &sel->r,
+		    (sd, sd_state, NULL, &sel->r,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP,
 		     sel->pad, sel->which);
 		return 0;
 	}
-	return ipu_isys_subdev_set_sel(sd, cfg, sel);
+	return ipu_isys_subdev_set_sel(sd, sd_state, sel);
 }
 
 static const struct v4l2_subdev_pad_ops csi2_be_sd_pad_ops = {
@@ -158,12 +158,12 @@ static struct media_entity_operations csi2_be_entity_ops = {
 };
 
 static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *sd_state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->which);
+		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which);
 
 	switch (fmt->pad) {
 	case CSI2_BE_PAD_SINK:
@@ -172,15 +172,15 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 		*ffmt = fmt->format;
 
 		ipu_isys_subdev_fmt_propagate
-		    (sd, cfg, &fmt->format, NULL,
+		    (sd, sd_state, &fmt->format, NULL,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT, fmt->pad, fmt->which);
 		return;
 	case CSI2_BE_PAD_SOURCE: {
 		struct v4l2_mbus_framefmt *sink_ffmt =
-			__ipu_isys_get_ffmt(sd, cfg, CSI2_BE_PAD_SINK,
+			__ipu_isys_get_ffmt(sd, sd_state, CSI2_BE_PAD_SINK,
 					    fmt->which);
 		struct v4l2_rect *r =
-			__ipu_isys_get_selection(sd, cfg, V4L2_SEL_TGT_CROP,
+			__ipu_isys_get_selection(sd, sd_state, V4L2_SEL_TGT_CROP,
 						 CSI2_BE_PAD_SOURCE,
 						 fmt->which);
 		struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);

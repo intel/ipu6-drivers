@@ -4,9 +4,6 @@
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/version.h>
-#ifdef CONFIG_USE_CVF_DEVICE
-#include <linux/vsc.h>
-#endif
 
 #include <media/ipu-isys.h>
 #include <media/media-entity.h>
@@ -227,11 +224,6 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	struct ipu_isys_csi2_timing timing = {0};
 	unsigned int nlanes;
 	int rval;
-#ifdef CONFIG_USE_CVF_DEVICE
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
-	s64 link_freq;
-#endif
 
 	dev_dbg(&csi2->isys->adev->dev, "csi2 s_stream %d\n", enable);
 
@@ -244,14 +236,6 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 
 	if (!enable) {
 		ipu_isys_csi2_set_stream(sd, timing, 0, enable);
-#ifdef CONFIG_USE_CVF_DEVICE
-		rval = vsc_release_camera_sensor(&status);
-		if (rval) {
-			dev_err(&csi2->isys->adev->dev,
-				"Release VSC failed.\n");
-			return rval;
-		}
-#endif
 		return 0;
 	}
 
@@ -266,20 +250,6 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 		return rval;
 
 	rval = ipu_isys_csi2_set_stream(sd, timing, nlanes, enable);
-#ifdef CONFIG_USE_CVF_DEVICE
-	rval = ipu_isys_csi2_get_link_freq(csi2, &link_freq);
-	if (rval)
-		return rval;
-
-	conf.lane_num = nlanes;
-	/* frequency unit 100k */
-	conf.freq = link_freq / 100000;
-	rval = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
-	if (rval) {
-		dev_err(&csi2->isys->adev->dev, "Acquire VSC failed.\n");
-		return rval;
-	}
-#endif
 
 	return rval;
 }
@@ -344,17 +314,17 @@ static const struct v4l2_subdev_video_ops csi2_sd_video_ops = {
 };
 
 static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_format *fmt)
 {
-	return ipu_isys_subdev_get_ffmt(sd, cfg, fmt);
+	return ipu_isys_subdev_get_ffmt(sd, sd_state, fmt);
 }
 
 static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_format *fmt)
 {
-	return ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
+	return ipu_isys_subdev_set_ffmt(sd, sd_state, fmt);
 }
 
 static int __subdev_link_validate(struct v4l2_subdev *sd,
@@ -390,12 +360,12 @@ static struct media_entity_operations csi2_entity_ops = {
 };
 
 static void csi2_set_ffmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	enum isys_subdev_prop_tgt tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT;
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
+		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad,
 				    fmt->which);
 
 	if (fmt->format.field != V4L2_FIELD_ALTERNATE)
@@ -403,7 +373,7 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 
 	if (fmt->pad == CSI2_PAD_SINK) {
 		*ffmt = fmt->format;
-		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format, NULL,
+		ipu_isys_subdev_fmt_propagate(sd, sd_state, &fmt->format, NULL,
 					      tgt, fmt->pad, fmt->which);
 		return;
 	}
