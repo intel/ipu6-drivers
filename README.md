@@ -21,7 +21,7 @@ Three ways are available:
 3. and build with dkms
 
 ### 1. Build with kernel source tree
-- Tested with kernel 5.14
+- Tested with kernel 5.15
 - Check out kernel
 - Copy repo content to kernel source
 - Modify related Kconfig and Makefile
@@ -134,7 +134,7 @@ Three ways are available:
   CONFIG_INTEL_VSC_ACE_DEBUG=m
   ```
 ### 2. Build outside kernel source tree
-- Requires 5.14 kernel header installed on compiling machine
+- Requires 5.15 kernel header installed on compiling machine
 - To compile:
   ```shell
   $cd ipu6-drivers
