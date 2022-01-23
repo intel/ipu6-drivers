@@ -58,6 +58,10 @@
 #define OV13858_EXPOSURE_STEP		1
 #define OV13858_EXPOSURE_DEFAULT	0x640
 
+/* Format1 control */
+#define OV13858_REG_FORMAT1		0x3820
+#define OV13858_FORMAT1_DFT		0xA0
+
 /* Analog gain control */
 #define OV13858_REG_ANALOG_GAIN		0x3508
 #define OV13858_ANA_GAIN_MIN		0
@@ -115,6 +119,17 @@ struct ov13858_mode {
 	u32 link_freq_index;
 	/* Default register values */
 	struct ov13858_reg_list reg_list;
+};
+
+/* Format1: used for vertical/horizontal flip */
+union ov13858_format1 {
+	u8 val;
+	struct {
+		u8 d0     : 3; /* bit[0:2] */
+		u8 hflip  : 1; /* 0 enable,  1 disable */
+		u8 vflip  : 1; /* 0 disable, 1 enable  */
+		u8 d1     : 3; /* bit[5:7] */
+	} bits;
 };
 
 /* 4224x3136 needs 1080Mbps/lane, 4 lanes */
@@ -1248,9 +1263,13 @@ struct ov13858 {
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
+	struct v4l2_ctrl *hflip;
+	struct v4l2_ctrl *vflip;
 
 	/* Current mode */
 	const struct ov13858_mode *cur_mode;
+	/* Current format1 */
+	union ov13858_format1 fmt1;
 
 	/* Mutex for serialized access */
 	struct mutex mutex;
@@ -1468,6 +1487,16 @@ static int ov13858_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_TEST_PATTERN:
 		ret = ov13858_enable_test_pattern(ov13858, ctrl->val);
+		break;
+	case V4L2_CID_HFLIP:
+		ov13858->fmt1.bits.hflip = !ctrl->val;
+		ret = ov13858_write_reg(ov13858, OV13858_REG_FORMAT1,
+					OV13858_REG_VALUE_08BIT, ov13858->fmt1.val);
+		break;
+	case V4L2_CID_VFLIP:
+		ov13858->fmt1.bits.vflip = ctrl->val;
+		ret = ov13858_write_reg(ov13858, OV13858_REG_FORMAT1,
+					OV13858_REG_VALUE_08BIT, ov13858->fmt1.val);
 		break;
 	default:
 		dev_info(&client->dev,
@@ -1858,6 +1887,15 @@ static int ov13858_init_controls(struct ov13858 *ov13858)
 				V4L2_CID_EXPOSURE, OV13858_EXPOSURE_MIN,
 				exposure_max, OV13858_EXPOSURE_STEP,
 				OV13858_EXPOSURE_DEFAULT);
+
+	ov13858->hflip = v4l2_ctrl_new_std(
+				ctrl_hdlr, &ov13858_ctrl_ops,
+				V4L2_CID_HFLIP, 0, 1, 1, 0);
+
+	ov13858->vflip = v4l2_ctrl_new_std(
+				ctrl_hdlr, &ov13858_ctrl_ops,
+				V4L2_CID_VFLIP, 0, 1, 1, 0);
+	ov13858->fmt1.val =  OV13858_FORMAT1_DFT;
 
 	v4l2_ctrl_new_std(ctrl_hdlr, &ov13858_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
 			  OV13858_ANA_GAIN_MIN, OV13858_ANA_GAIN_MAX,
