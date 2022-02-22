@@ -23,6 +23,7 @@ Three ways are available:
 ### 1. Build with kernel source tree
 - Tested with kernel 5.15
 - Check out kernel
+- Patch the diff files in `patch` folder
 - Copy repo content to kernel source
 - Modify related Kconfig and Makefile
 - Add config in LinuxRoot/drivers/media/i2c/Kconfig
