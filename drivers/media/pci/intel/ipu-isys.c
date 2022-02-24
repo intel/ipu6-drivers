@@ -503,8 +503,8 @@ static int isys_notifier_init(struct ipu_isys *isys)
 	size_t asd_struct_size = sizeof(struct sensor_async_subdev);
 	int ret;
 
-	v4l2_async_notifier_init(&isys->notifier);
-	ret = v4l2_async_notifier_parse_fwnode_endpoints(&isp->pdev->dev,
+	v4l2_async_nf_init(&isys->notifier);
+	ret = v4l2_async_nf_parse_fwnode_endpoints(&isp->pdev->dev,
 							 &isys->notifier,
 							 asd_struct_size,
 							 isys_fwnode_parse);
@@ -522,11 +522,11 @@ static int isys_notifier_init(struct ipu_isys *isys)
 	}
 
 	isys->notifier.ops = &isys_async_ops;
-	ret = v4l2_async_notifier_register(&isys->v4l2_dev, &isys->notifier);
+	ret = v4l2_async_nf_register(&isys->v4l2_dev, &isys->notifier);
 	if (ret) {
 		dev_err(&isys->adev->dev,
 			"failed to register async notifier : %d\n", ret);
-		v4l2_async_notifier_cleanup(&isys->notifier);
+		v4l2_async_nf_cleanup(&isys->notifier);
 	}
 
 	return ret;
@@ -534,8 +534,8 @@ static int isys_notifier_init(struct ipu_isys *isys)
 
 static void isys_notifier_cleanup(struct ipu_isys *isys)
 {
-	v4l2_async_notifier_unregister(&isys->notifier);
-	v4l2_async_notifier_cleanup(&isys->notifier);
+	v4l2_async_nf_unregister(&isys->notifier);
+	v4l2_async_nf_cleanup(&isys->notifier);
 }
 
 static struct media_device_ops isys_mdev_ops = {
