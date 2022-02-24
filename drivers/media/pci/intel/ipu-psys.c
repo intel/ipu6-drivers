@@ -34,6 +34,8 @@
 #include "ipu-platform-regs.h"
 #include "ipu-fw-com.h"
 
+MODULE_IMPORT_NS(DMA_BUF);
+
 static bool async_fw_init;
 module_param(async_fw_init, bool, 0664);
 MODULE_PARM_DESC(async_fw_init, "Enable asynchronous firmware initialization");
