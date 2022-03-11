@@ -11,8 +11,8 @@ Alder Lake platforms. There are 4 repositories that provide the complete setup:
 
 ## Content of this repository:
 - IPU6 kernel driver
-- Drivers sensors OV01A1S, OV01A10 and HM11B1
 - Driver for LPSS USB controller
+- Drivers for HM11B1, OV01A1S, OV01A10 and OV02C10 sensors
 
 ## Build instructions:
 Three ways are available:
@@ -27,127 +27,142 @@ Three ways are available:
 - Copy repo content to kernel source
 - Modify related Kconfig and Makefile
 - Add config in LinuxRoot/drivers/media/i2c/Kconfig
-  ```conf
-  config POWER_CTRL_LOGIC
-          tristate "power control logic driver"
-          depends on GPIO_ACPI
-          help
-            This is a power control logic driver for sensor, the design
-            depends on camera sensor connections.
-            This driver controls power by getting and using managed GPIO
-            pins from ACPI config for sensors, such as HM11B1, OV01A1S.
+	```conf
+	config POWER_CTRL_LOGIC
+		tristate "power control logic driver"
+		depends on GPIO_ACPI
+		help
+		  This is a power control logic driver for sensor, the design
+		  depends on camera sensor connections.
+		  This driver controls power by getting and using managed GPIO
+		  pins from ACPI config for sensors, such as HM11B1, OV01A1S.
 
-            To compile this driver as a module, choose M here: the
-            module will be called power_ctrl_logic.
+		  To compile this driver as a module, choose M here: the
+		  module will be called power_ctrl_logic.
 
-  config VIDEO_OV01A1S
-          tristate "OmniVision OV01A1S sensor support"
-          depends on POWER_CTRL_LOGIC
-          depends on VIDEO_V4L2 && I2C
-          depends on ACPI || COMPILE_TEST
-          select MEDIA_CONTROLLER
-          select VIDEO_V4L2_SUBDEV_API
-          select V4L2_FWNODE
-          help
-            This is a Video4Linux2 sensor driver for the OmniVision
-            OV01A1S camera.
+	config VIDEO_OV01A1S
+		tristate "OmniVision OV01A1S sensor support"
+		depends on POWER_CTRL_LOGIC
+		depends on VIDEO_V4L2 && I2C
+		depends on ACPI || COMPILE_TEST
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+		  This is a Video4Linux2 sensor driver for the OmniVision
+		  OV01A1S camera.
 
-            To compile this driver as a module, choose M here: the
-            module will be called ov01a1s.
+		  To compile this driver as a module, choose M here: the
+		  module will be called ov01a1s.
 
-  config VIDEO_OV01A10
-          tristate "OmniVision OV01A10 sensor support"
-          depends on VIDEO_V4L2 && I2C
-          depends on ACPI || COMPILE_TEST
-          select MEDIA_CONTROLLER
-          select VIDEO_V4L2_SUBDEV_API
-          select V4L2_FWNODE
-          help
-            This is a Video4Linux2 sensor driver for the OmniVision
-            OV01A10 camera.
+	config VIDEO_HM11B1
+		tristate "Himax HM11B1 sensor support"
+		depends on POWER_CTRL_LOGIC
+		depends on VIDEO_V4L2 && I2C
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+		  This is a Video4Linux2 sensor driver for the Himax
+		  HM11B1 camera.
 
-            To compile this driver as a module, choose M here: the
-            module will be called ov01a10.
+		  To compile this driver as a module, choose M here: the
+		  module will be called hm11b1.
 
-  config VIDEO_HM11B1
-        tristate "Himax HM11B1 sensor support"
-        depends on POWER_CTRL_LOGIC
-        depends on VIDEO_V4L2 && I2C
-        select MEDIA_CONTROLLER
-        select VIDEO_V4L2_SUBDEV_API
-        select V4L2_FWNODE
-        help
-          This is a Video4Linux2 sensor driver for the Himax
-          HM11B1 camera.
+	config VIDEO_OV01A10
+		tristate "OmniVision OV01A10 sensor support"
+		depends on VIDEO_V4L2 && I2C
+		depends on ACPI || COMPILE_TEST
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+		  This is a Video4Linux2 sensor driver for the OmniVision
+		  OV01A10 camera.
 
-          To compile this driver as a module, choose M here: the
-          module will be called hm11b1.
+		  To compile this driver as a module, choose M here: the
+		  module will be called ov01a10.
 
-  ```
+	config VIDEO_OV02C10
+		tristate "OmniVision OV02C10 sensor support"
+		depends on VIDEO_V4L2 && I2C
+		depends on ACPI || COMPILE_TEST
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+		  This is a Video4Linux2 sensor driver for the OmniVision
+		  OV02C10 camera.
+
+		  To compile this driver as a module, choose M here: the
+		  module will be called ov02c10.
+
+	```
 
 - Add to drivers/media/i2c/Makefile
-  ```makefile
-  obj-$(CONFIG_POWER_CTRL_LOGIC) += power_ctrl_logic.o
-  obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
-  obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
-  obj-$(CONFIG_VIDEO_HM11B1)  += hm11b1.o
-  ```
+	```makefile
+	obj-$(CONFIG_POWER_CTRL_LOGIC) += power_ctrl_logic.o
+	obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
+	obj-$(CONFIG_VIDEO_HM11B1)  += hm11b1.o
+	obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
+	obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
+	```
 
 - Modify drivers/media/pci/Kconfig
-  ```conf
-  # replace line:
-  # source "drivers/media/pci/intel/ipu3/Kconfig"
-  # with line:
-  source "drivers/media/pci/intel/Kconfig"
-  ```
+	```conf
+	# replace line:
+	# source "drivers/media/pci/intel/ipu3/Kconfig"
+	# with line:
+	source "drivers/media/pci/intel/Kconfig"
+	```
 
 - Add to drivers/usb/Kconfig
-  ```conf
-  source "drivers/usb/intel_ulpss/Kconfig"
-  ```
+	```conf
+	source "drivers/usb/intel_ulpss/Kconfig"
+	```
 
 - Add to drivers/usb/Makefile
-  ```makefile
-  obj-$(CONFIG_INTEL_LPSS_USB)  += intel_ulpss/
-  ```
+	```makefile
+	obj-$(CONFIG_INTEL_LPSS_USB)  += intel_ulpss/
+	```
 
 - Enable the following settings in .config
-  ```conf
-  CONFIG_VIDEO_INTEL_IPU6=m
-  CONFIG_POWER_CTRL_LOGIC=m
-  CONFIG_INTEL_LPSS_USB=m
-
-  CONFIG_VIDEO_OV01A1S=m
-  CONFIG_VIDEO_OV01A10=m
-  CONFIG_VIDEO_HM11B1=m
-  ```
+	```conf
+	CONFIG_VIDEO_INTEL_IPU6=m
+	CONFIG_POWER_CTRL_LOGIC=m
+	CONFIG_INTEL_LPSS_USB=m	
+	CONFIG_VIDEO_OV01A1S=m
+	CONFIG_VIDEO_OV01A10=m
+	CONFIG_VIDEO_HM11B1=m
+	CONFIG_VIDEO_OV02C10=m
+	```
 - CVF part as below, refer to https://github.com/intel/ivsc-driver/blob/main/README.md
-  ```conf
-  CONFIG_MFD_LJCA=m
-  CONFIG_I2C_LJCA=m
-  CONFIG_SPI_LJCA=m
-  CONFIG_GPIO_LJCA=m
-  CONFIG_INTEL_MEI_VSC=m
-  CONFIG_INTEL_VSC=m
-  CONFIG_INTEL_VSC_CSI=m
-  CONFIG_INTEL_VSC_ACE=m
-  CONFIG_INTEL_VSC_PSE=m
-  CONFIG_INTEL_VSC_ACE_DEBUG=m
-  ```
+	```conf
+	CONFIG_MFD_LJCA=m
+	CONFIG_I2C_LJCA=m
+	CONFIG_SPI_LJCA=m
+	CONFIG_GPIO_LJCA=m
+	CONFIG_INTEL_MEI_VSC=m
+	CONFIG_INTEL_VSC=m
+	CONFIG_INTEL_VSC_CSI=m
+	CONFIG_INTEL_VSC_ACE=m
+	CONFIG_INTEL_VSC_PSE=m
+	CONFIG_INTEL_VSC_ACE_DEBUG=m
+	```
 ### 2. Build outside kernel source tree
 - Requires 5.15 kernel header installed on compiling machine
 - To compile:
-  ```shell
-  $cd ipu6-drivers
-  $make -j`nproc`
-  ```
+	```shell
+	$cd ipu6-drivers
+	$make -j`nproc`
+	```
 
 - To install and use modules
-  ```shell
-  $sudo make modules_install
-  $sudo depmod -a
-  ```
+	```shell
+	$sudo make modules_install
+	$sudo depmod -a
+	```
 
 ### 3. Build with dkms
 a dkms.conf file is also provided as an example for building with dkms
-which can be used by `dkms` `add`, `build` and `install`
+which can be used by `dkms` `add`, `build` and `install`.
