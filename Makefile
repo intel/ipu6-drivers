@@ -13,9 +13,6 @@ export CONFIG_VIDEO_OV02C10 = m
 export CONFIG_POWER_CTRL_LOGIC = m
 obj-y += drivers/media/i2c/
 
-export CONFIG_INTEL_LPSS_USB = m
-obj-y += drivers/usb/intel_ulpss/
-
 KERNEL_SRC := /lib/modules/$(shell uname -r)/build
 MODSRC := $(shell pwd)
 ccflags-y += -I$(MODSRC)/include/
