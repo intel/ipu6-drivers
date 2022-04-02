@@ -11,7 +11,6 @@ Alder Lake platforms. There are 4 repositories that provide the complete setup:
 
 ## Content of this repository:
 - IPU6 kernel driver
-- Driver for LPSS USB controller
 - Drivers for HM11B1, OV01A1S, OV01A10 and OV02C10 sensors
 
 ## Build instructions:
@@ -116,27 +115,16 @@ Three ways are available:
 	source "drivers/media/pci/intel/Kconfig"
 	```
 
-- Add to drivers/usb/Kconfig
-	```conf
-	source "drivers/usb/intel_ulpss/Kconfig"
-	```
-
-- Add to drivers/usb/Makefile
-	```makefile
-	obj-$(CONFIG_INTEL_LPSS_USB)  += intel_ulpss/
-	```
-
 - Enable the following settings in .config
 	```conf
 	CONFIG_VIDEO_INTEL_IPU6=m
 	CONFIG_POWER_CTRL_LOGIC=m
-	CONFIG_INTEL_LPSS_USB=m	
 	CONFIG_VIDEO_OV01A1S=m
 	CONFIG_VIDEO_OV01A10=m
 	CONFIG_VIDEO_HM11B1=m
 	CONFIG_VIDEO_OV02C10=m
 	```
-- CVF part as below, refer to https://github.com/intel/ivsc-driver/blob/main/README.md
+- LJCA and CVF part as below, refer to https://github.com/intel/ivsc-driver/blob/main/README.md
 	```conf
 	CONFIG_MFD_LJCA=m
 	CONFIG_I2C_LJCA=m
