@@ -87,7 +87,13 @@ struct ipu_isys_pipeline {
 	spinlock_t short_packet_queue_lock;
 	struct list_head pending_interlaced_bufs;
 	unsigned int short_packet_trace_index;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	struct media_graph graph;
+#else
+	struct media_entity_graph graph;
+#endif
+#endif
 	struct media_entity_enum entity_enum;
 };
 

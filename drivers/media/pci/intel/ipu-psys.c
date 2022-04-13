@@ -15,10 +15,18 @@
 #include <linux/pm_runtime.h>
 #include <linux/version.h>
 #include <linux/poll.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+#include <linux/sched.h>
+#else
 #include <uapi/linux/sched/types.h>
+#endif
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+#include <linux/dma-attrs.h>
+#else
 #include <linux/dma-mapping.h>
+#endif
 
 #include <uapi/linux/ipu-psys.h>
 
@@ -162,7 +170,11 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 	if (!pages)
 		goto free_sgt;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	down_read(&current->mm->mmap_sem);
+#else
 	mmap_read_lock(current->mm);
+#endif
 	vma = find_vma(current->mm, start);
 	if (!vma) {
 		ret = -EFAULT;
@@ -195,13 +207,26 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 			pages[nr] = pfn_to_page(pfn);
 		}
 	} else {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+		nr = get_user_pages(current, current->mm,
+				    start & PAGE_MASK, npages,
+#else
 		nr = get_user_pages(start & PAGE_MASK, npages,
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+				    1, 0,
+#else
 				    FOLL_WRITE,
+#endif
 				    pages, NULL);
 		if (nr < npages)
 			goto error_up_read;
 	}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	up_read(&current->mm->mmap_sem);
+#else
 	mmap_read_unlock(current->mm);
+#endif
 
 	attach->pages = pages;
 	attach->npages = npages;
@@ -218,7 +243,11 @@ skip_pages:
 	return 0;
 
 error_up_read:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	up_read(&current->mm->mmap_sem);
+#else
 	mmap_read_unlock(current->mm);
+#endif
 error:
 	if (!attach->vma_is_io)
 		while (nr > 0)
@@ -257,8 +286,13 @@ static void ipu_psys_put_userpages(struct ipu_dma_buf_attach *attach)
 	attach->sgt = NULL;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 static int ipu_dma_buf_attach(struct dma_buf *dbuf,
 			      struct dma_buf_attachment *attach)
+#else
+static int ipu_dma_buf_attach(struct dma_buf *dbuf, struct device *dev,
+			      struct dma_buf_attachment *attach)
+#endif
 {
 	struct ipu_psys_kbuffer *kbuf = dbuf->priv;
 	struct ipu_dma_buf_attach *ipu_attach;
@@ -267,6 +301,9 @@ static int ipu_dma_buf_attach(struct dma_buf *dbuf,
 	if (!ipu_attach)
 		return -ENOMEM;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+	ipu_attach->dev = dev;
+#endif
 	ipu_attach->len = kbuf->len;
 	ipu_attach->userptr = kbuf->userptr;
 
@@ -287,16 +324,26 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 					enum dma_data_direction dir)
 {
 	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	DEFINE_DMA_ATTRS(attrs);
+#else
 	unsigned long attrs;
+#endif
 	int ret;
 
 	ret = ipu_psys_get_userpages(ipu_attach);
 	if (ret)
 		return NULL;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
+	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
+			       ipu_attach->sgt->orig_nents, dir, &attrs);
+#else
 	attrs = DMA_ATTR_SKIP_CPU_SYNC;
 	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
 			       ipu_attach->sgt->orig_nents, dir, attrs);
+#endif
 	if (ret < ipu_attach->sgt->orig_nents) {
 		ipu_psys_put_userpages(ipu_attach);
 		dev_dbg(attach->dev, "buf map failed\n");
@@ -328,6 +375,13 @@ static int ipu_dma_buf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
 	return -ENOTTY;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+static void *ipu_dma_buf_kmap_atomic(struct dma_buf *dbuf, unsigned long pgnum)
+{
+	return NULL;
+}
+#endif
+
 static void ipu_dma_buf_release(struct dma_buf *buf)
 {
 	struct ipu_psys_kbuffer *kbuf = buf->priv;
@@ -344,11 +398,15 @@ static void ipu_dma_buf_release(struct dma_buf *buf)
 }
 
 static int ipu_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+					size_t start, size_t len,
+#endif
 					enum dma_data_direction dir)
 {
 	return -ENOTTY;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
 	struct dma_buf_attachment *attach;
@@ -371,7 +429,32 @@ static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 
 	return 0;
 }
+#else
+static void *ipu_dma_buf_vmap(struct dma_buf *dmabuf)
+{
+	struct dma_buf_attachment *attach;
+	struct ipu_dma_buf_attach *ipu_attach;
 
+	if (list_empty(&dmabuf->attachments))
+		return NULL;
+
+	attach = list_last_entry(&dmabuf->attachments,
+				 struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (!ipu_attach || !ipu_attach->pages || !ipu_attach->npages)
+		return NULL;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	return vm_map_ram(ipu_attach->pages,
+			  ipu_attach->npages, 0, PAGE_KERNEL);
+#else
+	return vm_map_ram(ipu_attach->pages, ipu_attach->npages, 0);
+#endif
+}
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 {
 	struct dma_buf_attachment *attach;
@@ -389,6 +472,25 @@ static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
 
 	vm_unmap_ram(map->vaddr, ipu_attach->npages);
 }
+#else
+static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, void *vaddr)
+{
+	struct dma_buf_attachment *attach;
+	struct ipu_dma_buf_attach *ipu_attach;
+
+	if (WARN_ON(list_empty(&dmabuf->attachments)))
+		return;
+
+	attach = list_last_entry(&dmabuf->attachments,
+				 struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (WARN_ON(!ipu_attach || !ipu_attach->pages || !ipu_attach->npages))
+		return;
+
+	vm_unmap_ram(vaddr, ipu_attach->npages);
+}
+#endif
 
 struct dma_buf_ops ipu_dma_buf_ops = {
 	.attach = ipu_dma_buf_attach,
@@ -397,6 +499,13 @@ struct dma_buf_ops ipu_dma_buf_ops = {
 	.unmap_dma_buf = ipu_dma_buf_unmap,
 	.release = ipu_dma_buf_release,
 	.begin_cpu_access = ipu_dma_buf_begin_cpu_access,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+	.kmap = ipu_dma_buf_kmap,
+	.kmap_atomic = ipu_dma_buf_kmap_atomic,
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+	.map_atomic = ipu_dma_buf_kmap_atomic,
+#endif
 	.mmap = ipu_dma_buf_mmap,
 	.vmap = ipu_dma_buf_vmap,
 	.vunmap = ipu_dma_buf_vunmap,
@@ -446,12 +555,17 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 		return;
 
 	kbuf->valid = false;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 	if (kbuf->kaddr) {
 		struct dma_buf_map dmap;
 
 		dma_buf_map_set_vaddr(&dmap, kbuf->kaddr);
 		dma_buf_vunmap(kbuf->dbuf, &dmap);
 	}
+#else
+	if (kbuf->kaddr)
+		dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
+#endif
 	if (kbuf->sgt)
 		dma_buf_unmap_attachment(kbuf->db_attach,
 					 kbuf->sgt,
@@ -513,7 +627,9 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys *psys = fh->psys;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
+#endif
 	struct dma_buf *dbuf;
 	int ret;
 
@@ -530,12 +646,16 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 	kbuf->userptr = buf->base.userptr;
 	kbuf->flags = buf->flags;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
 	exp_info.ops = &ipu_dma_buf_ops;
 	exp_info.size = kbuf->len;
 	exp_info.flags = O_RDWR;
 	exp_info.priv = kbuf;
 
 	dbuf = dma_buf_export(&exp_info);
+#else
+	dbuf = dma_buf_export(kbuf, &ipu_dma_buf_ops, kbuf->len, 0);
+#endif
 	if (IS_ERR(dbuf)) {
 		kfree(kbuf);
 		return PTR_ERR(dbuf);
@@ -573,7 +693,9 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 {
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 	struct dma_buf_map dmap;
+#endif
 	int ret;
 
 	dbuf = dma_buf_get(fd);
@@ -645,12 +767,21 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 	ret = dma_buf_vmap(kbuf->dbuf, &dmap);
 	if (ret) {
 		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
 		goto kbuf_map_fail;
 	}
 	kbuf->kaddr = dmap.vaddr;
+#else
+	kbuf->kaddr = dma_buf_vmap(kbuf->dbuf);
+	if (!kbuf->kaddr) {
+		ret = -EINVAL;
+		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
+		goto kbuf_map_fail;
+	}
+#endif
 
 	dev_dbg(&psys->adev->dev, "%s kbuf %p fd %d with len %llu mapped\n",
 		__func__, kbuf, fd, kbuf->len);

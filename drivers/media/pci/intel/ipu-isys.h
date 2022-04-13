@@ -211,6 +211,9 @@ struct isys_fw_msgs {
 #define to_stream_cfg_msg_buf(a) (&(a)->fw_msg.stream)
 #define to_dma_addr(a) ((a)->dma_addr)
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+int ipu_pipeline_pm_use(struct media_entity *entity, int use);
+#endif
 struct isys_fw_msgs *ipu_get_fw_msg_buf(struct ipu_isys_pipeline *ip);
 void ipu_put_fw_mgs_buf(struct ipu_isys *isys, u64 data);
 void ipu_cleanup_fw_msg_bufs(struct ipu_isys *isys);

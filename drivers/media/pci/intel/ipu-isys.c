@@ -14,7 +14,9 @@
 #include <linux/version.h>
 
 #include <media/ipu-isys.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #include <media/v4l2-mc.h>
+#endif
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-ctrls.h>
@@ -89,6 +91,225 @@ enum ltr_did_type {
 	LTR_ISYS_OFF,
 	LTR_TYPE_MAX
 };
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+/*
+ * BEGIN adapted code from drivers/media/platform/omap3isp/isp.c.
+ * FIXME: This (in terms of functionality if not code) should be most
+ * likely generalised in the framework, and use made optional for
+ * drivers.
+ */
+/*
+ * ipu_pipeline_pm_use_count - Count the number of users of a pipeline
+ * @entity: The entity
+ *
+ * Return the total number of users of all video device nodes in the pipeline.
+ */
+static int ipu_pipeline_pm_use_count(struct media_pad *pad)
+{
+	struct media_entity_graph graph;
+	struct media_entity *entity = pad->entity;
+	int use = 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+	media_graph_walk_init(&graph, entity->graph_obj.mdev);
+#endif
+	media_graph_walk_start(&graph, pad);
+
+	while ((entity = media_graph_walk_next(&graph))) {
+		if (is_media_entity_v4l2_io(entity))
+			use += entity->use_count;
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+	media_graph_walk_cleanup(&graph);
+#endif
+	return use;
+}
+
+/*
+ * ipu_pipeline_pm_power_one - Apply power change to an entity
+ * @entity: The entity
+ * @change: Use count change
+ *
+ * Change the entity use count by @change. If the entity is a subdev update its
+ * power state by calling the core::s_power operation when the use count goes
+ * from 0 to != 0 or from != 0 to 0.
+ *
+ * Return 0 on success or a negative error code on failure.
+ */
+static int ipu_pipeline_pm_power_one(struct media_entity *entity, int change)
+{
+	struct v4l2_subdev *subdev;
+	int ret;
+
+	subdev = is_media_entity_v4l2_subdev(entity)
+	    ? media_entity_to_v4l2_subdev(entity) : NULL;
+
+	if (entity->use_count == 0 && change > 0 && subdev) {
+		ret = v4l2_subdev_call(subdev, core, s_power, 1);
+		if (ret < 0 && ret != -ENOIOCTLCMD)
+			return ret;
+	}
+
+	entity->use_count += change;
+	WARN_ON(entity->use_count < 0);
+
+	if (entity->use_count == 0 && change < 0 && subdev)
+		v4l2_subdev_call(subdev, core, s_power, 0);
+
+	return 0;
+}
+
+/*
+ * ipu_pipeline_pm_power - Apply power change to all entities
+ * in a pipeline
+ * @entity: The entity
+ * @change: Use count change
+ * @from_pad: Starting pad
+ *
+ * Walk the pipeline to update the use count and the power state of
+ * all non-node
+ * entities.
+ *
+ * Return 0 on success or a negative error code on failure.
+ */
+static int ipu_pipeline_pm_power(struct media_entity *entity,
+				 int change, int from_pad)
+{
+	struct media_entity_graph graph;
+	struct media_entity *first = entity;
+	int ret = 0;
+
+	if (!change)
+		return 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+	media_graph_walk_init(&graph, entity->graph_obj.mdev);
+#endif
+	media_graph_walk_start(&graph, &entity->pads[from_pad]);
+
+	while (!ret && (entity = media_graph_walk_next(&graph)))
+		if (!is_media_entity_v4l2_io(entity))
+			ret = ipu_pipeline_pm_power_one(entity, change);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+	media_graph_walk_cleanup(&graph);
+#endif
+	if (!ret)
+		return 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+	media_graph_walk_init(&graph, entity->graph_obj.mdev);
+#endif
+	media_graph_walk_start(&graph, &first->pads[from_pad]);
+
+	while ((first = media_graph_walk_next(&graph)) &&
+	       first != entity)
+		if (!is_media_entity_v4l2_io(first))
+			ipu_pipeline_pm_power_one(first, -change);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+	media_graph_walk_cleanup(&graph);
+#endif
+	return ret;
+}
+
+/*
+ * ipu_pipeline_pm_use - Update the use count of an entity
+ * @entity: The entity
+ * @use: Use (1) or stop using (0) the entity
+ *
+ * Update the use count of all entities in the pipeline and power entities
+ * on or off accordingly.
+ *
+ * Return 0 on success or a negative error code on failure. Powering entities
+ * off is assumed to never fail. No failure can occur when the use parameter is
+ * set to 0.
+ */
+int ipu_pipeline_pm_use(struct media_entity *entity, int use)
+{
+	int change = use ? 1 : -1;
+	int ret;
+
+	mutex_lock(&entity->
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+		   parent
+#else
+		   graph_obj.mdev
+#endif
+		   ->graph_mutex);
+
+	/* Apply use count to node. */
+	entity->use_count += change;
+	WARN_ON(entity->use_count < 0);
+
+	/* Apply power change to connected non-nodes. */
+	ret = ipu_pipeline_pm_power(entity, change, 0);
+	if (ret < 0)
+		entity->use_count -= change;
+
+	mutex_unlock(&entity->
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+		     parent
+#else
+		     graph_obj.mdev
+#endif
+		     ->graph_mutex);
+
+	return ret;
+}
+
+/*
+ * ipu_pipeline_link_notify - Link management notification callback
+ * @link: The link
+ * @flags: New link flags that will be applied
+ * @notification: The link's state change notification type
+ * (MEDIA_DEV_NOTIFY_*)
+ *
+ * React to link management on powered pipelines by updating the use count of
+ * all entities in the source and sink sides of the link. Entities are powered
+ * on or off accordingly.
+ *
+ * Return 0 on success or a negative error code on failure. Powering entities
+ * off is assumed to never fail. This function will not fail for disconnection
+ * events.
+ */
+static int ipu_pipeline_link_notify(struct media_link *link, u32 flags,
+				    unsigned int notification)
+{
+	struct media_entity *source = link->source->entity;
+	struct media_entity *sink = link->sink->entity;
+	int source_use = ipu_pipeline_pm_use_count(link->source);
+	int sink_use = ipu_pipeline_pm_use_count(link->sink);
+	int ret;
+
+	if (notification == MEDIA_DEV_NOTIFY_POST_LINK_CH &&
+	    !(flags & MEDIA_LNK_FL_ENABLED)) {
+		/* Powering off entities is assumed to never fail. */
+		ipu_pipeline_pm_power(source, -sink_use, 0);
+		ipu_pipeline_pm_power(sink, -source_use, 0);
+		return 0;
+	}
+
+	if (notification == MEDIA_DEV_NOTIFY_PRE_LINK_CH &&
+	    (flags & MEDIA_LNK_FL_ENABLED)) {
+		ret = ipu_pipeline_pm_power(source, sink_use, 0);
+		if (ret < 0)
+			return ret;
+
+		ret = ipu_pipeline_pm_power(sink, source_use, 0);
+		if (ret < 0)
+			ipu_pipeline_pm_power(source, -sink_use, 0);
+
+		return ret;
+	}
+
+	return 0;
+}
+
+/* END adapted code from drivers/media/platform/omap3isp/isp.c */
+#endif /* < v4.6 */
 
 static int
 isys_complete_ext_device_registration(struct ipu_isys *isys,
@@ -497,6 +718,7 @@ static int isys_fwnode_parse(struct device *dev,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
 static int isys_notifier_init(struct ipu_isys *isys)
 {
 	struct ipu_device *isp = isys->adev->isp;
@@ -537,9 +759,53 @@ static void isys_notifier_cleanup(struct ipu_isys *isys)
 	v4l2_async_notifier_unregister(&isys->notifier);
 	v4l2_async_notifier_cleanup(&isys->notifier);
 }
+#else
+static int isys_notifier_init(struct ipu_isys *isys)
+{
+	struct ipu_device *isp = isys->adev->isp;
+	size_t asd_struct_size = sizeof(struct sensor_async_subdev);
+	int ret;
+
+	v4l2_async_nf_init(&isys->notifier);
+	ret = v4l2_async_nf_parse_fwnode_endpoints(&isp->pdev->dev,
+						   &isys->notifier,
+						   asd_struct_size,
+						   isys_fwnode_parse);
+	if (ret < 0) {
+		dev_err(&isys->adev->dev,
+			"v4l2 parse_fwnode_endpoints() failed: %d\n", ret);
+		return ret;
+	}
+	if (list_empty(&isys->notifier.asd_list)) {
+		/* isys probe could continue with async subdevs missing */
+		dev_warn(&isys->adev->dev, "no subdev found in graph\n");
+		return 0;
+	}
+
+	isys->notifier.ops = &isys_async_ops;
+	ret = v4l2_async_nf_register(&isys->v4l2_dev, &isys->notifier);
+	if (ret) {
+		dev_err(&isys->adev->dev,
+			"failed to register async notifier : %d\n", ret);
+		v4l2_async_nf_cleanup(&isys->notifier);
+	}
+
+	return ret;
+}
+
+static void isys_notifier_cleanup(struct ipu_isys *isys)
+{
+	v4l2_async_nf_unregister(&isys->notifier);
+	v4l2_async_nf_cleanup(&isys->notifier);
+}
+#endif
 
 static struct media_device_ops isys_mdev_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+	.link_notify = ipu_pipeline_link_notify,
+#else
 	.link_notify = v4l2_pipeline_link_notify,
+#endif
 };
 
 static int isys_register_devices(struct ipu_isys *isys)
@@ -547,15 +813,26 @@ static int isys_register_devices(struct ipu_isys *isys)
 	int rval;
 
 	isys->media_dev.dev = &isys->adev->dev;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 12)
 	isys->media_dev.ops = &isys_mdev_ops;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+	isys->media_dev.link_notify = ipu_pipeline_link_notify;
+#else
+	isys->media_dev.link_notify = v4l2_pipeline_link_notify;
+#endif
 	strlcpy(isys->media_dev.model,
 		IPU_MEDIA_DEV_MODEL_NAME, sizeof(isys->media_dev.model));
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+	isys->media_dev.driver_version = LINUX_VERSION_CODE;
+#endif
 	snprintf(isys->media_dev.bus_info, sizeof(isys->media_dev.bus_info),
 		 "pci:%s", dev_name(isys->adev->dev.parent->parent));
 	strlcpy(isys->v4l2_dev.name, isys->media_dev.model,
 		sizeof(isys->v4l2_dev.name));
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_device_init(&isys->media_dev);
+#endif
 
 	rval = media_device_register(&isys->media_dev);
 	if (rval < 0) {
@@ -596,7 +873,9 @@ out_v4l2_device_unregister:
 
 out_media_device_unregister:
 	media_device_unregister(&isys->media_dev);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_device_cleanup(&isys->media_dev);
+#endif
 
 	return rval;
 }
@@ -606,7 +885,9 @@ static void isys_unregister_devices(struct ipu_isys *isys)
 	isys_unregister_subdevices(isys);
 	v4l2_device_unregister(&isys->v4l2_dev);
 	media_device_unregister(&isys->media_dev);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_device_cleanup(&isys->media_dev);
+#endif
 }
 
 #ifdef CONFIG_PM
@@ -627,7 +908,11 @@ static int isys_runtime_pm_resume(struct device *dev)
 
 	ipu_trace_restore(dev);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_update_request(&isys->pm_qos, ISYS_PM_QOS_VALUE);
+#else
+	pm_qos_update_request(&isys->pm_qos, ISYS_PM_QOS_VALUE);
+#endif
 
 	ret = ipu_buttress_start_tsc_sync(isp);
 	if (ret)
@@ -666,7 +951,11 @@ static int isys_runtime_pm_suspend(struct device *dev)
 	isys->reset_needed = false;
 	mutex_unlock(&isys->mutex);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
+#else
+	pm_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
+#endif
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
@@ -718,13 +1007,21 @@ static void isys_remove(struct ipu_bus_device *adev)
 	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist, head) {
 		dma_free_attrs(&adev->dev, sizeof(struct isys_fw_msgs),
 			       fwmsg, fwmsg->dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL);
+#else
 			       0);
+#endif
 	}
 
 	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist_fw, head) {
 		dma_free_attrs(&adev->dev, sizeof(struct isys_fw_msgs),
 			       fwmsg, fwmsg->dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL
+#else
 			       0
+#endif
 		    );
 	}
 
@@ -734,7 +1031,11 @@ static void isys_remove(struct ipu_bus_device *adev)
 	isys_notifier_cleanup(isys);
 	isys_unregister_devices(isys);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_remove_request(&isys->pm_qos);
+#else
+	pm_qos_remove_request(&isys->pm_qos);
+#endif
 
 	if (!isp->secure_mode) {
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
@@ -749,10 +1050,28 @@ static void isys_remove(struct ipu_bus_device *adev)
 
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT) {
 		u32 trace_size = IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 
 		dma_free_coherent(&adev->dev, trace_size,
 				  isys->short_packet_trace_buffer,
 				  isys->short_packet_trace_buffer_dma_addr);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+		struct dma_attrs attrs;
+
+		init_dma_attrs(&attrs);
+		dma_set_attr(DMA_ATTR_NON_CONSISTENT, &attrs);
+		dma_free_attrs(&adev->dev, trace_size,
+			       isys->short_packet_trace_buffer,
+			       isys->short_packet_trace_buffer_dma_addr,
+			       &attrs);
+#else
+		unsigned long attrs;
+
+		attrs = DMA_ATTR_NON_CONSISTENT;
+		dma_free_attrs(&adev->dev, trace_size,
+			       isys->short_packet_trace_buffer,
+			       isys->short_packet_trace_buffer_dma_addr, attrs);
+#endif
 	}
 }
 
@@ -862,7 +1181,11 @@ static int alloc_fw_msg_bufs(struct ipu_isys *isys, int amount)
 		addr = dma_alloc_attrs(&isys->adev->dev,
 				       sizeof(struct isys_fw_msgs),
 				       &dma_addr, GFP_KERNEL,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+				       NULL);
+#else
 				       0);
+#endif
 		if (!addr)
 			break;
 		addr->dma_addr = dma_addr;
@@ -882,7 +1205,11 @@ static int alloc_fw_msg_bufs(struct ipu_isys *isys, int amount)
 		dma_free_attrs(&isys->adev->dev,
 			       sizeof(struct isys_fw_msgs),
 			       addr, addr->dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL);
+#else
 			       0);
+#endif
 		spin_lock_irqsave(&isys->listlock, flags);
 	}
 	spin_unlock_irqrestore(&isys->listlock, flags);
@@ -1063,7 +1390,12 @@ static int isys_probe(struct ipu_bus_device *adev)
 	ipu_trace_init(adev->isp, isys->pdata->base, &adev->dev,
 		       isys_trace_blocks);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_add_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
+#else
+	pm_qos_add_request(&isys->pm_qos, PM_QOS_CPU_DMA_LATENCY,
+			   PM_QOS_DEFAULT_VALUE);
+#endif
 	alloc_fw_msg_bufs(isys, 20);
 
 	rval = isys_register_devices(isys);
@@ -1266,7 +1598,11 @@ int isys_isr_one(struct ipu_bus_device *adev)
 				struct vb2_buffer *vb;
 
 				vb = ipu_isys_buffer_to_vb2_buffer(ib);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+				vb->v4l2_buf.field = pipe->cur_field;
+#else
 				to_vb2_v4l2_buffer(vb)->field = pipe->cur_field;
+#endif
 				list_del(&ib->head);
 
 				ipu_isys_queue_buf_done(ib);

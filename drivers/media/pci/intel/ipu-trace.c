@@ -114,10 +114,17 @@ static void __ipu_trace_restore(struct device *dev)
 
 	if (!sys->memory.memory_buffer) {
 		sys->memory.memory_buffer =
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 		    dma_alloc_coherent(dev, MEMORY_RING_BUFFER_SIZE +
 				       MEMORY_RING_BUFFER_GUARD,
 				       &sys->memory.dma_handle,
 				       GFP_KERNEL);
+#else
+			dma_alloc_attrs(dev, MEMORY_RING_BUFFER_SIZE +
+					MEMORY_RING_BUFFER_GUARD,
+					&sys->memory.dma_handle,
+					GFP_KERNEL, DMA_ATTR_NON_CONSISTENT);
+#endif
 	}
 
 	if (!sys->memory.memory_buffer) {
@@ -793,11 +800,19 @@ void ipu_trace_uninit(struct device *dev)
 	mutex_lock(&trace->lock);
 
 	if (sys->memory.memory_buffer)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 		dma_free_coherent(sys->dev,
 				  MEMORY_RING_BUFFER_SIZE +
 				  MEMORY_RING_BUFFER_GUARD,
 				  sys->memory.memory_buffer,
 				  sys->memory.dma_handle);
+#else
+		dma_free_attrs(sys->dev,
+			       MEMORY_RING_BUFFER_SIZE +
+			       MEMORY_RING_BUFFER_GUARD,
+			       sys->memory.memory_buffer,
+			       sys->memory.dma_handle, DMA_ATTR_NON_CONSISTENT);
+#endif
 
 	sys->dev = NULL;
 	sys->memory.memory_buffer = NULL;
