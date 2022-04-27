@@ -119,13 +119,21 @@ out_err:
 	return rval;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+static int ipu_bus_remove(struct device *dev)
+#else
 static void ipu_bus_remove(struct device *dev)
+#endif
 {
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 	struct ipu_bus_driver *adrv = to_ipu_bus_driver(dev->driver);
 
 	if (adrv->remove)
 		adrv->remove(adev);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+
+	return 0;
+#endif
 }
 
 static struct bus_type ipu_bus = {
@@ -158,7 +166,11 @@ struct ipu_bus_device *ipu_bus_add_device(struct pci_dev *pdev,
 	adev->dev.parent = parent;
 	adev->dev.bus = &ipu_bus;
 	adev->dev.release = ipu_bus_release;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 16)
 	adev->dev.dma_ops = &ipu_dma_ops;
+#else
+	adev->dev.archdata.dma_ops = &ipu_dma_ops;
+#endif
 	adev->dma_mask = DMA_BIT_MASK(isp->secure_mode ?
 				      IPU_MMU_ADDRESS_BITS :
 				      IPU_MMU_ADDRESS_BITS_NON_SECURE);

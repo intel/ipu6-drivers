@@ -683,7 +683,11 @@ exit:
 }
 
 static int ov01a10_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			      struct v4l2_subdev_pad_config *cfg,
+#else
 			      struct v4l2_subdev_state *sd_state,
+#endif
 			      struct v4l2_subdev_format *fmt)
 {
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
@@ -698,7 +702,11 @@ static int ov01a10_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&ov01a10->mutex);
 	ov01a10_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#else
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		ov01a10->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ov01a10->link_freq, mode->link_freq_index);
@@ -721,15 +729,24 @@ static int ov01a10_set_format(struct v4l2_subdev *sd,
 }
 
 static int ov01a10_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			      struct v4l2_subdev_pad_config *cfg,
+#else
 			      struct v4l2_subdev_state *sd_state,
+#endif
 			      struct v4l2_subdev_format *fmt)
 {
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 
 	mutex_lock(&ov01a10->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		fmt->format = *v4l2_subdev_get_try_format(&ov01a10->sd, cfg,
+							  fmt->pad);
+#else
 		fmt->format = *v4l2_subdev_get_try_format(&ov01a10->sd,
 							  sd_state, fmt->pad);
+#endif
 	else
 		ov01a10_update_pad_format(ov01a10->cur_mode, &fmt->format);
 
@@ -739,7 +756,11 @@ static int ov01a10_get_format(struct v4l2_subdev *sd,
 }
 
 static int ov01a10_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				  struct v4l2_subdev_pad_config *cfg,
+#else
 				  struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index > 0)
@@ -751,7 +772,11 @@ static int ov01a10_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov01a10_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				   struct v4l2_subdev_pad_config *cfg,
+#else
 				   struct v4l2_subdev_state *sd_state,
+#endif
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -773,8 +798,13 @@ static int ov01a10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 
 	mutex_lock(&ov01a10->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	ov01a10_update_pad_format(&supported_modes[0],
+				  v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#else
 	ov01a10_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+#endif
 	mutex_unlock(&ov01a10->mutex);
 
 	return 0;
