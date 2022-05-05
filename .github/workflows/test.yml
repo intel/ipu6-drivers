@@ -23,6 +23,7 @@ jobs:
                                   # sudo apt install --yes linux-headers-generic
                                   # latest oem kernel
                                   sudo apt install --yes linux-headers-oem-20.04
+                                  # sudo apt install --yes linux-headers-oem-22.04
                                   # wip kernel headers - once we move to 22.04
                                   # sudo add-apt-repository ppa:canonical-kernel-team/unstable
                                   # sudo apt update
@@ -46,16 +47,12 @@ jobs:
                         - name: Compile driver
                           shell: bash
                           run: |
-                                  #debug:
-                                  echo "DEBUG:"
-                                  echo "ls /usr/src"; ls /usr/src;
-                                  echo "ls /lib/modules"; ls /lib/modules;
                                   # run dkms build and all available kernel headers
                                   failed=""
                                   succeeded=""
                                   for kver in /lib/modules/*/build; do
                                         # skip the kernel headers from the azure kernel. These kernel headers
-                                        # are preinstalled and it seems we can't build for it
+                                        # are preinstalled and of no interest
                                         if [[ "$kver" == *"azure"* ]]; then
                                                 echo "Skipping $kver - This is the kernel of the github runner.";
                                                 continue;
