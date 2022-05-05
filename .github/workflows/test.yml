@@ -65,7 +65,7 @@ jobs:
                                         kver=${kver##*/}
                                         echo "=== Testing ${kver} ===";
                                         echo "running: dkms build -m ipu6-drivers/0.0.0 -k ${kver}";
-                                        ret=$(dkms build -m ipu6-drivers/0.0.0 -k ${kver} >&2; echo $?);
+                                        ret=$(sudo dkms build -m ipu6-drivers/0.0.0 -k ${kver} >&2; echo $?);
                                         if [ ${ret} -eq 0 ]; then
                                                 succeeded="${succeeded} ${kver}"
                                         else
