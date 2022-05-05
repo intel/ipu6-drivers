@@ -20,9 +20,11 @@ jobs:
                           shell: bash
                           run: |
                                 # latest generic and oem kernel headers
-                                sudo apt install linux-headers-generic linux-headers-oem
+                                # too old, still 5.4 - sudo apt install linux-headers-generic
+                                sudo apt install linux-headers-oem-20.04
                                 # wip kernel headers
                                 sudo add-apt-repository ppa:canonical-kernel-team/unstable
+                                sudo apt update
                                 sudo apt install linux-headers-generic-wip
 
                         - name: Patch build scripts
