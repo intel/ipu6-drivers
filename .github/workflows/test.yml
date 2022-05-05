@@ -46,6 +46,9 @@ jobs:
                         - name: Compile driver
                           shell: bash
                           run: |
+                                  #debug:
+                                  echo "DEBUG:"
+                                  find / -name *linux-headers* 2>/dev/null;
                                   # run dkms build and all available kernel headers
                                   failed=""
                                   succeeded=""
