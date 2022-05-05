@@ -20,13 +20,13 @@ jobs:
                           shell: bash
                           run: |
                                   # latest generic kernel headers - once we move to 22.04
-                                  # sudo apt install linux-headers-generic
+                                  # sudo apt install --yes linux-headers-generic
                                   # latest oem kernel
-                                  sudo apt install linux-headers-oem-20.04
+                                  sudo apt install --yes linux-headers-oem-20.04
                                   # wip kernel headers - once we move to 22.04
                                   # sudo add-apt-repository ppa:canonical-kernel-team/unstable
                                   # sudo apt update
-                                  # sudo apt install linux-headers-generic-wip
+                                  # sudo apt install --yes linux-headers-generic-wip
 
                         - name: Patch build scripts
                           shell: bash
@@ -58,16 +58,19 @@ jobs:
                                         ret=$(dkms build -m ipu6-drivers/0.0.0 -k ${kver} >&2; echo $?);
                                         if [ ${ret} -eq 0 ]; then
                                                 succeeded="${succeeded} ${kver}"
-                                                #modinfo v4l2loopback.ko;
+                                                echo "debug: find where the module is built";
+                                                find / -name intel-ipu6.ko 2>/dev/null;
+                                                #echo "modinfo";
+                                                #modinfo -k ${kver} intel-ipu6;
                                         else
                                                 echo "#### Skipped unexpected failure ${kver}";
                                                 failed="${failed} ${kver}";
                                         fi;
                                         #make KERNELRELEASE="${kver}" clean || test ${ret} -ne 0
-                                done
-                                if [ "x${failed}" != "x" ]; then
+                                  done
+                                  if [ "x${failed}" != "x" ]; then
                                         echo "#### Failed kernels: ${failed}";
                                         exit 1
-                                fi
-                                echo "#### Successful builds for kernels: ${succeeded}";
+                                  fi
+                                  echo "#### Successful builds for kernels: ${succeeded}";
 
