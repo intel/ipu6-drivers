@@ -58,7 +58,7 @@ jobs:
                                         # are preinstalled and it seems we can't build for it
                                         if [[ "$kver" == *"azure"* ]]; then
                                                 echo "Skipping $kver - This is the kernel of the github runner.";
-                                                break;
+                                                continue;
                                         fi;
                                         test -d $kver || continue
                                         kver=${kver%/build}
@@ -68,15 +68,10 @@ jobs:
                                         ret=$(dkms build -m ipu6-drivers/0.0.0 -k ${kver} >&2; echo $?);
                                         if [ ${ret} -eq 0 ]; then
                                                 succeeded="${succeeded} ${kver}"
-                                                echo "debug: find where the module is built";
-                                                find / -name intel-ipu6.ko 2>/dev/null;
-                                                #echo "modinfo";
-                                                #modinfo -k ${kver} intel-ipu6;
                                         else
                                                 echo "#### Skipped unexpected failure ${kver}";
                                                 failed="${failed} ${kver}";
                                         fi;
-                                        #make KERNELRELEASE="${kver}" clean || test ${ret} -ne 0
                                   done
                                   if [ "x${failed}" != "x" ]; then
                                         echo "#### Failed kernels: ${failed}";
