@@ -1,0 +1,37 @@
+name: test
+on: [push, pull_request]
+#schedule:
+#       - cron: '30 1 * * *' #every day at 1:30am
+jobs:
+        test-dkms:
+                # ubuntu-lastest is currently still 20.04
+                runs-on: ubuntu-latest
+                steps:
+                        - name: Checkout
+                          uses: actions/checkout@v3
+
+                        - name: Prepare environment
+                          shell: bash
+                          run: |
+                                sudo apt-get update --quiet;
+                                sudo apt-get install --yes --no-install-recommends dkms kmod
+
+                        - name: Download header files
+                          shell: bash
+                          run: |
+                                # latest generic and oem kernel headers
+                                sudo apt install linux-headers-generic linux-headers-oem
+                                # wip kernel headers
+                                sudo add-apt-repository ppa:canonical-kernel-team/unstable
+                                sudo apt install linux-headers-generic-wip
+
+                        - name: Patch build scripts
+                          shell: bash
+                          run: |
+                                # there is a dependency on the ivsc modules that prevents building the sensor drivers
+                                # remove sensors from the dkms file
+                                sed -i '/\[[4,5,6,7]\]/d' dkms.conf
+                                # disable sensor modules in the Makefile
+                                sed -i 's/export CONFIG_VIDEO_OV/#export CONFIG_VIDEO_OV/g' Makefile
+                                sed -i 's/export CONFIG_VIDEO_HM/#export CONFIG_VIDEO_HM/g' Makefile
+
