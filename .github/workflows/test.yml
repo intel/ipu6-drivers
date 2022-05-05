@@ -48,7 +48,8 @@ jobs:
                           run: |
                                   #debug:
                                   echo "DEBUG:"
-                                  find / -name *linux-headers* 2>/dev/null;
+                                  echo "ls /usr/src"; ls /usr/src;
+                                  echo "ls /lib/modules"; ls /lib/modules;
                                   # run dkms build and all available kernel headers
                                   failed=""
                                   succeeded=""
