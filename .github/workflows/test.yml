@@ -6,7 +6,7 @@ jobs:
         test-dkms:
                 # ubuntu-lastest is currently still 20.04
                 runs-on: ubuntu-latest
-                container: jammy
+                container: ubuntu:jammy
                 steps:
                         - name: Checkout
                           uses: actions/checkout@v3
@@ -24,7 +24,7 @@ jobs:
                                   # sudo apt install --yes linux-headers-generic
                                   # latest oem kernel
                                   sudo apt install --yes linux-headers-oem-20.04
-                                  # sudo apt install --yes linux-headers-oem-22.04
+                                  sudo apt install --yes linux-headers-oem-22.04
                                   # wip kernel headers - once we move to 22.04
                                   # sudo add-apt-repository ppa:canonical-kernel-team/unstable
                                   # sudo apt update
