@@ -15,20 +15,20 @@ jobs:
                           shell: bash
                           run: |
                                   apt-get update --quiet;
-                                  apt-get install --yes --no-install-recommends dkms kmod
+                                  apt-get install --yes --no-install-recommends dkms kmod sudo
 
                         - name: Download header files
                           shell: bash
                           run: |
-                                  # latest generic kernel headers - once we move to 22.04
-                                  # sudo apt install --yes linux-headers-generic
+                                  # latest generic kernel headers
+                                  apt install --yes linux-headers-generic
                                   # latest oem kernel
                                   apt install --yes linux-headers-oem-20.04
                                   apt install --yes linux-headers-oem-22.04
-                                  # wip kernel headers - once we move to 22.04
-                                  # sudo add-apt-repository ppa:canonical-kernel-team/unstable
-                                  # sudo apt update
-                                  # sudo apt install --yes linux-headers-generic-wip
+                                  # wip kernel headers
+                                  add-apt-repository ppa:canonical-kernel-team/unstable
+                                  apt update
+                                  apt install --yes linux-headers-generic-wip
 
                         - name: Patch build scripts
                           shell: bash
