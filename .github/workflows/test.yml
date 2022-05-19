@@ -14,8 +14,8 @@ jobs:
                         - name: Prepare environment
                           shell: bash
                           run: |
-                                  sudo apt-get update --quiet;
-                                  sudo apt-get install --yes --no-install-recommends dkms kmod
+                                  apt-get update --quiet;
+                                  apt-get install --yes --no-install-recommends dkms kmod
 
                         - name: Download header files
                           shell: bash
@@ -23,8 +23,8 @@ jobs:
                                   # latest generic kernel headers - once we move to 22.04
                                   # sudo apt install --yes linux-headers-generic
                                   # latest oem kernel
-                                  sudo apt install --yes linux-headers-oem-20.04
-                                  sudo apt install --yes linux-headers-oem-22.04
+                                  apt install --yes linux-headers-oem-20.04
+                                  apt install --yes linux-headers-oem-22.04
                                   # wip kernel headers - once we move to 22.04
                                   # sudo add-apt-repository ppa:canonical-kernel-team/unstable
                                   # sudo apt update
@@ -43,7 +43,7 @@ jobs:
                         - name: Register w/ dkms
                           shell: bash
                           run: |
-                                  sudo dkms add .
+                                  dkms add .
 
                         - name: Compile driver
                           shell: bash
