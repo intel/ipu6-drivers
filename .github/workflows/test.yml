@@ -15,7 +15,7 @@ jobs:
                           shell: bash
                           run: |
                                   apt-get update --quiet;
-                                  apt-get install --yes --no-install-recommends dkms kmod sudo
+                                  apt-get install --yes --no-install-recommends dkms kmod software-properties-common sudo
 
                         - name: Download header files
                           shell: bash
