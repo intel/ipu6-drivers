@@ -6,6 +6,7 @@ jobs:
         test-dkms:
                 # ubuntu-lastest is currently still 20.04
                 runs-on: ubuntu-latest
+                container: jammy
                 steps:
                         - name: Checkout
                           uses: actions/checkout@v3
