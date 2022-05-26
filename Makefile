@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (c) 2021 Intel Corporation.
 
-export EXTERNAL_BUILD = 1
-
 export CONFIG_VIDEO_INTEL_IPU6 = m
 obj-y += drivers/media/pci/intel/
 
@@ -13,10 +11,10 @@ export CONFIG_VIDEO_OV02C10 = m
 export CONFIG_POWER_CTRL_LOGIC = m
 obj-y += drivers/media/i2c/
 
-KERNELRELEASE	?= `uname -r`
-KERNEL_SRC := /lib/modules/$(KERNELRELEASE)/build
+KERNELRELEASE ?= $(shell uname -r)
+KERNEL_SRC ?= /lib/modules/$(KERNELRELEASE)/build
 MODSRC := $(shell pwd)
-ccflags-y += -I$(MODSRC)/include/
+subdir-ccflags-y += -I$(src)/include/
 
 all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(MODSRC) modules
