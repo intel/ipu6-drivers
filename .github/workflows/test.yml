@@ -1,0 +1,79 @@
+name: test
+on: [push, pull_request]
+#schedule:
+#       - cron: '30 1 * * *' #every day at 1:30am
+jobs:
+        test-dkms:
+                # ubuntu-lastest is currently still 20.04
+                runs-on: ubuntu-latest
+                container: ubuntu:jammy
+                steps:
+                        - name: Checkout
+                          uses: actions/checkout@v3
+
+                        - name: Prepare environment
+                          shell: bash
+                          run: |
+                                  apt-get update --quiet;
+                                  apt-get install --yes --no-install-recommends dkms gpg-agent kmod software-properties-common sudo
+
+                        - name: Download header files
+                          shell: bash
+                          run: |
+                                  # latest generic kernel headers
+                                  apt install --yes linux-headers-generic
+                                  # latest oem kernel
+                                  apt install --yes linux-headers-oem-20.04
+                                  apt install --yes linux-headers-oem-22.04
+                                  # wip kernel headers
+                                  add-apt-repository ppa:canonical-kernel-team/unstable
+                                  apt update
+                                  apt install --yes linux-headers-generic-wip
+
+                        - name: Patch build scripts
+                          shell: bash
+                          run: |
+                                  # there is a dependency on the ivsc modules that prevents building the sensor drivers
+                                  # remove sensors from the dkms file
+                                  sed -i '/\[[4,5,6,7]\]/d' dkms.conf
+                                  # disable sensor modules in the Makefile
+                                  sed -i 's/export CONFIG_VIDEO_OV/#export CONFIG_VIDEO_OV/g' Makefile
+                                  sed -i 's/export CONFIG_VIDEO_HM/#export CONFIG_VIDEO_HM/g' Makefile
+
+                        - name: Register w/ dkms
+                          shell: bash
+                          run: |
+                                  dkms add .
+
+                        - name: Compile driver
+                          shell: bash
+                          run: |
+                                  # run dkms build and all available kernel headers
+                                  failed=""
+                                  succeeded=""
+                                  for kver in /lib/modules/*/build; do
+                                        # skip the kernel headers from the azure kernel. These kernel headers
+                                        # are preinstalled and of no interest
+                                        if [[ "$kver" == *"azure"* ]]; then
+                                                echo "Skipping $kver - This is the kernel of the github runner.";
+                                                continue;
+                                        fi;
+                                        test -d $kver || continue
+                                        kver=${kver%/build}
+                                        kver=${kver##*/}
+                                        echo "=== Testing ${kver} ===";
+                                        echo "running: dkms build -m ipu6-drivers/0.0.0 -k ${kver}";
+                                        ret=$(sudo dkms build -m ipu6-drivers/0.0.0 -k ${kver} >&2; echo $?);
+                                        if [ ${ret} -eq 0 ]; then
+                                                succeeded="${succeeded} ${kver}"
+                                        else
+                                                echo "#### Skipped unexpected failure ${kver}";
+                                                failed="${failed} ${kver}";
+                                        fi;
+                                  done
+                                  if [ "x${failed}" != "x" ]; then
+                                        echo "#### Failed kernels: ${failed}";
+                                        exit 1
+                                  fi
+                                  echo "#### Successful builds for kernels: ${succeeded}";
+
