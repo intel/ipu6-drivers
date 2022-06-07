@@ -25,7 +25,7 @@ Three ways are available:
 - Patch the diff files in `patch` folder
 - Copy repo content to kernel source
 - Modify related Kconfig and Makefile
-- Add config in LinuxRoot/drivers/media/i2c/Kconfig
+- Add config in LinuxRoot/drivers/media/i2c/Kconfig *(for kernel 5.18+, use `VIDEO_DEV` instead of `VIDEO_V4L2` in `depends on` section)*
 	```conf
 	config POWER_CTRL_LOGIC
 		tristate "power control logic driver"
