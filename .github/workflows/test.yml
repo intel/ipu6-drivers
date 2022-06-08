@@ -1,7 +1,9 @@
 name: test
-on: [push, pull_request]
-#schedule:
-#       - cron: '30 1 * * *' #every day at 1:30am
+on:
+        push:
+        pull_request:
+        schedule:
+                - cron: '30 1 * * *' #every day at 1:30am
 jobs:
         test-dkms:
                 # ubuntu-lastest is currently still 20.04
