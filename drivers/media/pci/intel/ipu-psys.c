@@ -407,7 +407,11 @@ static int ipu_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct iosys_map *map)
+#else
 static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
+#endif
 {
 	struct dma_buf_attachment *attach;
 	struct ipu_dma_buf_attach *ipu_attach;
@@ -455,7 +459,11 @@ static void *ipu_dma_buf_vmap(struct dma_buf *dmabuf)
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
+#else
 static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
+#endif
 {
 	struct dma_buf_attachment *attach;
 	struct ipu_dma_buf_attach *ipu_attach;
@@ -557,9 +565,17 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 	kbuf->valid = false;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 	if (kbuf->kaddr) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+		struct iosys_map dmap;
+#else
 		struct dma_buf_map dmap;
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
+#else
 		dma_buf_map_set_vaddr(&dmap, kbuf->kaddr);
+#endif
 		dma_buf_vunmap(kbuf->dbuf, &dmap);
 	}
 #else
@@ -694,7 +710,11 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+	struct iosys_map dmap;
+#else
 	struct dma_buf_map dmap;
+#endif /* < v5.18 */
 #endif
 	int ret;
 
