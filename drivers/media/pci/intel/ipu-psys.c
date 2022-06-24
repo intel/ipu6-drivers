@@ -534,15 +534,15 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 
 	ret = dma_buf_fd(dbuf, 0);
 	if (ret < 0) {
-		kfree(kbuf);
 		dma_buf_put(dbuf);
 		return ret;
 	}
 
 	kbuf->fd = ret;
 	buf->base.fd = ret;
-	kbuf->flags = buf->flags &= ~IPU_BUFFER_FLAG_USERPTR;
-	kbuf->flags = buf->flags |= IPU_BUFFER_FLAG_DMA_HANDLE;
+	buf->flags &= ~IPU_BUFFER_FLAG_USERPTR;
+	buf->flags |= IPU_BUFFER_FLAG_DMA_HANDLE;
+	kbuf->flags = buf->flags;
 
 	mutex_lock(&fh->mutex);
 	list_add(&kbuf->list, &fh->bufmap);
@@ -656,7 +656,6 @@ kbuf_map_fail:
 	list_del(&kbuf->list);
 	if (!kbuf->userptr)
 		kfree(kbuf);
-	return ret;
 
 mapbuf_fail:
 	dma_buf_put(dbuf);
