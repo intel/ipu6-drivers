@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/acpi.h>
 #include <linux/debugfs.h>
@@ -440,10 +440,10 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	dev_dbg(&pdev->dev, "isys_base: 0x%lx\n", (unsigned long)isys_base);
 	dev_dbg(&pdev->dev, "psys_base: 0x%lx\n", (unsigned long)psys_base);
 
-	rval = pci_set_dma_mask(pdev, DMA_BIT_MASK(dma_mask));
+	rval = dma_set_mask(&pdev->dev, DMA_BIT_MASK(dma_mask));
 	if (!rval)
-		rval = pci_set_consistent_dma_mask(pdev,
-						   DMA_BIT_MASK(dma_mask));
+		rval = dma_set_coherent_mask(&pdev->dev,
+					     DMA_BIT_MASK(dma_mask));
 	if (rval) {
 		dev_err(&pdev->dev, "Failed to set DMA mask (%d)\n", rval);
 		return rval;
