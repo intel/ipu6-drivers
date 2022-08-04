@@ -725,8 +725,8 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 {
 	struct page **pages;
 	const void *addr;
-	unsigned long n_pages, i;
-	int rval;
+	unsigned long n_pages;
+	int rval, i;
 
 	n_pages = PAGE_ALIGN(fw->size) >> PAGE_SHIFT;
 
@@ -753,14 +753,14 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 		goto out;
 	}
 
-	n_pages = dma_map_sg(&sys->dev, sgt->sgl, sgt->nents, DMA_TO_DEVICE);
-	if (n_pages != sgt->nents) {
+	rval = dma_map_sgtable(&sys->dev, sgt, DMA_TO_DEVICE, 0);
+	if (rval < 0) {
 		rval = -ENOMEM;
 		sg_free_table(sgt);
 		goto out;
 	}
 
-	dma_sync_sg_for_device(&sys->dev, sgt->sgl, sgt->nents, DMA_TO_DEVICE);
+	dma_sync_sgtable_for_device(&sys->dev, sgt, DMA_TO_DEVICE);
 
 out:
 	kfree(pages);

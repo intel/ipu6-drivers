@@ -331,7 +331,7 @@ static void ipu_dma_unmap_sg(struct device *dev,
 			     int nents, enum dma_data_direction dir,
 			     unsigned long attrs)
 {
-	int i;
+	int i, npages, count;
 	struct scatterlist *sg;
 	dma_addr_t pci_dma_addr;
 	struct ipu_mmu *mmu = to_ipu_bus_device(dev)->mmu;
@@ -348,8 +348,30 @@ static void ipu_dma_unmap_sg(struct device *dev,
 	if ((attrs & DMA_ATTR_SKIP_CPU_SYNC) == 0)
 		ipu_dma_sync_sg_for_cpu(dev, sglist, nents, DMA_BIDIRECTIONAL);
 
-	/* before ipu mmu unmap, return the pci dma address back to sg */
+	/* get the nents as orig_nents given by caller */
+	count = 0;
+	npages = (iova->pfn_hi - iova->pfn_lo + 1);
 	for_each_sg(sglist, sg, nents, i) {
+		if (sg_dma_len(sg) == 0 ||
+		    sg_dma_address(sg) == DMA_MAPPING_ERROR)
+			break;
+
+		npages -= PAGE_ALIGN(sg_dma_len(sg)) >> PAGE_SHIFT;
+		count++;
+		if (npages <= 0)
+			break;
+	}
+
+	/* before ipu mmu unmap, return the pci dma address back to sg
+	 * assume the nents is less than orig_nents as the least granule
+	 * is 1 SZ_4K page
+	 */
+	dev_dbg(dev, "trying to unmap concatenated %u ents\n", count);
+	for_each_sg(sglist, sg, count, i) {
+		if (sg_dma_len(sg) == 0 ||
+		    sg_dma_address(sg) == DMA_MAPPING_ERROR)
+			break;
+
 		dev_dbg(dev, "ipu_unmap sg[%d] %pad\n", i, &sg_dma_address(sg));
 		pci_dma_addr = ipu_mmu_iova_to_phys(mmu->dmap->mmu_info,
 						    sg_dma_address(sg));
@@ -378,20 +400,23 @@ static int ipu_dma_map_sg(struct device *dev, struct scatterlist *sglist,
 	struct pci_dev *pdev = to_ipu_bus_device(dev)->isp->pdev;
 	struct scatterlist *sg;
 	struct iova *iova;
-	size_t size = 0;
+	size_t npages = 0;
 	u32 iova_addr;
-	int i, ret;
+	int i, count;
 
-	ret = dma_map_sg_attrs(&pdev->dev, sglist, nents, dir, attrs);
-	if (ret <= 0) {
-		dev_err(dev, "pci_dma_map_sg %d ents failed", nents);
+	dev_dbg(dev, "pci_dma_map_sg trying to map %d ents\n", nents);
+	count  = dma_map_sg_attrs(&pdev->dev, sglist, nents, dir, attrs);
+	if (count <= 0) {
+		dev_err(dev, "pci_dma_map_sg %d ents failed\n", nents);
 		return 0;
 	}
 
-	for_each_sg(sglist, sg, nents, i)
-		size += PAGE_ALIGN(sg->length) >> PAGE_SHIFT;
+	dev_dbg(dev, "pci_dma_map_sg %d ents mapped\n", count);
 
-	iova = alloc_iova(&mmu->dmap->iovad, size,
+	for_each_sg(sglist, sg, count, i)
+		npages += PAGE_ALIGN(sg_dma_len(sg)) >> PAGE_SHIFT;
+
+	iova = alloc_iova(&mmu->dmap->iovad, npages,
 			  dma_get_mask(dev) >> PAGE_SHIFT, 0);
 	if (!iova)
 		return 0;
@@ -400,24 +425,26 @@ static int ipu_dma_map_sg(struct device *dev, struct scatterlist *sglist,
 		iova->pfn_hi);
 
 	iova_addr = iova->pfn_lo;
-	for_each_sg(sglist, sg, nents, i) {
+	for_each_sg(sglist, sg, count, i) {
 		int rval;
 
 		dev_dbg(dev, "mapping entry %d: iova 0x%lx phy %pad size %d\n",
 			i, (unsigned long)iova_addr << PAGE_SHIFT,
-			&sg_dma_address(sg), sg->length);
+			&sg_dma_address(sg), sg_dma_len(sg));
+
+		dev_dbg(dev, "mapping entry %d: sg->length = %d\n", i,
+			sg->length);
+
 		rval = ipu_mmu_map(mmu->dmap->mmu_info, iova_addr << PAGE_SHIFT,
 				   sg_dma_address(sg),
-				   PAGE_ALIGN(sg->length));
+				   PAGE_ALIGN(sg_dma_len(sg)));
 		if (rval)
 			goto out_fail;
 
 		sg_dma_address(sg) = iova_addr << PAGE_SHIFT;
-#ifdef CONFIG_NEED_SG_DMA_LENGTH
-		sg_dma_len(sg) = sg->length;
-#endif /* CONFIG_NEED_SG_DMA_LENGTH */
+		sg->length = sg_dma_len(sg);
 
-		iova_addr += PAGE_ALIGN(sg->length) >> PAGE_SHIFT;
+		iova_addr += PAGE_ALIGN(sg_dma_len(sg)) >> PAGE_SHIFT;
 	}
 
 	if ((attrs & DMA_ATTR_SKIP_CPU_SYNC) == 0)
@@ -425,7 +452,7 @@ static int ipu_dma_map_sg(struct device *dev, struct scatterlist *sglist,
 
 	mmu->tlb_invalidate(mmu);
 
-	return nents;
+	return count;
 
 out_fail:
 	ipu_dma_unmap_sg(dev, sglist, i, dir, attrs);
