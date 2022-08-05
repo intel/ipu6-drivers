@@ -295,9 +295,8 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 		return NULL;
 
 	attrs = DMA_ATTR_SKIP_CPU_SYNC;
-	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
-			       ipu_attach->sgt->orig_nents, dir, attrs);
-	if (ret < ipu_attach->sgt->orig_nents) {
+	ret = dma_map_sgtable(attach->dev, ipu_attach->sgt, dir, attrs);
+	if (ret < 0) {
 		ipu_psys_put_userpages(ipu_attach);
 		dev_dbg(attach->dev, "buf map failed\n");
 
@@ -315,11 +314,11 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 }
 
 static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
-			      struct sg_table *sg, enum dma_data_direction dir)
+			      struct sg_table *sgt, enum dma_data_direction dir)
 {
 	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
 
-	dma_unmap_sg(attach->dev, sg->sgl, sg->orig_nents, dir);
+	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
 	ipu_psys_put_userpages(ipu_attach);
 }
 
