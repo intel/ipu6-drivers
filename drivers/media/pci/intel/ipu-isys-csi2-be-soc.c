@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2014 - 2021 Intel Corporation
+// Copyright (C) 2014 - 2022 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/module.h>
@@ -119,7 +119,7 @@ ipu_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			     struct v4l2_subdev_pad_config *cfg,
 #else
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 #endif
 			     struct v4l2_subdev_selection *sel)
 {
@@ -136,7 +136,7 @@ ipu_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
 			__ipu_isys_get_ffmt(sd, cfg, sel->pad, sel->which);
 #else
 		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd, sd_state, sel->pad, sel->which);
+			__ipu_isys_get_ffmt(sd, state, sel->pad, sel->which);
 #endif
 
 		if (get_supported_code_index(ffmt->code) < 0) {
@@ -157,9 +157,9 @@ ipu_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
 		ipu_isys_subdev_fmt_propagate(sd, cfg, NULL, &sel->r,
 					      tgt, sel->pad, sel->which);
 #else
-		*__ipu_isys_get_selection(sd, sd_state, sel->target, sel->pad,
+		*__ipu_isys_get_selection(sd, state, sel->target, sel->pad,
 					  sel->which) = sel->r;
-		ipu_isys_subdev_fmt_propagate(sd, sd_state, NULL, &sel->r,
+		ipu_isys_subdev_fmt_propagate(sd, state, NULL, &sel->r,
 					      tgt, sel->pad, sel->which);
 #endif
 		return 0;
@@ -192,7 +192,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				 struct v4l2_subdev_pad_config *cfg,
 #else
-				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_state *state,
 #endif
 				 struct v4l2_subdev_format *fmt)
 {
@@ -202,7 +202,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 				    fmt->which);
 #else
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad,
+		__ipu_isys_get_ffmt(sd, state, fmt->pad,
 				    fmt->which);
 #endif
 
@@ -217,7 +217,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 					      IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
 					      fmt->pad, fmt->which);
 #else
-		ipu_isys_subdev_fmt_propagate(sd, sd_state, &fmt->format,
+		ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format,
 					      NULL,
 					      IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
 					      fmt->pad, fmt->which);
@@ -228,7 +228,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 		struct v4l2_rect *r = __ipu_isys_get_selection(sd, cfg,
 			V4L2_SEL_TGT_CROP, fmt->pad, fmt->which);
 #else
-		struct v4l2_rect *r = __ipu_isys_get_selection(sd, sd_state,
+		struct v4l2_rect *r = __ipu_isys_get_selection(sd, state,
 			V4L2_SEL_TGT_CROP, fmt->pad, fmt->which);
 #endif
 		struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
@@ -238,7 +238,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		sink_ffmt = __ipu_isys_get_ffmt(sd, cfg, 0, fmt->which);
 #else
-		sink_ffmt = __ipu_isys_get_ffmt(sd, sd_state, 0, fmt->which);
+		sink_ffmt = __ipu_isys_get_ffmt(sd, state, 0, fmt->which);
 #endif
 		code = sink_ffmt->code;
 		idx = get_supported_code_index(code);

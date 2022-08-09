@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2021 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/module.h>
@@ -330,10 +330,10 @@ static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
 }
 #else
 static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
-	return ipu_isys_subdev_get_ffmt(sd, sd_state, fmt);
+	return ipu_isys_subdev_get_ffmt(sd, state, fmt);
 }
 #endif
 
@@ -346,10 +346,10 @@ static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
 }
 #else
 static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
-	return ipu_isys_subdev_set_ffmt(sd, sd_state, fmt);
+	return ipu_isys_subdev_set_ffmt(sd, state, fmt);
 }
 #endif
 
@@ -389,7 +389,7 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			  struct v4l2_subdev_pad_config *cfg,
 #else
-			  struct v4l2_subdev_state *sd_state,
+			  struct v4l2_subdev_state *state,
 #endif
 			  struct v4l2_subdev_format *fmt)
 {
@@ -398,7 +398,7 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
 #else
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad,
+		__ipu_isys_get_ffmt(sd, state, fmt->pad,
 #endif
 				    fmt->which);
 
@@ -411,7 +411,7 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format, NULL,
 					      tgt, fmt->pad, fmt->which);
 #else
-		ipu_isys_subdev_fmt_propagate(sd, sd_state, &fmt->format, NULL,
+		ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format, NULL,
 					      tgt, fmt->pad, fmt->which);
 #endif
 		return;

@@ -140,7 +140,7 @@ struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
 					       struct v4l2_subdev_pad_config
 					       *cfg,
 #else
-					       struct v4l2_subdev_state *sd_state,
+					       struct v4l2_subdev_state *state,
 #endif
 					       unsigned int pad,
 					       unsigned int which)
@@ -155,7 +155,7 @@ struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		return v4l2_subdev_get_try_format(sd, cfg, pad);
 #else
-		return v4l2_subdev_get_try_format(sd, sd_state, pad);
+		return v4l2_subdev_get_try_format(sd, state, pad);
 #endif
 }
 
@@ -165,7 +165,7 @@ struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 					   struct v4l2_subdev_pad_config *cfg,
 #else
-					   struct v4l2_subdev_state *sd_state,
+					   struct v4l2_subdev_state *state,
 #endif
 					   unsigned int target,
 					   unsigned int pad, unsigned int which)
@@ -193,9 +193,9 @@ struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
 			return v4l2_subdev_get_try_compose(sd, cfg, pad);
 #else
 		case V4L2_SEL_TGT_CROP:
-			return v4l2_subdev_get_try_crop(sd, sd_state, pad);
+			return v4l2_subdev_get_try_crop(sd, state, pad);
 		case V4L2_SEL_TGT_COMPOSE:
-			return v4l2_subdev_get_try_compose(sd, sd_state, pad);
+			return v4l2_subdev_get_try_compose(sd, state, pad);
 #endif
 		}
 	}
@@ -224,7 +224,7 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				  struct v4l2_subdev_pad_config *cfg,
 #else
-				  struct v4l2_subdev_state *sd_state,
+				  struct v4l2_subdev_state *state,
 #endif
 				  struct v4l2_mbus_framefmt *ffmt,
 				  struct v4l2_rect *r,
@@ -272,11 +272,12 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 						      V4L2_SEL_TGT_COMPOSE,
 						      i, which);
 #else
-		ffmts[i] = __ipu_isys_get_ffmt(sd, sd_state, i, which);
-		crops[i] = __ipu_isys_get_selection(sd, sd_state,
-						    V4L2_SEL_TGT_CROP, i, which);
-		compose[i] = __ipu_isys_get_selection(sd, sd_state,
-						      V4L2_SEL_TGT_COMPOSE, i, which);
+		ffmts[i] = __ipu_isys_get_ffmt(sd, state, i, which);
+		crops[i] = __ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
+						    i, which);
+		compose[i] = __ipu_isys_get_selection(sd, state,
+						      V4L2_SEL_TGT_COMPOSE,
+						      i, which);
 #endif
 	}
 
@@ -290,8 +291,8 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 		rval = ipu_isys_subdev_fmt_propagate(sd, cfg, ffmt, crops[pad],
 						     tgt + 1, pad, which);
 #else
-		rval = ipu_isys_subdev_fmt_propagate(sd, sd_state, ffmt,
-						     crops[pad], tgt + 1, pad, which);
+		rval = ipu_isys_subdev_fmt_propagate(sd, state, ffmt, crops[pad],
+						     tgt + 1, pad, which);
 #endif
 		goto out_subdev_fmt_propagate;
 	case IPU_ISYS_SUBDEV_PROP_TGT_SINK_CROP:
@@ -307,8 +308,9 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 						     compose[pad], tgt + 1,
 						     pad, which);
 #else
-		rval = ipu_isys_subdev_fmt_propagate(sd, sd_state, ffmt,
-						     compose[pad], tgt + 1, pad, which);
+		rval = ipu_isys_subdev_fmt_propagate(sd, state, ffmt,
+						     compose[pad], tgt + 1,
+						     pad, which);
 #endif
 		goto out_subdev_fmt_propagate;
 	case IPU_ISYS_SUBDEV_PROP_TGT_SINK_COMPOSE:
@@ -333,8 +335,11 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 							     tgt + 1, i,
 							     which);
 #else
-			rval = ipu_isys_subdev_fmt_propagate(sd, sd_state,
-							ffmt, compose[i], tgt + 1, i, which);
+			rval = ipu_isys_subdev_fmt_propagate(sd, state,
+							     ffmt,
+							     compose[i],
+							     tgt + 1, i,
+							     which);
 #endif
 			if (rval)
 				goto out_subdev_fmt_propagate;
@@ -355,8 +360,9 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 						     crops[pad], tgt + 1,
 						     pad, which);
 #else
-		rval = ipu_isys_subdev_fmt_propagate(sd, sd_state, ffmt,
-						     crops[pad], tgt + 1, pad, which);
+		rval = ipu_isys_subdev_fmt_propagate(sd, state, ffmt,
+						     crops[pad], tgt + 1,
+						     pad, which);
 #endif
 		goto out_subdev_fmt_propagate;
 	case IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP:{
@@ -380,7 +386,7 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			asd->set_ffmt(sd, cfg, &fmt);
 #else
-			asd->set_ffmt(sd, sd_state, &fmt);
+			asd->set_ffmt(sd, state, &fmt);
 #endif
 			goto out_subdev_fmt_propagate;
 		}
@@ -399,7 +405,7 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				     struct v4l2_subdev_pad_config *cfg,
 #else
-				     struct v4l2_subdev_state *sd_state,
+				     struct v4l2_subdev_state *state,
 #endif
 				     struct v4l2_subdev_format *fmt)
 {
@@ -407,7 +413,7 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->which);
 #else
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 #endif
 
 	/* No propagation for non-zero pads. */
@@ -416,7 +422,7 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			__ipu_isys_get_ffmt(sd, cfg, 0, fmt->which);
 #else
-			__ipu_isys_get_ffmt(sd, sd_state, 0, fmt->which);
+			__ipu_isys_get_ffmt(sd, state, 0, fmt->which);
 #endif
 
 		ffmt->width = sink_ffmt->width;
@@ -437,7 +443,7 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 					     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
 					     fmt->pad, fmt->which);
 #else
-	return ipu_isys_subdev_fmt_propagate(sd, sd_state, &fmt->format, NULL,
+	return ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format, NULL,
 					     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
 					     fmt->pad, fmt->which);
 #endif
@@ -449,7 +455,7 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			       struct v4l2_subdev_pad_config *cfg,
 #else
-			       struct v4l2_subdev_state *sd_state,
+			       struct v4l2_subdev_state *state,
 #endif
 			       struct v4l2_subdev_format *fmt)
 {
@@ -458,7 +464,7 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->which);
 #else
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 #endif
 	u32 code = asd->supported_codes[fmt->pad][0];
 	unsigned int i;
@@ -482,7 +488,7 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	asd->set_ffmt(sd, cfg, fmt);
 #else
-	asd->set_ffmt(sd, sd_state, fmt);
+	asd->set_ffmt(sd, state, fmt);
 #endif
 
 	fmt->format = *ffmt;
@@ -496,7 +502,7 @@ int ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			     struct v4l2_subdev_pad_config *cfg,
 #else
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 #endif
 			     struct v4l2_subdev_format *fmt)
 {
@@ -507,7 +513,7 @@ int ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	rval = __ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
 #else
-	rval = __ipu_isys_subdev_set_ffmt(sd, sd_state, fmt);
+	rval = __ipu_isys_subdev_set_ffmt(sd, state, fmt);
 #endif
 	mutex_unlock(&asd->mutex);
 
@@ -520,7 +526,7 @@ int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			     struct v4l2_subdev_pad_config *cfg,
 #else
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 #endif
 			     struct v4l2_subdev_format *fmt)
 {
@@ -531,7 +537,7 @@ int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
 	fmt->format = *__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
 					   fmt->which);
 #else
-	fmt->format = *__ipu_isys_get_ffmt(sd, sd_state, fmt->pad,
+	fmt->format = *__ipu_isys_get_ffmt(sd, state, fmt->pad,
 					   fmt->which);
 #endif
 	mutex_unlock(&asd->mutex);
@@ -545,7 +551,7 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			    struct v4l2_subdev_pad_config *cfg,
 #else
-			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_state *state,
 #endif
 			    struct v4l2_subdev_selection *sel)
 {
@@ -565,7 +571,7 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 				__ipu_isys_get_ffmt(sd, cfg, sel->pad,
 						    sel->which);
 #else
-				__ipu_isys_get_ffmt(sd, sd_state, sel->pad,
+				__ipu_isys_get_ffmt(sd, state, sel->pad,
 						    sel->which);
 #endif
 
@@ -579,7 +585,7 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 			r = __ipu_isys_get_selection(sd, cfg, sel->target, 0,
 						     sel->which);
 #else
-			r = __ipu_isys_get_selection(sd, sd_state, sel->target, 0,
+			r = __ipu_isys_get_selection(sd, state, sel->target, 0,
 						     sel->which);
 #endif
 			tgt = IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP;
@@ -592,7 +598,7 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 			r = __ipu_isys_get_selection(sd, cfg, V4L2_SEL_TGT_CROP,
 						     sel->pad, sel->which);
 #else
-			r = __ipu_isys_get_selection(sd, sd_state, V4L2_SEL_TGT_CROP,
+			r = __ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
 						     sel->pad, sel->which);
 #endif
 			tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_COMPOSE;
@@ -602,7 +608,7 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 						     V4L2_SEL_TGT_COMPOSE, 0,
 						     sel->which);
 #else
-			r = __ipu_isys_get_selection(sd, sd_state,
+			r = __ipu_isys_get_selection(sd, state,
 						     V4L2_SEL_TGT_COMPOSE, 0,
 						     sel->which);
 #endif
@@ -621,9 +627,9 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 	return ipu_isys_subdev_fmt_propagate(sd, cfg, NULL, &sel->r, tgt,
 					     sel->pad, sel->which);
 #else
-	*__ipu_isys_get_selection(sd, sd_state, sel->target, sel->pad,
+	*__ipu_isys_get_selection(sd, state, sel->target, sel->pad,
 				  sel->which) = sel->r;
-	return ipu_isys_subdev_fmt_propagate(sd, sd_state, NULL, &sel->r, tgt,
+	return ipu_isys_subdev_fmt_propagate(sd, state, NULL, &sel->r, tgt,
 					     sel->pad, sel->which);
 #endif
 }
@@ -634,7 +640,7 @@ int ipu_isys_subdev_get_sel(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			    struct v4l2_subdev_pad_config *cfg,
 #else
-			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_state *state,
 #endif
 			    struct v4l2_subdev_selection *sel)
 {
@@ -645,7 +651,7 @@ int ipu_isys_subdev_get_sel(struct v4l2_subdev *sd,
 	sel->r = *__ipu_isys_get_selection(sd, cfg, sel->target,
 					   sel->pad, sel->which);
 #else
-	sel->r = *__ipu_isys_get_selection(sd, sd_state, sel->target,
+	sel->r = *__ipu_isys_get_selection(sd, state, sel->target,
 					   sel->pad, sel->which);
 #endif
 
@@ -658,7 +664,7 @@ int ipu_isys_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				   struct v4l2_subdev_pad_config *cfg,
 #else
-				   struct v4l2_subdev_state *sd_state,
+				   struct v4l2_subdev_state *state,
 #endif
 				   struct v4l2_subdev_mbus_code_enum *code)
 {

@@ -141,7 +141,7 @@ static void tpg_set_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			 struct v4l2_subdev_pad_config *cfg,
 #else
-			 struct v4l2_subdev_state *sd_state,
+			 struct v4l2_subdev_state *state,
 #endif
 			 struct v4l2_subdev_format *fmt)
 {
@@ -149,7 +149,7 @@ static void tpg_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	*__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->which) = fmt->format;
 #else
-	*__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which) = fmt->format;
+	*__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which) = fmt->format;
 #endif
 }
 
@@ -159,7 +159,7 @@ static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				 struct v4l2_subdev_pad_config *cfg,
 #else
-				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_state *state,
 #endif
 				 struct v4l2_subdev_format *fmt)
 {
@@ -173,7 +173,7 @@ static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	rval = __ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
 #else
-	rval = __ipu_isys_subdev_set_ffmt(sd, sd_state, fmt);
+	rval = __ipu_isys_subdev_set_ffmt(sd, state, fmt);
 #endif
 	mutex_unlock(&tpg->asd.mutex);
 

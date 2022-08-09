@@ -1,0 +1,16 @@
+diff --git a/drivers/gpio/gpio-ljca.c b/drivers/gpio/gpio-ljca.c
+index efaa690215bf..109173f39dd5 100644
+--- a/drivers/gpio/gpio-ljca.c
++++ b/drivers/gpio/gpio-ljca.c
+@@ -430,7 +430,7 @@ static int ljca_gpio_probe(struct platform_device *pdev)
+ 
+ 	ljca_gpio->gc.base = -1;
+ 	ljca_gpio->gc.ngpio = ljca_gpio->ctr_info->num;
+-	ljca_gpio->gc.label = "ljca-gpio";
++	ljca_gpio->gc.label = acpi_dev_name(ACPI_COMPANION(&pdev->dev));
+ 	ljca_gpio->gc.owner = THIS_MODULE;
+ 
+ 	platform_set_drvdata(pdev, ljca_gpio);
+-- 
+2.34.1
+

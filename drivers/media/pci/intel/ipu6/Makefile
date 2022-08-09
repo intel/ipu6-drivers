@@ -13,6 +13,9 @@ intel-ipu6-objs				+= ../ipu.o \
 					   ../ipu-cpd.o \
 					   ipu6.o \
 					   ../ipu-fw-com.o
+ifdef CONFIG_IPU_ISYS_BRIDGE
+intel-ipu6-objs				+= ../ipu-isys-bridge.o
+endif
 
 obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6.o
 

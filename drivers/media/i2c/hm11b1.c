@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2020-2021 Intel Corporation.
+// Copyright (c) 2020-2022 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -11,7 +11,12 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+#include <linux/clk.h>
+#include <linux/gpio/consumer.h>
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
 #include "power_ctrl_logic.h"
+#endif
 
 #define HM11B1_LINK_FREQ_384MHZ		384000000ULL
 #define HM11B1_SCLK			72000000LL
@@ -455,6 +460,20 @@ struct hm11b1 {
 	/* To serialize asynchronus callbacks */
 	struct mutex mutex;
 
+	/* i2c client */
+	struct i2c_client *client;
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	/* GPIO for reset */
+	struct gpio_desc *reset_gpio;
+	/* GPIO for powerdown */
+	struct gpio_desc *powerdown_gpio;
+	/* GPIO for clock enable */
+	struct gpio_desc *clken_gpio;
+	/* GPIO for privacy LED */
+	struct gpio_desc *pled_gpio;
+#endif
+
 	/* Streaming on/off */
 	bool streaming;
 };
@@ -482,9 +501,24 @@ static u64 to_pixels_per_line(u32 hts, u32 f_index)
 	return ppl;
 }
 
+static void hm11b1_set_power(struct hm11b1 *hm11b1, int on)
+{
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	if (!(hm11b1->reset_gpio && hm11b1->powerdown_gpio))
+		return;
+	gpiod_set_value_cansleep(hm11b1->reset_gpio, on);
+	gpiod_set_value_cansleep(hm11b1->powerdown_gpio, on);
+	gpiod_set_value_cansleep(hm11b1->clken_gpio, on);
+	gpiod_set_value_cansleep(hm11b1->pled_gpio, on);
+	msleep(20);
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	power_ctrl_logic_set_power(on);
+#endif
+}
+
 static int hm11b1_read_reg(struct hm11b1 *hm11b1, u16 reg, u16 len, u32 *val)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 	struct i2c_msg msgs[2];
 	u8 addr_buf[2];
 	u8 data_buf[4] = {0};
@@ -514,7 +548,7 @@ static int hm11b1_read_reg(struct hm11b1 *hm11b1, u16 reg, u16 len, u32 *val)
 
 static int hm11b1_write_reg(struct hm11b1 *hm11b1, u16 reg, u16 len, u32 val)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 	u8 buf[6];
 	int ret = 0;
 
@@ -534,7 +568,7 @@ static int hm11b1_write_reg(struct hm11b1 *hm11b1, u16 reg, u16 len, u32 val)
 static int hm11b1_write_reg_list(struct hm11b1 *hm11b1,
 				 const struct hm11b1_reg_list *r_list)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 	unsigned int i;
 	int ret = 0;
 
@@ -554,7 +588,7 @@ static int hm11b1_write_reg_list(struct hm11b1 *hm11b1,
 
 static int hm11b1_update_digital_gain(struct hm11b1 *hm11b1, u32 d_gain)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 	int ret = 0;
 
 	ret = hm11b1_write_reg(hm11b1, HM11B1_REG_DGTL_GAIN, 2, d_gain);
@@ -585,7 +619,7 @@ static int hm11b1_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct hm11b1 *hm11b1 = container_of(ctrl->handler,
 					     struct hm11b1, ctrl_handler);
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 	s64 exposure_max;
 	int ret = 0;
 
@@ -732,12 +766,12 @@ static void hm11b1_update_pad_format(const struct hm11b1_mode *mode,
 
 static int hm11b1_start_streaming(struct hm11b1 *hm11b1)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 	const struct hm11b1_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
 
-	power_ctrl_logic_set_power(1);
+	hm11b1_set_power(hm11b1, 1);
 	link_freq_index = hm11b1->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = hm11b1_write_reg_list(hm11b1, reg_list);
@@ -767,18 +801,18 @@ static int hm11b1_start_streaming(struct hm11b1 *hm11b1)
 
 static void hm11b1_stop_streaming(struct hm11b1 *hm11b1)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 
 	if (hm11b1_write_reg(hm11b1, HM11B1_REG_MODE_SELECT, 1,
 			     HM11B1_MODE_STANDBY))
 		dev_err(&client->dev, "failed to stop streaming");
-	power_ctrl_logic_set_power(0);
+	hm11b1_set_power(hm11b1, 0);
 }
 
 static int hm11b1_set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct hm11b1 *hm11b1 = to_hm11b1(sd);
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct i2c_client *client = hm11b1->client;
 	int ret = 0;
 
 	if (hm11b1->streaming == enable)
@@ -1002,7 +1036,7 @@ static const struct v4l2_subdev_internal_ops hm11b1_internal_ops = {
 
 static int hm11b1_identify_module(struct hm11b1 *hm11b1)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&hm11b1->sd);
+	struct i2c_client *client = hm11b1->client;
 	int ret;
 	u32 val;
 
@@ -1033,6 +1067,44 @@ static int hm11b1_remove(struct i2c_client *client)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+static int hm11b1_parse_dt(struct hm11b1 *hm11b1)
+{
+	struct device *dev = &hm11b1->client->dev;
+	int ret;
+
+	hm11b1->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(hm11b1->reset_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting reset gpio: %d\n", ret);
+		return ret;
+	}
+
+	hm11b1->powerdown_gpio = devm_gpiod_get(dev, "powerdown", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(hm11b1->powerdown_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting powerdown gpio: %d\n", ret);
+		return ret;
+	}
+
+	hm11b1->clken_gpio = devm_gpiod_get(dev, "clken", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(hm11b1->clken_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting clken_gpio gpio: %d\n", ret);
+		return ret;
+	}
+
+	hm11b1->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(hm11b1->pled_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting pled gpio: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+#endif
+
 static int hm11b1_probe(struct i2c_client *client)
 {
 	struct hm11b1 *hm11b1;
@@ -1041,14 +1113,23 @@ static int hm11b1_probe(struct i2c_client *client)
 	hm11b1 = devm_kzalloc(&client->dev, sizeof(*hm11b1), GFP_KERNEL);
 	if (!hm11b1)
 		return -ENOMEM;
+	hm11b1->client = client;
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	ret = hm11b1_parse_dt(hm11b1);
+	if (ret < 0)
+		return -EPROBE_DEFER;
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	if (power_ctrl_logic_set_power(1))
+		return -EPROBE_DEFER;
+#endif
+	hm11b1_set_power(hm11b1, 1);
 
 	v4l2_i2c_subdev_init(&hm11b1->sd, client, &hm11b1_subdev_ops);
-	power_ctrl_logic_set_power(0);
-	power_ctrl_logic_set_power(1);
 	ret = hm11b1_identify_module(hm11b1);
 	if (ret) {
 		dev_err(&client->dev, "failed to find sensor: %d", ret);
-		return ret;
+		goto probe_error_power_off;
 	}
 
 	mutex_init(&hm11b1->mutex);
@@ -1089,7 +1170,7 @@ static int hm11b1_probe(struct i2c_client *client)
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
 
-	power_ctrl_logic_set_power(0);
+	hm11b1_set_power(hm11b1, 0);
 	return 0;
 
 probe_error_media_entity_cleanup:
@@ -1099,6 +1180,8 @@ probe_error_v4l2_ctrl_handler_free:
 	v4l2_ctrl_handler_free(hm11b1->sd.ctrl_handler);
 	mutex_destroy(&hm11b1->mutex);
 
+probe_error_power_off:
+	hm11b1_set_power(hm11b1, 0);
 	return ret;
 }
 
