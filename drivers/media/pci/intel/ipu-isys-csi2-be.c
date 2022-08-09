@@ -96,7 +96,7 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				    struct v4l2_subdev_pad_config *cfg,
 #else
-				    struct v4l2_subdev_state *sd_state,
+				    struct v4l2_subdev_state *state,
 #endif
 				    struct v4l2_subdev_selection *sel)
 {
@@ -114,9 +114,9 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 
 #else
 		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd, sd_state, sel->pad, sel->which);
+			__ipu_isys_get_ffmt(sd, state, sel->pad, sel->which);
 		struct v4l2_rect *r = __ipu_isys_get_selection
-		    (sd, sd_state, sel->target, CSI2_BE_PAD_SINK, sel->which);
+		    (sd, state, sel->target, CSI2_BE_PAD_SINK, sel->which);
 
 #endif
 		if (get_supported_code_index(ffmt->code) < 0) {
@@ -147,10 +147,10 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP,
 		     sel->pad, sel->which);
 #else
-		*__ipu_isys_get_selection(sd, sd_state, sel->target,
-					sel->pad, sel->which) = sel->r;
+		*__ipu_isys_get_selection(sd, state, sel->target, sel->pad,
+					  sel->which) = sel->r;
 		ipu_isys_subdev_fmt_propagate
-		    (sd, sd_state, NULL, &sel->r,
+		    (sd, state, NULL, &sel->r,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP,
 		     sel->pad, sel->which);
 #endif
@@ -159,7 +159,7 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	return ipu_isys_subdev_set_sel(sd, cfg, sel);
 #else
-	return ipu_isys_subdev_set_sel(sd, sd_state, sel);
+	return ipu_isys_subdev_set_sel(sd, state, sel);
 #endif
 }
 
@@ -192,7 +192,7 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 			     struct v4l2_subdev_format *fmt)
 #else
 static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 			     struct v4l2_subdev_format *fmt)
 #endif
 {
@@ -203,7 +203,7 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 
 #else
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 
 #endif
 	switch (fmt->pad) {
@@ -218,7 +218,7 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT, fmt->pad, fmt->which);
 #else
 		ipu_isys_subdev_fmt_propagate
-		    (sd, sd_state, &fmt->format, NULL,
+		    (sd, state, &fmt->format, NULL,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT, fmt->pad, fmt->which);
 #endif
 		return;
@@ -233,10 +233,10 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 						 fmt->which);
 #else
 		struct v4l2_mbus_framefmt *sink_ffmt =
-			__ipu_isys_get_ffmt(sd, sd_state, CSI2_BE_PAD_SINK,
+			__ipu_isys_get_ffmt(sd, state, CSI2_BE_PAD_SINK,
 					    fmt->which);
 		struct v4l2_rect *r =
-			__ipu_isys_get_selection(sd, sd_state, V4L2_SEL_TGT_CROP,
+			__ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
 						 CSI2_BE_PAD_SOURCE,
 						 fmt->which);
 #endif

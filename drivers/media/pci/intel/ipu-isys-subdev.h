@@ -80,7 +80,7 @@ struct ipu_isys_subdev {
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			 struct v4l2_subdev_pad_config *cfg,
 #else
-			 struct v4l2_subdev_state *sd_state,
+			 struct v4l2_subdev_state *state,
 #endif
 			 struct v4l2_subdev_format *fmt);
 	struct {
@@ -102,7 +102,7 @@ struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
 					       struct v4l2_subdev_pad_config
 					       *cfg,
 #else
-					       struct v4l2_subdev_state *sd_state,
+					       struct v4l2_subdev_state *state,
 #endif
 					       unsigned int pad,
 					       unsigned int which);
@@ -119,7 +119,7 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				  struct v4l2_subdev_pad_config *cfg,
 #else
-				  struct v4l2_subdev_state *sd_state,
+				  struct v4l2_subdev_state *state,
 #endif
 				  struct v4l2_mbus_framefmt *ffmt,
 				  struct v4l2_rect *r,
@@ -132,7 +132,7 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				     struct v4l2_subdev_pad_config *cfg,
 #else
-				     struct v4l2_subdev_state *sd_state,
+				     struct v4l2_subdev_state *state,
 #endif
 				     struct v4l2_subdev_format *fmt);
 int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
@@ -141,7 +141,7 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			       struct v4l2_subdev_pad_config *cfg,
 #else
-			       struct v4l2_subdev_state *sd_state,
+			       struct v4l2_subdev_state *state,
 #endif
 			       struct v4l2_subdev_format *fmt);
 struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
@@ -150,7 +150,7 @@ struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 					   struct v4l2_subdev_pad_config *cfg,
 #else
-					   struct v4l2_subdev_state *sd_state,
+					   struct v4l2_subdev_state *state,
 #endif
 					   unsigned int target,
 					   unsigned int pad,
@@ -161,7 +161,7 @@ int ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			     struct v4l2_subdev_pad_config *cfg,
 #else
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 #endif
 			     struct v4l2_subdev_format *fmt);
 int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
@@ -170,21 +170,21 @@ int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			     struct v4l2_subdev_pad_config *cfg,
 #else
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 #endif
 			     struct v4l2_subdev_format *fmt);
 int ipu_isys_subdev_get_sel(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			    struct v4l2_subdev_pad_config *cfg,
 #else
-			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_state *state,
 #endif
 			    struct v4l2_subdev_selection *sel);
 int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			    struct v4l2_subdev_pad_config *cfg,
 #else
-			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_state *state,
 #endif
 			    struct v4l2_subdev_selection *sel);
 int ipu_isys_subdev_enum_mbus_code(struct v4l2_subdev *sd,
@@ -193,7 +193,7 @@ int ipu_isys_subdev_enum_mbus_code(struct v4l2_subdev *sd,
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				   struct v4l2_subdev_pad_config *cfg,
 #else
-				   struct v4l2_subdev_state *sd_state,
+				   struct v4l2_subdev_state *state,
 #endif
 				   struct v4l2_subdev_mbus_code_enum
 				   *code);

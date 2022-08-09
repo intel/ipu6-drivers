@@ -324,6 +324,9 @@ static const struct ov02c10_reg sensor_1932x1092_1lane_30fps_setting[] = {
 	{0x394d, 0x08},
 	{0x394c, 0x06},
 	{0x394b, 0x06},
+	// OV update below two regs to improve white dots
+	{0x3774, 0x18},
+	{0x3776, 0x08},
 	// key setting for MCLK=19.2MCLK 1932x1092 GRBG 1 lane 30fps
 	{0x0303, 0x05},
 	{0x0305, 0x90},

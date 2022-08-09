@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2020 Intel Corporation */
+/* Copyright (C) 2013 - 2022 Intel Corporation */
 
 #ifndef IPU_ISYS_VIDEO_H
 #define IPU_ISYS_VIDEO_H
@@ -47,7 +47,7 @@ struct ipu_isys_pipeline {
 	atomic_t sequence;
 	unsigned int seq_index;
 	struct sequence_info seq[IPU_ISYS_MAX_PARALLEL_SOF];
-	int source;	/* SSI stream source */
+	int source;	/* SSI stream source, sensor's source pad */
 	int stream_handle;	/* stream handle for CSS API */
 	unsigned int nr_output_pins;	/* How many firmware pins? */
 	enum ipu_isl_mode isl_mode;
