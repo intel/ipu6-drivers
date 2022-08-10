@@ -11,7 +11,7 @@ Alder Lake platforms. There are 4 repositories that provide the complete setup:
 
 ## Content of this repository:
 - IPU6 kernel driver
-- Drivers for HM11B1, OV01A1S, OV01A10 and OV02C10 sensors
+- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10 and OV2740 sensors
 
 ## Build instructions:
 Three ways are available:
@@ -23,7 +23,7 @@ Three ways are available:
 - Tested with kernel 5.15
 - Check out kernel
 - Patch the diff files in `patch` folder
-- Copy repo content to kernel source
+- Copy repo content to kernel source (except Makefile and drivers/media/i2c/{Kconfig,Makefile}, will change manually)
 - Modify related Kconfig and Makefile
 - Add config in LinuxRoot/drivers/media/i2c/Kconfig *(for kernel 5.18+, use `VIDEO_DEV` instead of `VIDEO_V4L2` in `depends on` section)*
 	```conf
@@ -41,7 +41,6 @@ Three ways are available:
 
 	config VIDEO_OV01A1S
 		tristate "OmniVision OV01A1S sensor support"
-		depends on POWER_CTRL_LOGIC
 		depends on VIDEO_V4L2 && I2C
 		depends on ACPI || COMPILE_TEST
 		select MEDIA_CONTROLLER
@@ -56,7 +55,6 @@ Three ways are available:
 
 	config VIDEO_HM11B1
 		tristate "Himax HM11B1 sensor support"
-		depends on POWER_CTRL_LOGIC
 		depends on VIDEO_V4L2 && I2C
 		select MEDIA_CONTROLLER
 		select VIDEO_V4L2_SUBDEV_API

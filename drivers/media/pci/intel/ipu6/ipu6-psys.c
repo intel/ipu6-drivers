@@ -1034,7 +1034,3 @@ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
 
 	return 0;
 }
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
-MODULE_IMPORT_NS(DMA_BUF);
-#endif

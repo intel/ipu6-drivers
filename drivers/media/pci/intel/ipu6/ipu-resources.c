@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2015 - 2020 Intel Corporation
+// Copyright (C) 2015 - 2022 Intel Corporation
 
 #include <linux/bitmap.h>
 #include <linux/errno.h>
@@ -33,7 +33,6 @@ void ipu6_psys_hw_res_variant_init(void)
 	hw_var.set_proc_ext_mem = ipu6_fw_psys_set_process_ext_mem;
 	hw_var.get_pgm_by_proc =
 		ipu6_fw_psys_get_program_manifest_by_process;
-	return;
 }
 
 static const struct ipu_fw_resource_definitions *get_res(void)
@@ -243,7 +242,7 @@ static int __alloc_one_resrc(const struct device *dev,
 	const u16 resource_offset_req = pm->dev_chn_offset[resource_id];
 	unsigned long retl;
 
-	if (resource_req <= 0)
+	if (!resource_req)
 		return -ENXIO;
 
 	if (alloc->resources >= IPU_MAX_RESOURCES) {
@@ -284,7 +283,7 @@ static int ipu_psys_allocate_one_dfm(const struct device *dev,
 	struct ipu_resource_alloc *alloc_resource;
 	unsigned long p = 0;
 
-	if (dfm_bitmap_req == 0)
+	if (!dfm_bitmap_req)
 		return -ENXIO;
 
 	if (alloc->resources >= IPU_MAX_RESOURCES) {
@@ -345,7 +344,7 @@ static int __alloc_mem_resrc(const struct device *dev,
 
 	unsigned long retl;
 
-	if (memory_resource_req <= 0)
+	if (!memory_resource_req)
 		return -ENXIO;
 
 	if (alloc->resources >= IPU_MAX_RESOURCES) {
@@ -488,7 +487,10 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 				ret = __alloc_one_resrc(dev, process,
 							&pool->dev_channels[id],
 							&pm, id, alloc);
-				if (ret && ret != -ENXIO)
+				if (ret == -ENXIO)
+					continue;
+
+				if (ret)
 					goto free_out;
 			}
 		}
@@ -498,7 +500,10 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 				ret = ipu_psys_allocate_one_dfm
 					(dev, process,
 					 &pool->dfms[id], &pm, id, alloc);
-				if (ret && ret != -ENXIO)
+				if (ret == -ENXIO)
+					continue;
+
+				if (ret)
 					goto free_out;
 			}
 		}
@@ -522,12 +527,15 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 							&pool->ext_memory[bank],
 							&pm, mem_type_id, bank,
 							alloc);
-				if (ret && ret != -ENXIO)
+				if (ret == -ENXIO)
+					continue;
+
+				if (ret)
 					goto free_out;
 			}
 		}
 	}
-	alloc->cells |= cells;
+
 	pool->cells |= cells;
 
 	kfree(alloc);

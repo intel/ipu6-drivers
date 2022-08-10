@@ -2,13 +2,14 @@
 # Copyright (c) 2021 Intel Corporation.
 
 export CONFIG_VIDEO_INTEL_IPU6 = m
+export CONFIG_IPU_ISYS_BRIDGE = y
 obj-y += drivers/media/pci/intel/
 
 export CONFIG_VIDEO_HM11B1 = m
 export CONFIG_VIDEO_OV01A1S = m
 export CONFIG_VIDEO_OV01A10 = m
 export CONFIG_VIDEO_OV02C10 = m
-export CONFIG_POWER_CTRL_LOGIC = m
+export CONFIG_VIDEO_OV2740 = m
 obj-y += drivers/media/i2c/
 
 KERNELRELEASE ?= $(shell uname -r)
