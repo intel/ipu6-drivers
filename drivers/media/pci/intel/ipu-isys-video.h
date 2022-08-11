@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2022 Intel Corporation */
+/* Copyright (C) 2013 - 2020 Intel Corporation */
 
 #ifndef IPU_ISYS_VIDEO_H
 #define IPU_ISYS_VIDEO_H
@@ -47,13 +47,16 @@ struct ipu_isys_pipeline {
 	atomic_t sequence;
 	unsigned int seq_index;
 	struct sequence_info seq[IPU_ISYS_MAX_PARALLEL_SOF];
-	int source;	/* SSI stream source, sensor's source pad */
+	int source;	/* SSI stream source */
 	int stream_handle;	/* stream handle for CSS API */
 	unsigned int nr_output_pins;	/* How many firmware pins? */
 	enum ipu_isl_mode isl_mode;
 	struct ipu_isys_csi2_be *csi2_be;
 	struct ipu_isys_csi2_be_soc *csi2_be_soc;
 	struct ipu_isys_csi2 *csi2;
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	struct ipu_isys_tpg *tpg;
+#endif
 
 	/*
 	 * Number of capture queues, write access serialised using struct
@@ -87,19 +90,16 @@ struct ipu_isys_pipeline {
 	spinlock_t short_packet_queue_lock;
 	struct list_head pending_interlaced_bufs;
 	unsigned int short_packet_trace_index;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	unsigned int vc;
+	unsigned int stream_id;
 	struct media_graph graph;
-#else
-	struct media_entity_graph graph;
-#endif
-#endif
 	struct media_entity_enum entity_enum;
 };
 
 #define to_ipu_isys_pipeline(__pipe)				\
 	container_of((__pipe), struct ipu_isys_pipeline, pipe)
 
+#if defined(IPU_IWAKE_ENABLE)
 struct video_stream_watermark {
 	u32 width;
 	u32 height;
@@ -110,6 +110,7 @@ struct video_stream_watermark {
 	u64 stream_data_rate;
 	struct list_head stream_node;
 };
+#endif
 
 struct ipu_isys_video {
 	/* Serialise access to other fields in the struct. */
@@ -123,15 +124,20 @@ struct ipu_isys_video {
 	struct ipu_isys *isys;
 	struct ipu_isys_pipeline ip;
 	unsigned int streaming;
+	unsigned int reset;
 	bool packed;
+#if defined(IPU_ISYS_COMPRESSION)
 	bool compression;
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_ctrl *compression_ctrl;
 	unsigned int ts_offsets[VIDEO_MAX_PLANES];
+#endif
 	unsigned int line_header_length;	/* bits */
 	unsigned int line_footer_length;	/* bits */
 
+#if defined(IPU_IWAKE_ENABLE)
 	struct video_stream_watermark *watermark;
+#endif
 
 	const struct ipu_isys_pixelformat *
 		(*try_fmt_vid_mplane)(struct ipu_isys_video *av,

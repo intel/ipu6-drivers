@@ -1,0 +1,68 @@
+# Copyright (C) 2020 Intel Corporation
+# SPDX-License-Identifier: GPL-2.0-only
+
+config INTEL_TSENS_LOCAL_HOST
+	bool "Temperature sensor driver for intel tsens"
+	select THERMAL
+	help
+	  This option enables tsens thermal local Host driver.
+
+	  This driver is used for reporting thermal data via thermal
+	  framework.
+	  Enable this option if you want to have support for thermal
+	  management controller.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
+
+config INTEL_TSENS_I2C_SLAVE
+	bool "I2C slave driver for intel tsens"
+	depends on INTEL_TSENS_LOCAL_HOST
+	select I2C
+	select I2C_SLAVE
+	help
+	  This option enables tsens i2c slave driver.
+
+	  This driver is used for reporting thermal data via I2C
+	  SMBUS to remote host.
+	  Enable this option if you want to have support for thermal
+	  management controller
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
+
+config KEEMBAY_THERMAL
+	tristate "Temperature sensor driver for intel Keem Bay"
+	depends on INTEL_TSENS_LOCAL_HOST && ARCH_KEEMBAY
+	help
+	  Enable this option if you want to have support for Keem Bay
+	  thermal management sensors.
+
+	  This driver is used for reading onchip temperature sensor
+	  values from Keem Bay SoC.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
+config INTEL_TSENS_IA_HOST
+	tristate "Temperature sensor driver for intel tsens remote host"
+	depends on I2C && THERMAL
+	depends on I2C_SMBUS
+	help
+	  This option enables tsens i2c and thermal local Host driver.
+
+	  This driver is used for reading thermal data via I2C SMBUS
+	  and registers itself to thermal framework, which can be
+	  used by thermal daemon in remote IA host
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.
+
+config MOVIDIUS_VPU_COOLING
+	tristate "Movidius VPU Cooling Driver"
+	depends on KEEMBAY_THERMAL
+	help
+	  Enable this option if you want to have support for vpu cooling
+	  driver for Movidius VPU
+
+	  Movidius VPU coooling driver is registered as one of the
+	  cooling agent to thermal framework. This driver communicates
+	  with vpu to get/set power modes based on the thermal driver
+	  requested states.
+	  Say Y if using a processor that includes the Intel VPU such as
+	  Keem Bay.  If unsure, say N.

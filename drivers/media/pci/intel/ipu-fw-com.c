@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2020 Intel Corporation
 
 #include <asm/cacheflush.h>
 
@@ -10,7 +10,6 @@
 #include <linux/dma-mapping.h>
 
 #include "ipu.h"
-#include "ipu-trace.h"
 #include "ipu-fw-com.h"
 #include "ipu-bus.h"
 
@@ -263,12 +262,8 @@ void *ipu_fw_com_prepare(struct ipu_fw_com_cfg *cfg,
 
 	ctx->dma_buffer = dma_alloc_attrs(&ctx->adev->dev, sizeall,
 					  &ctx->dma_addr, GFP_KERNEL,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 					  attrs);
 	ctx->attrs = attrs;
-#else
-					  NULL);
-#endif
 	if (!ctx->dma_buffer) {
 		dev_err(&ctx->adev->dev, "failed to allocate dma memory\n");
 		kfree(ctx);
@@ -340,15 +335,11 @@ EXPORT_SYMBOL_GPL(ipu_fw_com_prepare);
 
 int ipu_fw_com_open(struct ipu_fw_com_context *ctx)
 {
-	dma_addr_t trace_buff = TUNIT_MAGIC_PATTERN;
-
 	/*
-	 * Write trace buff start addr to tunit cfg reg.
-	 * This feature is used to enable tunit trace in secure mode.
+	 * Disable tunit configuration by FW.
+	 * This feature is used to configure tunit in secure mode.
 	 */
-	ipu_trace_buffer_dma_handle(&ctx->adev->dev, &trace_buff);
-	writel(trace_buff, ctx->dmem_addr + TUNIT_CFG_DWR_REG * 4);
-
+	writel(TUNIT_MAGIC_PATTERN, ctx->dmem_addr + TUNIT_CFG_DWR_REG * 4);
 	/* Check if SP is in valid state */
 	if (!ctx->cell_ready(ctx->adev))
 		return -EIO;
@@ -400,11 +391,7 @@ int ipu_fw_com_release(struct ipu_fw_com_context *ctx, unsigned int force)
 
 	dma_free_attrs(&ctx->adev->dev, ctx->dma_size,
 		       ctx->dma_buffer, ctx->dma_addr,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 		       ctx->attrs);
-#else
-		       NULL);
-#endif
 	kfree(ctx);
 	return 0;
 }

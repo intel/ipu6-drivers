@@ -93,9 +93,8 @@ static int ipu6_csi2_phy_power_set(struct ipu_isys *isys,
 			return ret;
 
 		ipu6_isys_phy_reset(isys, phy_id, 0);
-		ipu6_isys_phy_common_init(isys);
-
-		ret = ipu6_isys_phy_config(isys);
+		ipu6_isys_phy_common_init(isys, cfg);
+		ret = ipu6_isys_phy_config(isys, cfg);
 		if (ret)
 			return ret;
 
@@ -470,6 +469,7 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 void ipu_isys_csi2_isr(struct ipu_isys_csi2 *csi2)
 {
 	u32 status;
+	unsigned int i;
 
 	ipu6_isys_register_errors(csi2);
 
@@ -479,10 +479,13 @@ void ipu_isys_csi2_isr(struct ipu_isys_csi2 *csi2)
 	writel(status, csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 	       CSI_PORT_REG_BASE_IRQ_CLEAR_OFFSET);
 
-	if (status & IPU_CSI_RX_IRQ_FS_VC)
-		ipu_isys_csi2_sof_event(csi2);
-	if (status & IPU_CSI_RX_IRQ_FE_VC)
-		ipu_isys_csi2_eof_event(csi2);
+	for (i = 0; i < NR_OF_CSI2_VC; i++) {
+		if (status & IPU_CSI_RX_IRQ_FS_VC(i))
+			ipu_isys_csi2_sof_event(csi2, i);
+
+		if (status & IPU_CSI_RX_IRQ_FE_VC(i))
+			ipu_isys_csi2_eof_event(csi2, i);
+	}
 }
 
 unsigned int ipu_isys_csi2_get_current_field(struct ipu_isys_pipeline *ip,

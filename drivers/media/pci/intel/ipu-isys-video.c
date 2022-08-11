@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2021 Intel Corporation
 
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -10,18 +10,12 @@
 #include <linux/version.h>
 #include <linux/compat.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-#include <linux/sched.h>
-#else
 #include <uapi/linux/sched/types.h>
-#endif
 
 #include <media/media-entity.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #include <media/v4l2-mc.h>
-#endif
 
 #include "ipu.h"
 #include "ipu-bus.h"
@@ -35,8 +29,10 @@
 #include "ipu-fw-isys.h"
 #include "ipu-fw-com.h"
 
+#if defined(IPU_IWAKE_ENABLE)
 /* use max resolution pixel rate by default */
 #define DEFAULT_PIXEL_RATE	(360000000ULL * 2 * 4 / 10)
+#endif
 
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
@@ -47,6 +43,10 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
 	{V4L2_PIX_FMT_NV16, 16, 16, 8, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_NV16},
+#ifdef IPU_ISYS_YUV422_I420
+	{V4L2_PIX_FMT_YUV420, 12, 0, 8, MEDIA_BUS_FMT_UYVY8_2X8,
+	 IPU_FW_ISYS_FRAME_FORMAT_YUV420},
+#endif
 	{V4L2_PIX_FMT_XRGB32, 32, 32, 0, MEDIA_BUS_FMT_RGB565_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	{V4L2_PIX_FMT_XBGR32, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
@@ -138,6 +138,11 @@ static int video_open(struct file *file)
 	struct ipu_isys *isys = av->isys;
 	struct ipu_bus_device *adev = to_ipu_bus_device(&isys->adev->dev);
 	struct ipu_device *isp = adev->isp;
+#ifdef IPU_IRQ_POLL
+	const struct sched_param param = {
+			.sched_priority = MAX_USER_RT_PRIO / 2,
+	};
+#endif
 	int rval;
 	const struct ipu_isys_internal_pdata *ipdata;
 
@@ -160,13 +165,7 @@ static int video_open(struct file *file)
 	if (rval)
 		goto out_power_down;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-	rval = ipu_pipeline_pm_use(&av->vdev.entity, 1);
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-	rval = v4l2_pipeline_pm_use(&av->vdev.entity, 1);
-#else
 	rval = v4l2_pipeline_pm_get(&av->vdev.entity);
-#endif
 	if (rval)
 		goto out_v4l2_fh_release;
 
@@ -200,6 +199,19 @@ static int video_open(struct file *file)
 		ipu_fw_isys_cleanup(isys);
 	}
 
+#ifdef IPU_IRQ_POLL
+	isys->isr_thread = kthread_run(ipu_isys_isr_run,
+				       av->isys,
+				       IPU_ISYS_ENTITY_PREFIX);
+
+	if (IS_ERR(isys->isr_thread)) {
+		rval = PTR_ERR(isys->isr_thread);
+		goto out_ipu_pipeline_pm_use;
+	}
+
+	sched_setscheduler(isys->isr_thread, SCHED_FIFO, &param);
+#endif
+
 	rval = ipu_fw_isys_init(av->isys, ipdata->num_parallel_streams);
 	if (rval < 0)
 		goto out_lib_init;
@@ -209,15 +221,14 @@ static int video_open(struct file *file)
 	return 0;
 
 out_lib_init:
+#ifdef IPU_IRQ_POLL
+	kthread_stop(isys->isr_thread);
+
+out_ipu_pipeline_pm_use:
+#endif /* IPU_IRQ_POLL */
 	isys->video_opened--;
 	mutex_unlock(&isys->mutex);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-	ipu_pipeline_pm_use(&av->vdev.entity, 0);
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-	v4l2_pipeline_pm_use(&av->vdev.entity, 0);
-#else
 	v4l2_pipeline_pm_put(&av->vdev.entity);
-#endif
 
 out_v4l2_fh_release:
 	v4l2_fh_release(file);
@@ -232,11 +243,29 @@ static int video_release(struct file *file)
 	struct ipu_isys_video *av = video_drvdata(file);
 	int ret = 0;
 
+	dev_dbg(&av->isys->adev->dev, "release: %s: enter\n",
+		av->vdev.name);
 	vb2_fop_release(file);
+
+	mutex_lock(&av->isys->reset_mutex);
+	while (av->isys->in_reset) {
+		mutex_unlock(&av->isys->reset_mutex);
+		dev_dbg(&av->isys->adev->dev, "release: %s: wait for reset\n",
+			av->vdev.name
+		);
+		usleep_range(10000, 11000);
+		mutex_lock(&av->isys->reset_mutex);
+	}
+	mutex_unlock(&av->isys->reset_mutex);
 
 	mutex_lock(&av->isys->mutex);
 
 	if (!--av->isys->video_opened) {
+#ifdef IPU_IRQ_POLL
+		kthread_stop(av->isys->isr_thread);
+#endif
+	dev_dbg(&av->isys->adev->dev, "release: %s: close fw\n",
+		av->vdev.name);
 		ipu_fw_isys_close(av->isys);
 		if (av->isys->fwcom) {
 			av->isys->reset_needed = true;
@@ -246,23 +275,18 @@ static int video_release(struct file *file)
 
 	mutex_unlock(&av->isys->mutex);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-	ipu_pipeline_pm_use(&av->vdev.entity, 0);
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-	v4l2_pipeline_pm_use(&av->vdev.entity, 0);
-#else
 	v4l2_pipeline_pm_put(&av->vdev.entity);
-#endif
 
 	if (av->isys->reset_needed)
 		pm_runtime_put_sync(&av->isys->adev->dev);
 	else
 		pm_runtime_put(&av->isys->adev->dev);
 
+	dev_dbg(&av->isys->adev->dev, "release: %s: exit\n",
+		av->vdev.name);
 	return ret;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 static struct media_pad *other_pad(struct media_pad *pad)
 {
 	struct media_link *link;
@@ -278,18 +302,11 @@ static struct media_pad *other_pad(struct media_pad *pad)
 	WARN_ON(1);
 	return NULL;
 }
-#endif
 
 const struct ipu_isys_pixelformat *
 ipu_isys_get_pixelformat(struct ipu_isys_video *av, u32 pixelformat)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-	struct media_pad *pad =
-	    av->vdev.entity.pads[0].flags & MEDIA_PAD_FL_SOURCE ?
-	    av->vdev.entity.links[0].sink : av->vdev.entity.links[0].source;
-#else
 	struct media_pad *pad = other_pad(&av->vdev.entity.pads[0]);
-#endif
 	struct v4l2_subdev *sd;
 	const u32 *supported_codes;
 	const struct ipu_isys_pixelformat *pfmt;
@@ -340,13 +357,7 @@ int ipu_isys_vidioc_enum_fmt(struct file *file, void *fh,
 			     struct v4l2_fmtdesc *f)
 {
 	struct ipu_isys_video *av = video_drvdata(file);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-	struct media_pad *pad =
-	    av->vdev.entity.pads[0].flags & MEDIA_PAD_FL_SOURCE ?
-	    av->vdev.entity.links[0].sink : av->vdev.entity.links[0].source;
-#else
 	struct media_pad *pad = other_pad(&av->vdev.entity.pads[0]);
-#endif
 	struct v4l2_subdev *sd;
 	const u32 *supported_codes;
 	const struct ipu_isys_pixelformat *pfmt;
@@ -456,6 +467,7 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 		    max(mpix->plane_fmt[0].bytesperline,
 			av->isys->pdata->ipdata->isys_dma_overshoot)), 1U);
 
+#if defined(IPU_ISYS_COMPRESSION)
 	if (av->compression_ctrl)
 		av->compression = v4l2_ctrl_g_ctrl(av->compression_ctrl);
 
@@ -492,6 +504,7 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 			mpix->plane_fmt[0].bytesperline, mpix->height,
 			av->ts_offsets[0], tile_status_size);
 	}
+#endif
 
 	memset(mpix->plane_fmt[0].reserved, 0,
 	       sizeof(mpix->plane_fmt[0].reserved));
@@ -583,6 +596,9 @@ static int vidioc_s_input(struct file *file, void *fh, unsigned int input)
 static bool is_external(struct ipu_isys_video *av, struct media_entity *entity)
 {
 	struct v4l2_subdev *sd;
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	unsigned int i;
+#endif
 
 	/* All video nodes are ours. */
 	if (!is_media_entity_v4l2_subdev(entity))
@@ -592,6 +608,13 @@ static bool is_external(struct ipu_isys_video *av, struct media_entity *entity)
 	if (strncmp(sd->name, IPU_ISYS_ENTITY_PREFIX,
 		    strlen(IPU_ISYS_ENTITY_PREFIX)) != 0)
 		return true;
+
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	for (i = 0; i < av->isys->pdata->ipdata->tpg.ntpgs &&
+	     av->isys->tpg[i].isys; i++)
+		if (entity == &av->isys->tpg[i].asd.sd.entity)
+			return true;
+#endif
 
 	return false;
 }
@@ -603,6 +626,12 @@ static int link_validate(struct media_link *link)
 	/* All sub-devices connected to a video node are ours. */
 	struct ipu_isys_pipeline *ip =
 		to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct v4l2_subdev_route r[IPU_ISYS_MAX_STREAMS];
+	struct v4l2_subdev_routing routing = {
+		.routes = r,
+		.num_routes = IPU_ISYS_MAX_STREAMS,
+	};
+	int i, rval, active = 0;
 	struct v4l2_subdev *sd;
 
 	if (!link->source->entity)
@@ -613,6 +642,32 @@ static int link_validate(struct media_link *link)
 		ip->source = to_ipu_isys_subdev(sd)->source;
 	}
 
+	rval = v4l2_subdev_call(sd, pad, get_routing, &routing);
+	if (rval)
+		goto err_subdev;
+
+	for (i = 0; i < routing.num_routes; i++) {
+		if (!(routing.routes[i].flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE))
+			continue;
+
+		if (routing.routes[i].source_pad == link->source->index)
+			ip->stream_id = routing.routes[i].sink_stream;
+
+		active++;
+	}
+
+	if (ip->external) {
+		struct v4l2_mbus_frame_desc desc = {
+			.num_entries = V4L2_FRAME_DESC_ENTRY_MAX,
+		};
+
+		sd = media_entity_to_v4l2_subdev(ip->external->entity);
+		rval = ipu_isys_subdev_get_frame_desc(sd, &desc);
+		if (!rval && ip->stream_id < desc.num_entries)
+			ip->vc = desc.entry[ip->stream_id].bus.csi2.channel;
+	}
+
+err_subdev:
 	ip->nr_queues++;
 
 	return 0;
@@ -694,6 +749,7 @@ static int get_external_facing_format(struct ipu_isys_pipeline *ip,
 
 	format->which = V4L2_SUBDEV_FORMAT_ACTIVE;
 	format->pad = 0;
+	format->stream = ip->stream_id;
 	sd = media_entity_to_v4l2_subdev(external_facing->entity);
 
 	return v4l2_subdev_call(sd, pad, get_fmt, NULL, format);
@@ -702,43 +758,16 @@ static int get_external_facing_format(struct ipu_isys_pipeline *ip,
 static void short_packet_queue_destroy(struct ipu_isys_pipeline *ip)
 {
 	struct ipu_isys_video *av = container_of(ip, struct ipu_isys_video, ip);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-	struct dma_attrs attrs;
-#else
-	unsigned long attrs;
-#endif
-#endif
 	unsigned int i;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-	init_dma_attrs(&attrs);
-	dma_set_attr(DMA_ATTR_NON_CONSISTENT, &attrs);
-#else
-	attrs = DMA_ATTR_NON_CONSISTENT;
-#endif
-#endif
 	if (!ip->short_packet_bufs)
 		return;
 	for (i = 0; i < IPU_ISYS_SHORT_PACKET_BUFFER_NUM; i++) {
 		if (ip->short_packet_bufs[i].buffer)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 			dma_free_coherent(&av->isys->adev->dev,
 					  ip->short_packet_buffer_size,
 					  ip->short_packet_bufs[i].buffer,
 					  ip->short_packet_bufs[i].dma_addr);
-#else
-			dma_free_attrs(&av->isys->adev->dev,
-				       ip->short_packet_buffer_size,
-				       ip->short_packet_bufs[i].buffer,
-				       ip->short_packet_bufs[i].dma_addr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-				       &attrs);
-#else
-				       attrs);
-#endif
-#endif
 	}
 	kfree(ip->short_packet_bufs);
 	ip->short_packet_bufs = NULL;
@@ -748,13 +777,6 @@ static int short_packet_queue_setup(struct ipu_isys_pipeline *ip)
 {
 	struct ipu_isys_video *av = container_of(ip, struct ipu_isys_video, ip);
 	struct v4l2_subdev_format source_fmt = { 0 };
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-	struct dma_attrs attrs;
-#else
-	unsigned long attrs;
-#endif
-#endif
 	unsigned int i;
 	int rval;
 	size_t buf_size;
@@ -778,14 +800,6 @@ static int short_packet_queue_setup(struct ipu_isys_pipeline *ip)
 	/* Initialize short packet queue. */
 	INIT_LIST_HEAD(&ip->short_packet_incoming);
 	INIT_LIST_HEAD(&ip->short_packet_active);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-	init_dma_attrs(&attrs);
-	dma_set_attr(DMA_ATTR_NON_CONSISTENT, &attrs);
-#else
-	attrs = DMA_ATTR_NON_CONSISTENT;
-#endif
-#endif
 
 	ip->short_packet_bufs =
 	    kzalloc(sizeof(struct ipu_isys_private_buffer) *
@@ -800,18 +814,8 @@ static int short_packet_queue_setup(struct ipu_isys_pipeline *ip)
 		buf->ip = ip;
 		buf->ib.type = IPU_ISYS_SHORT_PACKET_BUFFER;
 		buf->bytesused = buf_size;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 		buf->buffer = dma_alloc_coherent(&av->isys->adev->dev, buf_size,
 						 &buf->dma_addr, GFP_KERNEL);
-#else
-		buf->buffer = dma_alloc_attrs(&av->isys->adev->dev, buf_size,
-					      &buf->dma_addr, GFP_KERNEL,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-					      &attrs);
-#else
-					      attrs);
-#endif
-#endif
 		if (!buf->buffer) {
 			short_packet_queue_destroy(ip);
 			return -ENOMEM;
@@ -902,10 +906,13 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 	    S2M_PIXEL_SOC_PIXEL_REMAPPING_FLAG_NO_REMAPPING;
 	pin_info->csi_be_soc_pixel_remapping =
 	    CSI_BE_SOC_PIXEL_REMAPPING_FLAG_NO_REMAPPING;
-	cfg->vc = 0;
+	cfg->vc = ip->vc;
 
 	switch (pin_info->pt) {
 	/* non-snoopable sensor data to PSYS */
+#ifdef IPU_ISYS_YUV422_I420
+	case IPU_FW_ISYS_PIN_TYPE_RAW_DUAL_SOC:
+#endif
 	case IPU_FW_ISYS_PIN_TYPE_RAW_NS:
 		type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
 		pin_info->sensor_type = isys->sensor_types[type_index]++;
@@ -924,6 +931,7 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 		pin_info->snoopable = true;
 		pin_info->error_handling_enable = false;
 		break;
+#if defined(IPU_ISYS_COMPRESSION)
 	case IPU_FW_ISYS_PIN_TYPE_RAW_SOC:
 		if (av->compression) {
 			type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
@@ -947,6 +955,9 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 					isys->sensor_info.vc0_data_start;
 		}
 		break;
+#else
+	case IPU_FW_ISYS_PIN_TYPE_RAW_SOC:
+#endif
 	case IPU_FW_ISYS_PIN_TYPE_MIPI:
 		type_index = IPU_FW_ISYS_VC0_SENSOR_DATA;
 		pin_info->sensor_type = isys->sensor_types[type_index]++;
@@ -967,11 +978,13 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 		pin_info->snoopable = true;
 		pin_info->error_handling_enable = false;
 	}
+#if defined(IPU_ISYS_COMPRESSION)
 	if (av->compression) {
 		pin_info->payload_buf_size = av->mpix.plane_fmt[0].sizeimage;
 		pin_info->reserve_compression = av->compression;
 		pin_info->ts_offsets[0] = av->ts_offsets[0];
 	}
+#endif
 }
 
 static unsigned int ipu_isys_get_compression_scheme(u32 code)
@@ -1064,6 +1077,11 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	if (ip->csi2 && !v4l2_ctrl_g_ctrl(ip->csi2->store_csi2_header))
 		stream_cfg->input_pins[0].mipi_store_mode =
 		    IPU_FW_ISYS_MIPI_STORE_MODE_DISCARD_LONG_HEADER;
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	else if (ip->tpg && !v4l2_ctrl_g_ctrl(ip->tpg->store_csi2_header))
+		stream_cfg->input_pins[0].mipi_store_mode =
+		    IPU_FW_ISYS_MIPI_STORE_MODE_DISCARD_LONG_HEADER;
+#endif
 
 	stream_cfg->src = ip->source;
 	stream_cfg->vc = 0;
@@ -1275,7 +1293,7 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
-					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET);
 	if (!tout)
 		dev_err(dev, "stream stop time out\n");
 	else if (ip->error)
@@ -1301,7 +1319,7 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	}
 
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
-					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+					   IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET);
 	if (!tout)
 		dev_err(dev, "stream close time out\n");
 	else if (ip->error)
@@ -1345,11 +1363,7 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	struct ipu_isys *isys = av->isys;
 	struct device *dev = &isys->adev->dev;
 	struct ipu_isys_pipeline *ip;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	struct media_graph graph;
-#else
-	struct media_entity_graph graph;
-#endif
 	struct media_entity *entity;
 	struct media_device *mdev = &av->isys->media_dev;
 	int rval;
@@ -1382,6 +1396,9 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->csi2_be = NULL;
 	ip->csi2_be_soc = NULL;
 	ip->csi2 = NULL;
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	ip->tpg = NULL;
+#endif
 	ip->seq_index = 0;
 	memset(ip->seq, 0, sizeof(ip->seq));
 
@@ -1410,7 +1427,11 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
-	media_graph_walk_start(&graph, &av->vdev.entity);
+	/*
+	 * media_graph_walk_start checks pad instead of entity if virtual
+	 * channel is enabled.
+	 */
+	media_graph_walk_start(&graph, &av->vdev.entity.pads[0]);
 	while ((entity = media_graph_walk_next(&graph)))
 		media_entity_enum_set(&ip->entity_enum, entity);
 
@@ -1441,6 +1462,7 @@ out_enum_cleanup:
 	return rval;
 }
 
+#if defined(IPU_IWAKE_ENABLE)
 static void configure_stream_watermark(struct ipu_isys_video *av)
 {
 	u32 vblank, hblank;
@@ -1543,18 +1565,14 @@ static void update_stream_watermark(struct ipu_isys_video *av, bool state)
 	}
 	update_watermark_setting(av->isys);
 }
+#endif
 
 int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 				 unsigned int state,
 				 struct ipu_isys_buffer_list *bl)
 {
 	struct device *dev = &av->isys->adev->dev;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-	struct media_device *mdev = av->vdev.entity.parent;
-	struct media_entity_graph graph;
-#else
 	struct media_device *mdev = av->vdev.entity.graph_obj.mdev;
-#endif
 	struct media_entity_enum entities;
 
 	struct media_entity *entity, *entity2;
@@ -1586,23 +1604,21 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 		/* stop external sub-device now. */
 		dev_info(dev, "stream off %s\n", ip->external->entity->name);
 
-		v4l2_subdev_call(esd, video, s_stream, state);
+		if (ip->csi2) {
+			if (ip->csi2->stream_count == 1) {
+				v4l2_subdev_call(esd, video, s_stream, state);
+			}
+		} else {
+			v4l2_subdev_call(esd, video, s_stream, state);
+		}
 	}
 
 	mutex_lock(&mdev->graph_mutex);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_graph_walk_start(&ip->graph,
-#else
-	media_graph_walk_start(&graph,
-#endif
-			       &av->vdev.entity);
+			       &av->vdev.entity.pads[0]);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	while ((entity = media_graph_walk_next(&ip->graph))) {
-#else
-	while ((entity = media_graph_walk_next(&graph))) {
-#endif
 		sd = media_entity_to_v4l2_subdev(entity);
 
 		/* Non-subdev nodes can be safely ignored here. */
@@ -1630,17 +1646,19 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 
 	mutex_unlock(&mdev->graph_mutex);
 
+#if defined(IPU_IWAKE_ENABLE)
 	if (av->aq.css_pin_type == IPU_FW_ISYS_PIN_TYPE_RAW_SOC) {
 		if (state)
 			configure_stream_watermark(av);
 		update_stream_watermark(av, state);
 	}
+#endif
 
 	/* Oh crap */
 	if (state) {
 		rval = start_stream_firmware(av, bl);
 		if (rval)
-			goto out_update_stream_watermark;
+			goto out_media_entity_stop_streaming;
 
 		dev_dbg(dev, "set stream: source %d, stream_handle %d\n",
 			ip->source, ip->stream_handle);
@@ -1648,11 +1666,17 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 		/* Start external sub-device now. */
 		dev_info(dev, "stream on %s\n", ip->external->entity->name);
 
-		rval = v4l2_subdev_call(esd, video, s_stream, state);
+		if (ip->csi2 &&
+		    ip->csi2->remote_streams == ip->csi2->stream_count)
+			rval = v4l2_subdev_call(esd, video, s_stream, state);
+		else if (!ip->csi2)
+			rval = v4l2_subdev_call(esd, video, s_stream, state);
 		if (rval)
 			goto out_media_entity_stop_streaming_firmware;
 	} else {
 		close_streaming_firmware(av);
+		av->ip.stream_id = 0;
+		av->ip.vc = 0;
 	}
 
 	if (state)
@@ -1666,25 +1690,13 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 out_media_entity_stop_streaming_firmware:
 	stop_streaming_firmware(av);
 
-out_update_stream_watermark:
-	if (av->aq.css_pin_type == IPU_FW_ISYS_PIN_TYPE_RAW_SOC)
-		update_stream_watermark(av, 0);
-
 out_media_entity_stop_streaming:
 	mutex_lock(&mdev->graph_mutex);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_graph_walk_start(&ip->graph,
-#else
-	media_graph_walk_start(&graph,
-#endif
-			       &av->vdev.entity);
+			       &av->vdev.entity.pads[0]);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	while (state && (entity2 = media_graph_walk_next(&ip->graph)) &&
-#else
-	while (state && (entity2 = media_graph_walk_next(&graph)) &&
-#endif
 	       entity2 != entity) {
 		sd = media_entity_to_v4l2_subdev(entity2);
 
@@ -1723,11 +1735,7 @@ static long ipu_isys_compat_ioctl(struct file *file, unsigned int cmd,
 
 static const struct v4l2_ioctl_ops ioctl_ops_mplane = {
 	.vidioc_querycap = ipu_isys_vidioc_querycap,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
 	.vidioc_enum_fmt_vid_cap = ipu_isys_vidioc_enum_fmt,
-#else
-	.vidioc_enum_fmt_vid_cap_mplane = ipu_isys_vidioc_enum_fmt,
-#endif
 	.vidioc_g_fmt_vid_cap_mplane = vidioc_g_fmt_vid_cap_mplane,
 	.vidioc_s_fmt_vid_cap_mplane = vidioc_s_fmt_vid_cap_mplane,
 	.vidioc_try_fmt_vid_cap_mplane = vidioc_try_fmt_vid_cap_mplane,
@@ -1784,7 +1792,11 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	INIT_LIST_HEAD(&av->ip.queues);
 	spin_lock_init(&av->ip.short_packet_queue_lock);
 	av->ip.isys = av->isys;
+	av->ip.stream_id = 0;
+	av->ip.vc = 0;
+	av->reset = false;
 
+#if defined(IPU_IWAKE_ENABLE)
 	if (!av->watermark) {
 		av->watermark = kzalloc(sizeof(*av->watermark), GFP_KERNEL);
 		if (!av->watermark) {
@@ -1792,6 +1804,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 			goto out_mutex_destroy;
 		}
 	}
+#endif
 
 	av->vdev.device_caps = V4L2_CAP_STREAMING;
 	if (pad_flags & MEDIA_PAD_FL_SINK) {
@@ -1826,11 +1839,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 
 	mutex_lock(&av->mutex);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-	rval = video_register_device(&av->vdev, VFL_TYPE_GRABBER, -1);
-#else
 	rval = video_register_device(&av->vdev, VFL_TYPE_VIDEO, -1);
-#endif
 	if (rval)
 		goto out_media_entity_cleanup;
 
@@ -1860,7 +1869,9 @@ out_ipu_isys_queue_cleanup:
 	ipu_isys_queue_cleanup(&av->aq);
 
 out_mutex_destroy:
+#if defined(IPU_IWAKE_ENABLE)
 	kfree(av->watermark);
+#endif
 	mutex_destroy(&av->mutex);
 
 	return rval;
@@ -1868,7 +1879,9 @@ out_mutex_destroy:
 
 void ipu_isys_video_cleanup(struct ipu_isys_video *av)
 {
+#if defined(IPU_IWAKE_ENABLE)
 	kfree(av->watermark);
+#endif
 	video_unregister_device(&av->vdev);
 	media_entity_cleanup(&av->vdev.entity);
 	mutex_destroy(&av->mutex);

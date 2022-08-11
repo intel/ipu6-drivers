@@ -16,6 +16,9 @@
 #include "ipu-isys-media.h"
 #include "ipu-isys-csi2.h"
 #include "ipu-isys-csi2-be.h"
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+#include "ipu-isys-tpg.h"
+#endif
 #include "ipu-isys-video.h"
 #include "ipu-pdata.h"
 #include "ipu-fw-isys.h"
@@ -47,6 +50,8 @@
 #define IPU_ISYS_TURNOFF_TIMEOUT		1000
 #define IPU_LIB_CALL_TIMEOUT_JIFFIES \
 	msecs_to_jiffies(IPU_LIB_CALL_TIMEOUT_MS)
+#define IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET \
+	msecs_to_jiffies(200)
 
 #define IPU_ISYS_CSI2_LONG_PACKET_HEADER_SIZE	32
 #define IPU_ISYS_CSI2_LONG_PACKET_FOOTER_SIZE	32
@@ -56,17 +61,18 @@
 #define IPU_ISYS_MAX_WIDTH		16384U
 #define IPU_ISYS_MAX_HEIGHT		16384U
 
-#define NR_OF_CSI2_BE_SOC_DEV 1
-
+#if defined(IPU_IWAKE_ENABLE)
 /* the threshold granularity is 2KB on IPU6 */
 #define IPU6_SRAM_GRANULRITY_SHIFT	11
 #define IPU6_SRAM_GRANULRITY_SIZE	2048
 /* the threshold granularity is 1KB on IPU6SE */
 #define IPU6SE_SRAM_GRANULRITY_SHIFT	10
 #define IPU6SE_SRAM_GRANULRITY_SIZE	1024
+#endif
 
 struct task_struct;
 
+#if defined(IPU_IWAKE_ENABLE)
 struct ltr_did {
 	union {
 		u32 value;
@@ -92,12 +98,16 @@ struct isys_iwake_watermark {
 	bool iwake_enabled;
 	bool force_iwake_disable;
 	u32 iwake_threshold;
+#ifdef IPU_IWAKE_TUNING
+	u32 ltrdid_setting;
+#endif
 	u64 isys_pixelbuffer_datarate;
 	struct ltr_did ltrdid;
 	struct mutex mutex; /* protect whole struct */
 	struct ipu_isys *isys;
 	struct list_head video_list;
 };
+#endif
 struct ipu_isys_sensor_info {
 	unsigned int vc1_data_start;
 	unsigned int vc1_data_end;
@@ -130,6 +140,9 @@ struct ipu_isys_sensor_info {
  * @lib_mutex: optional external library mutex
  * @pdata: platform data pointer
  * @csi2: CSI-2 receivers
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+ * @tpg: test pattern generators
+#endif
  * @csi2_be: CSI-2 back-ends
  * @fw: ISYS firmware binary (unsecure firmware)
  * @fw_sgt: fw scatterlist
@@ -151,6 +164,10 @@ struct ipu_isys {
 	struct ipu_isys_pipeline *pipes[IPU_ISYS_MAX_STREAMS];
 	void *fwcom;
 	unsigned int line_align;
+#ifdef IPU_IRQ_POLL
+	/* for polling for events if interrupt delivery isn't available */
+	struct task_struct *isr_thread;
+#endif
 	bool reset_needed;
 	bool icache_prefetch;
 	bool csi2_cse_ipc_not_supported;
@@ -169,8 +186,11 @@ struct ipu_isys {
 	struct ipu_isys_pdata *pdata;
 
 	struct ipu_isys_csi2 *csi2;
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	struct ipu_isys_tpg *tpg;
+#endif
 	struct ipu_isys_csi2_be csi2_be;
-	struct ipu_isys_csi2_be_soc csi2_be_soc[NR_OF_CSI2_BE_SOC_DEV];
+	struct ipu_isys_csi2_be_soc csi2_be_soc;
 	const struct firmware *fw;
 	struct sg_table fw_sgt;
 
@@ -190,12 +210,18 @@ struct ipu_isys {
 	spinlock_t listlock;	/* Protect framebuflist */
 	struct list_head framebuflist;
 	struct list_head framebuflist_fw;
-	struct v4l2_async_notifier notifier;
+#if defined(IPU_IWAKE_ENABLE)
 	struct isys_iwake_watermark *iwake_watermark;
+#endif
 
+	struct mutex reset_mutex;
+	bool in_reset;
+	bool in_stop_streaming;
 };
 
+#if defined(IPU_IWAKE_ENABLE)
 void update_watermark_setting(struct ipu_isys *isys);
+#endif
 
 struct isys_fw_msgs {
 	union {
@@ -211,9 +237,6 @@ struct isys_fw_msgs {
 #define to_stream_cfg_msg_buf(a) (&(a)->fw_msg.stream)
 #define to_dma_addr(a) ((a)->dma_addr)
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-int ipu_pipeline_pm_use(struct media_entity *entity, int use);
-#endif
 struct isys_fw_msgs *ipu_get_fw_msg_buf(struct ipu_isys_pipeline *ip);
 void ipu_put_fw_mgs_buf(struct ipu_isys *isys, u64 data);
 void ipu_cleanup_fw_msg_bufs(struct ipu_isys *isys);
@@ -222,6 +245,9 @@ extern const struct v4l2_ioctl_ops ipu_isys_ioctl_ops;
 
 void isys_setup_hw(struct ipu_isys *isys);
 int isys_isr_one(struct ipu_bus_device *adev);
+#ifdef IPU_IRQ_POLL
+int ipu_isys_isr_run(void *ptr);
+#endif
 irqreturn_t isys_isr(struct ipu_bus_device *adev);
 #ifdef IPU_ISYS_GPC
 int ipu_isys_gpc_init_debugfs(struct ipu_isys *isys);

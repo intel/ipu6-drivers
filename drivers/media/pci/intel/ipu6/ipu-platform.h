@@ -11,6 +11,9 @@
 #define IPU6EPES_FIRMWARE_NAME		"intel/ipu6epes_fw.bin"
 #define IPU6_FIRMWARE_NAME		"intel/ipu6_fw.bin"
 
+/* array of struct ipu_spdata_rep terminated by NULL */
+#define IPU_SPDATA_NAME		"ipu6v1_spdata.bin"
+
 /*
  * The following definitions are encoded to the media_device's model field so
  * that the software components which uses IPU driver can get the hw stepping

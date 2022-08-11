@@ -497,26 +497,21 @@ int ipu6_isys_phy_ready(struct ipu_isys *isys, unsigned int phy_id)
 	return -ETIMEDOUT;
 }
 
-int ipu6_isys_phy_common_init(struct ipu_isys *isys)
+int ipu6_isys_phy_common_init(struct ipu_isys *isys, struct ipu_isys_csi2_config *cfg)
 {
 	unsigned int phy_id;
 	void __iomem *phy_base;
 	struct ipu_bus_device *adev = to_ipu_bus_device(&isys->adev->dev);
 	struct ipu_device *isp = adev->isp;
 	void __iomem *isp_base = isp->base;
-	struct v4l2_async_subdev *asd;
-	struct sensor_async_subdev *s_asd;
 	unsigned int i;
 
-	list_for_each_entry(asd, &isys->notifier.asd_list, asd_list) {
-		s_asd = container_of(asd, struct sensor_async_subdev, asd);
-		phy_id = s_asd->csi2.port / 4;
-		phy_base = isp_base + IPU6_ISYS_PHY_BASE(phy_id);
+	phy_id = cfg->port / 4;
+	phy_base = isp_base + IPU6_ISYS_PHY_BASE(phy_id);
 
-		for (i = 0 ; i < ARRAY_SIZE(common_init_regs); i++) {
-			writel(common_init_regs[i].val,
-				phy_base + common_init_regs[i].reg);
-		}
+	for (i = 0 ; i < ARRAY_SIZE(common_init_regs); i++) {
+		writel(common_init_regs[i].val,
+			phy_base + common_init_regs[i].reg);
 	}
 
 	return 0;
@@ -553,41 +548,48 @@ static int ipu6_isys_driver_port_to_phy_port(struct ipu_isys_csi2_config *cfg)
 	return ret;
 }
 
-int ipu6_isys_phy_config(struct ipu_isys *isys)
+int ipu6_isys_phy_config(struct ipu_isys *isys, struct ipu_isys_csi2_config *cfg)
 {
-	int phy_port;
-	unsigned int phy_id;
+	unsigned int phy_port, phy_id;
 	void __iomem *phy_base;
 	struct ipu_bus_device *adev = to_ipu_bus_device(&isys->adev->dev);
 	struct ipu_device *isp = adev->isp;
 	void __iomem *isp_base = isp->base;
 	const struct phy_reg **phy_config_regs;
-	struct v4l2_async_subdev *asd;
-	struct sensor_async_subdev *s_asd;
-	struct ipu_isys_csi2_config cfg;
+	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
+	struct ipu_isys_subdev_info **subdevs, *sd_info;
 	int i;
 
-	list_for_each_entry(asd, &isys->notifier.asd_list, asd_list) {
-		s_asd = container_of(asd, struct sensor_async_subdev, asd);
-		cfg.port = s_asd->csi2.port;
-		cfg.nlanes = s_asd->csi2.nlanes;
-		phy_port = ipu6_isys_driver_port_to_phy_port(&cfg);
+	if (!spdata) {
+		dev_err(&isys->adev->dev, "no subdevice info provided\n");
+		return -EINVAL;
+	}
+
+	phy_id = cfg->port / 4;
+	phy_base = isp_base + IPU6_ISYS_PHY_BASE(phy_id);
+	for (subdevs = spdata->subdevs; *subdevs; subdevs++) {
+		sd_info = *subdevs;
+		if (!sd_info->csi2)
+			continue;
+
+		phy_port = ipu6_isys_driver_port_to_phy_port(sd_info->csi2);
 		if (phy_port < 0) {
 			dev_err(&isys->adev->dev, "invalid port %d for lane %d",
-				cfg.port, cfg.nlanes);
+					cfg->port, cfg->nlanes);
 			return -ENXIO;
 		}
 
-		phy_id = cfg.port / 4;
-		phy_base = isp_base + IPU6_ISYS_PHY_BASE(phy_id);
-		dev_dbg(&isys->adev->dev, "port%d PHY%u lanes %u\n",
-			cfg.port, phy_id, cfg.nlanes);
+		if ((sd_info->csi2->port / 4) != phy_id)
+			continue;
 
-		phy_config_regs = config_regs[cfg.nlanes/2];
-		cfg.port = phy_port;
-		for (i = 0; phy_config_regs[cfg.port][i].reg; i++) {
-			writel(phy_config_regs[cfg.port][i].val,
-				phy_base + phy_config_regs[cfg.port][i].reg);
+		dev_dbg(&isys->adev->dev, "port%d PHY%u lanes %u\n",
+			phy_port, phy_id, cfg->nlanes);
+
+		phy_config_regs = config_regs[sd_info->csi2->nlanes/2];
+
+		for (i = 0; phy_config_regs[phy_port][i].reg; i++) {
+			writel(phy_config_regs[phy_port][i].val,
+				phy_base + phy_config_regs[phy_port][i].reg);
 		}
 	}
 

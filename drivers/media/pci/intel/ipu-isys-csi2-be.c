@@ -48,6 +48,7 @@ static struct v4l2_subdev_internal_ops csi2_be_sd_internal_ops = {
 static const struct v4l2_subdev_core_ops csi2_be_sd_core_ops = {
 };
 
+#if defined(IPU_ISYS_COMPRESSION)
 static const struct v4l2_ctrl_config compression_ctrl_cfg = {
 	.ops = NULL,
 	.id = V4L2_CID_IPU_ISYS_COMPRESSION,
@@ -58,6 +59,7 @@ static const struct v4l2_ctrl_config compression_ctrl_cfg = {
 	.step = 1,
 	.def = 0,
 };
+#endif
 
 static int set_stream(struct v4l2_subdev *sd, int enable)
 {
@@ -93,11 +95,7 @@ static int get_supported_code_index(u32 code)
 }
 
 static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-				    struct v4l2_subdev_pad_config *cfg,
-#else
 				    struct v4l2_subdev_state *state,
-#endif
 				    struct v4l2_subdev_selection *sel)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
@@ -106,19 +104,11 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 	if (sel->target == V4L2_SEL_TGT_CROP &&
 	    pad->flags & MEDIA_PAD_FL_SOURCE &&
 	    asd->valid_tgts[CSI2_BE_PAD_SOURCE].crop) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd, cfg, sel->pad, sel->which);
-		struct v4l2_rect *r = __ipu_isys_get_selection
-		    (sd, cfg, sel->target, CSI2_BE_PAD_SINK, sel->which);
-
-#else
-		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd, state, sel->pad, sel->which);
+			__ipu_isys_get_ffmt(sd, state, sel->pad, 0, sel->which);
 		struct v4l2_rect *r = __ipu_isys_get_selection
 		    (sd, state, sel->target, CSI2_BE_PAD_SINK, sel->which);
 
-#endif
 		if (get_supported_code_index(ffmt->code) < 0) {
 			/* Non-bayer formats can't be single line cropped */
 			sel->r.left &= ~1;
@@ -139,28 +129,15 @@ static int ipu_isys_csi2_be_set_sel(struct v4l2_subdev *sd,
 		 */
 		sel->r.height = clamp(sel->r.height, IPU_ISYS_MIN_HEIGHT,
 				      r->height);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		*__ipu_isys_get_selection(sd, cfg, sel->target, sel->pad,
-					  sel->which) = sel->r;
-		ipu_isys_subdev_fmt_propagate
-		    (sd, cfg, NULL, &sel->r,
-		     IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP,
-		     sel->pad, sel->which);
-#else
 		*__ipu_isys_get_selection(sd, state, sel->target, sel->pad,
 					  sel->which) = sel->r;
 		ipu_isys_subdev_fmt_propagate
 		    (sd, state, NULL, &sel->r,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP,
 		     sel->pad, sel->which);
-#endif
 		return 0;
 	}
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-	return ipu_isys_subdev_set_sel(sd, cfg, sel);
-#else
 	return ipu_isys_subdev_set_sel(sd, state, sel);
-#endif
 }
 
 static const struct v4l2_subdev_pad_ops csi2_be_sd_pad_ops = {
@@ -182,64 +159,33 @@ static struct media_entity_operations csi2_be_entity_ops = {
 	.link_validate = v4l2_subdev_link_validate,
 };
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
-static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_fh *cfg,
-			     struct v4l2_subdev_format *fmt)
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
-			     struct v4l2_subdev_format *fmt)
-#else
 static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 			     struct v4l2_subdev_state *state,
 			     struct v4l2_subdev_format *fmt)
-#endif
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->stream,
+				    fmt->which);
 
-#else
-	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
-
-#endif
 	switch (fmt->pad) {
 	case CSI2_BE_PAD_SINK:
 		if (fmt->format.field != V4L2_FIELD_ALTERNATE)
 			fmt->format.field = V4L2_FIELD_NONE;
 		*ffmt = fmt->format;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		ipu_isys_subdev_fmt_propagate
-		    (sd, cfg, &fmt->format, NULL,
-		     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT, fmt->pad, fmt->which);
-#else
 		ipu_isys_subdev_fmt_propagate
 		    (sd, state, &fmt->format, NULL,
 		     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT, fmt->pad, fmt->which);
-#endif
 		return;
 	case CSI2_BE_PAD_SOURCE: {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		struct v4l2_mbus_framefmt *sink_ffmt =
-			__ipu_isys_get_ffmt(sd, cfg, CSI2_BE_PAD_SINK,
-					    fmt->which);
-		struct v4l2_rect *r =
-			__ipu_isys_get_selection(sd, cfg, V4L2_SEL_TGT_CROP,
-						 CSI2_BE_PAD_SOURCE,
-						 fmt->which);
-#else
 		struct v4l2_mbus_framefmt *sink_ffmt =
 			__ipu_isys_get_ffmt(sd, state, CSI2_BE_PAD_SINK,
-					    fmt->which);
+					    fmt->stream, fmt->which);
 		struct v4l2_rect *r =
 			__ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
 						 CSI2_BE_PAD_SOURCE,
 						 fmt->which);
-#endif
 		struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 		u32 code = sink_ffmt->code;
 		int idx = get_supported_code_index(code);
@@ -269,7 +215,9 @@ static void csi2_be_set_ffmt(struct v4l2_subdev *sd,
 
 void ipu_isys_csi2_be_cleanup(struct ipu_isys_csi2_be *csi2_be)
 {
+#if defined(IPU_ISYS_COMPRESSION)
 	v4l2_ctrl_handler_free(&csi2_be->av.ctrl_handler);
+#endif
 	v4l2_device_unregister_subdev(&csi2_be->asd.sd);
 	ipu_isys_subdev_cleanup(&csi2_be->asd);
 	ipu_isys_video_cleanup(&csi2_be->av);
@@ -302,6 +250,7 @@ int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 
 	rval = ipu_isys_subdev_init(&csi2_be->asd, &csi2_be_sd_ops, 0,
 				    NR_OF_CSI2_BE_PADS,
+				    NR_OF_CSI2_BE_STREAMS,
 				    NR_OF_CSI2_BE_SOURCE_PADS,
 				    NR_OF_CSI2_BE_SINK_PADS, 0);
 	if (rval)
@@ -347,6 +296,7 @@ int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 	csi2_be->av.aq.vbq.buf_struct_size =
 	    sizeof(struct ipu_isys_video_buffer);
 
+#if defined(IPU_ISYS_COMPRESSION)
 	/* create v4l2 ctrl for csi-be video node */
 	rval = v4l2_ctrl_handler_init(&csi2_be->av.ctrl_handler, 0);
 	if (rval) {
@@ -365,6 +315,7 @@ int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 	}
 	csi2_be->av.compression = 0;
 	csi2_be->av.vdev.ctrl_handler = &csi2_be->av.ctrl_handler;
+#endif
 
 	rval = ipu_isys_video_init(&csi2_be->av, &csi2_be->asd.sd.entity,
 				   CSI2_BE_PAD_SOURCE, MEDIA_PAD_FL_SINK, 0);

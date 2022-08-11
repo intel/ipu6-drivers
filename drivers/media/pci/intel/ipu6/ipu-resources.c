@@ -242,7 +242,7 @@ static int __alloc_one_resrc(const struct device *dev,
 	const u16 resource_offset_req = pm->dev_chn_offset[resource_id];
 	unsigned long retl;
 
-	if (!resource_req)
+	if (resource_req <= 0)
 		return -ENXIO;
 
 	if (alloc->resources >= IPU_MAX_RESOURCES) {
@@ -283,7 +283,7 @@ static int ipu_psys_allocate_one_dfm(const struct device *dev,
 	struct ipu_resource_alloc *alloc_resource;
 	unsigned long p = 0;
 
-	if (!dfm_bitmap_req)
+	if (dfm_bitmap_req == 0)
 		return -ENXIO;
 
 	if (alloc->resources >= IPU_MAX_RESOURCES) {
@@ -344,7 +344,7 @@ static int __alloc_mem_resrc(const struct device *dev,
 
 	unsigned long retl;
 
-	if (!memory_resource_req)
+	if (memory_resource_req <= 0)
 		return -ENXIO;
 
 	if (alloc->resources >= IPU_MAX_RESOURCES) {
@@ -487,10 +487,7 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 				ret = __alloc_one_resrc(dev, process,
 							&pool->dev_channels[id],
 							&pm, id, alloc);
-				if (ret == -ENXIO)
-					continue;
-
-				if (ret)
+				if (ret && ret != -ENXIO)
 					goto free_out;
 			}
 		}
@@ -500,10 +497,7 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 				ret = ipu_psys_allocate_one_dfm
 					(dev, process,
 					 &pool->dfms[id], &pm, id, alloc);
-				if (ret == -ENXIO)
-					continue;
-
-				if (ret)
+				if (ret && ret != -ENXIO)
 					goto free_out;
 			}
 		}
@@ -527,15 +521,12 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 							&pool->ext_memory[bank],
 							&pm, mem_type_id, bank,
 							alloc);
-				if (ret == -ENXIO)
-					continue;
-
-				if (ret)
+				if (ret && ret != -ENXIO)
 					goto free_out;
 			}
 		}
 	}
-
+	alloc->cells |= cells;
 	pool->cells |= cells;
 
 	kfree(alloc);
