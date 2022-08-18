@@ -29,9 +29,6 @@
 #include "ipu-dma.h"
 #include "ipu-isys.h"
 #include "ipu-isys-csi2.h"
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-#include "ipu-isys-tpg.h"
-#endif
 #include "ipu-isys-video.h"
 #include "ipu-platform-regs.h"
 #include "ipu-buttress.h"
@@ -133,22 +130,12 @@ skip_unregister_subdev:
 
 static void isys_unregister_subdevices(struct ipu_isys *isys)
 {
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	const struct ipu_isys_internal_tpg_pdata *tpg =
-	    &isys->pdata->ipdata->tpg;
-#endif
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
 	unsigned int i;
 
-	ipu_isys_csi2_be_cleanup(&isys->csi2_be);
 	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++)
 		ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc[i]);
-
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	for (i = 0; i < tpg->ntpgs; i++)
-		ipu_isys_tpg_cleanup(&isys->tpg[i]);
-#endif
 
 	for (i = 0; i < csi2->nports; i++)
 		ipu_isys_csi2_cleanup(&isys->csi2[i]);
@@ -156,10 +143,6 @@ static void isys_unregister_subdevices(struct ipu_isys *isys)
 
 static int isys_register_subdevices(struct ipu_isys *isys)
 {
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	const struct ipu_isys_internal_tpg_pdata *tpg =
-	    &isys->pdata->ipdata->tpg;
-#endif
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
 	struct ipu_isys_csi2_be_soc *csi2_be_soc;
@@ -183,25 +166,6 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 		isys->isr_csi2_bits |= IPU_ISYS_UNISPART_IRQ_CSI2(i);
 	}
 
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	isys->tpg = devm_kcalloc(&isys->adev->dev, tpg->ntpgs,
-				 sizeof(*isys->tpg), GFP_KERNEL);
-	if (!isys->tpg) {
-		rval = -ENOMEM;
-		goto fail;
-	}
-
-	for (i = 0; i < tpg->ntpgs; i++) {
-		rval = ipu_isys_tpg_init(&isys->tpg[i], isys,
-					 isys->pdata->base +
-					 tpg->offsets[i],
-					 tpg->sels ? (isys->pdata->base +
-						      tpg->sels[i]) : NULL, i);
-		if (rval)
-			goto fail;
-	}
-#endif
-
 	for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
 		rval = ipu_isys_csi2_be_soc_init(&isys->csi2_be_soc[k],
 						 isys, k);
@@ -212,23 +176,7 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 		}
 	}
 
-	rval = ipu_isys_csi2_be_init(&isys->csi2_be, isys);
-	if (rval) {
-		dev_info(&isys->adev->dev,
-			 "can't register raw csi2 be device\n");
-		goto fail;
-	}
-
 	for (i = 0; i < csi2->nports; i++) {
-		rval = media_create_pad_link(&isys->csi2[i].asd.sd.entity,
-					     CSI2_PAD_SOURCE,
-					     &isys->csi2_be.asd.sd.entity,
-					     CSI2_BE_PAD_SINK, 0);
-		if (rval) {
-			dev_info(&isys->adev->dev,
-				 "can't create link csi2 <=> csi2_be\n");
-			goto fail;
-		}
 		for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
 			csi2_be_soc = &isys->csi2_be_soc[k];
 			rval =
@@ -243,34 +191,6 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 			}
 		}
 	}
-
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	for (i = 0; i < tpg->ntpgs; i++) {
-		rval = media_create_pad_link(&isys->tpg[i].asd.sd.entity,
-					     TPG_PAD_SOURCE,
-					     &isys->csi2_be.asd.sd.entity,
-					     CSI2_BE_PAD_SINK, 0);
-		if (rval) {
-			dev_info(&isys->adev->dev,
-				 "can't create link between tpg and csi2_be\n");
-			goto fail;
-		}
-
-		for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
-			csi2_be_soc = &isys->csi2_be_soc[k];
-			rval =
-			    media_create_pad_link(&isys->tpg[i].asd.sd.entity,
-						  TPG_PAD_SOURCE,
-						  &csi2_be_soc->asd.sd.entity,
-						  CSI2_BE_SOC_PAD_SINK, 0);
-			if (rval) {
-				dev_info(&isys->adev->dev,
-					 "can't create link tpg->be_soc\n");
-				goto fail;
-			}
-		}
-	}
-#endif
 
 	return 0;
 
@@ -583,18 +503,16 @@ static int isys_notifier_init(struct ipu_isys *isys)
 	size_t asd_struct_size = sizeof(struct sensor_async_subdev);
 	int ret;
 
-	v4l2_async_notifier_init(&isys->notifier);
-	ret = v4l2_async_notifier_parse_fwnode_endpoints(&isp->pdev->dev,
-							 &isys->notifier,
-							 asd_struct_size,
-							 isys_fwnode_parse);
-
+	v4l2_async_nf_init(&isys->notifier);
+	ret = v4l2_async_nf_parse_fwnode_endpoints(&isp->pdev->dev,
+						   &isys->notifier,
+						   asd_struct_size,
+						   isys_fwnode_parse);
 	if (ret < 0) {
 		dev_err(&isys->adev->dev,
 			"v4l2 parse_fwnode_endpoints() failed: %d\n", ret);
 		return ret;
 	}
-
 	if (list_empty(&isys->notifier.asd_list)) {
 		/* isys probe could continue with async subdevs missing */
 		dev_warn(&isys->adev->dev, "no subdev found in graph\n");
@@ -602,11 +520,11 @@ static int isys_notifier_init(struct ipu_isys *isys)
 	}
 
 	isys->notifier.ops = &isys_async_ops;
-	ret = v4l2_async_notifier_register(&isys->v4l2_dev, &isys->notifier);
+	ret = v4l2_async_nf_register(&isys->v4l2_dev, &isys->notifier);
 	if (ret) {
 		dev_err(&isys->adev->dev,
 			"failed to register async notifier : %d\n", ret);
-		v4l2_async_notifier_cleanup(&isys->notifier);
+		v4l2_async_nf_cleanup(&isys->notifier);
 	}
 
 	return ret;
@@ -614,8 +532,8 @@ static int isys_notifier_init(struct ipu_isys *isys)
 
 static void isys_notifier_cleanup(struct ipu_isys *isys)
 {
-	v4l2_async_notifier_unregister(&isys->notifier);
-	v4l2_async_notifier_cleanup(&isys->notifier);
+	v4l2_async_nf_unregister(&isys->notifier);
+	v4l2_async_nf_cleanup(&isys->notifier);
 }
 
 static struct media_device_ops isys_mdev_ops = {
@@ -1283,7 +1201,6 @@ int isys_isr_one(struct ipu_bus_device *adev)
 
 	switch (resp->type) {
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_OPEN_DONE:
-		ipu_put_fw_mgs_buf(ipu_bus_get_drvdata(adev), resp->buf_id);
 		complete(&pipe->stream_open_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_CLOSE_ACK:
@@ -1293,7 +1210,6 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		complete(&pipe->stream_start_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_START_AND_CAPTURE_ACK:
-		ipu_put_fw_mgs_buf(ipu_bus_get_drvdata(adev), resp->buf_id);
 		complete(&pipe->stream_start_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_STREAM_STOP_ACK:
@@ -1303,6 +1219,11 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		complete(&pipe->stream_stop_completion);
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_PIN_DATA_READY:
+		/*
+		 * firmware only release the capture msg until software
+		 * get pin_data_ready event
+		 */
+		ipu_put_fw_mgs_buf(ipu_bus_get_drvdata(adev), resp->buf_id);
 		if (resp->pin_id < IPU_ISYS_OUTPUT_PINS &&
 		    pipe->output_pins[resp->pin_id].pin_ready)
 			pipe->output_pins[resp->pin_id].pin_ready(pipe, resp);
@@ -1361,12 +1282,6 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		if (pipe->csi2)
 			ipu_isys_csi2_sof_event(pipe->csi2);
 
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-#ifdef IPU_TPG_FRAME_SYNC
-		if (pipe->tpg)
-			ipu_isys_tpg_sof_event(pipe->tpg);
-#endif
-#endif
 		pipe->seq[pipe->seq_index].sequence =
 		    atomic_read(&pipe->sequence) - 1;
 		pipe->seq[pipe->seq_index].timestamp = ts;
@@ -1380,13 +1295,6 @@ int isys_isr_one(struct ipu_bus_device *adev)
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_EOF:
 		if (pipe->csi2)
 			ipu_isys_csi2_eof_event(pipe->csi2);
-
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-#ifdef IPU_TPG_FRAME_SYNC
-		if (pipe->tpg)
-			ipu_isys_tpg_eof_event(pipe->tpg);
-#endif
-#endif
 
 		dev_dbg(&adev->dev,
 			"eof: handle %d: (index %u), timestamp 0x%16.16llx\n",

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/acpi.h>
 #include <linux/debugfs.h>
@@ -25,10 +25,31 @@
 #include "ipu-platform-regs.h"
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
+#include "ipu-isys-bridge.h"
+#endif
 
 #define IPU_PCI_BAR		0
 enum ipu_version ipu_ver;
 EXPORT_SYMBOL(ipu_ver);
+
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
+static int ipu_isys_check_fwnode_graph(struct fwnode_handle *fwnode)
+{
+	struct fwnode_handle *endpoint;
+
+	if (IS_ERR_OR_NULL(fwnode))
+		return -EINVAL;
+
+	endpoint = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (endpoint) {
+		fwnode_handle_put(endpoint);
+		return 0;
+	}
+
+	return ipu_isys_check_fwnode_graph(fwnode->secondary);
+}
+#endif
 
 static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    struct device *parent,
@@ -40,6 +61,23 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 {
 	struct ipu_bus_device *isys;
 	struct ipu_isys_pdata *pdata;
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
+	int ret;
+	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+
+	ret = ipu_isys_check_fwnode_graph(fwnode);
+	if (ret) {
+		if (fwnode && !IS_ERR_OR_NULL(fwnode->secondary)) {
+			dev_err(&pdev->dev,
+				"fwnode graph has no endpoints connection\n");
+			return ERR_PTR(-ENOMEM);
+		}
+
+		ret = ipu_isys_bridge_init(pdev);
+		if (ret)
+			return ERR_PTR(-ENOMEM);
+	}
+#endif
 
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -440,10 +478,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	dev_dbg(&pdev->dev, "isys_base: 0x%lx\n", (unsigned long)isys_base);
 	dev_dbg(&pdev->dev, "psys_base: 0x%lx\n", (unsigned long)psys_base);
 
-	rval = pci_set_dma_mask(pdev, DMA_BIT_MASK(dma_mask));
-	if (!rval)
-		rval = pci_set_consistent_dma_mask(pdev,
-						   DMA_BIT_MASK(dma_mask));
+	rval = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(dma_mask));
 	if (rval) {
 		dev_err(&pdev->dev, "Failed to set DMA mask (%d)\n", rval);
 		return rval;

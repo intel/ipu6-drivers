@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2021 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/module.h>
@@ -314,17 +314,17 @@ static const struct v4l2_subdev_video_ops csi2_sd_video_ops = {
 };
 
 static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
-	return ipu_isys_subdev_get_ffmt(sd, sd_state, fmt);
+	return ipu_isys_subdev_get_ffmt(sd, state, fmt);
 }
 
 static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
-	return ipu_isys_subdev_set_ffmt(sd, sd_state, fmt);
+	return ipu_isys_subdev_set_ffmt(sd, state, fmt);
 }
 
 static int __subdev_link_validate(struct v4l2_subdev *sd,
@@ -360,12 +360,12 @@ static struct media_entity_operations csi2_entity_ops = {
 };
 
 static void csi2_set_ffmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_state *sd_state,
+			  struct v4l2_subdev_state *state,
 			  struct v4l2_subdev_format *fmt)
 {
 	enum isys_subdev_prop_tgt tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT;
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad,
+		__ipu_isys_get_ffmt(sd, state, fmt->pad,
 				    fmt->which);
 
 	if (fmt->format.field != V4L2_FIELD_ALTERNATE)
@@ -373,7 +373,7 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 
 	if (fmt->pad == CSI2_PAD_SINK) {
 		*ffmt = fmt->format;
-		ipu_isys_subdev_fmt_propagate(sd, sd_state, &fmt->format, NULL,
+		ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format, NULL,
 					      tgt, fmt->pad, fmt->which);
 		return;
 	}
@@ -416,7 +416,6 @@ void ipu_isys_csi2_cleanup(struct ipu_isys_csi2 *csi2)
 
 	v4l2_device_unregister_subdev(&csi2->asd.sd);
 	ipu_isys_subdev_cleanup(&csi2->asd);
-	ipu_isys_video_cleanup(&csi2->av);
 	csi2->isys = NULL;
 }
 
@@ -498,36 +497,6 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 	mutex_lock(&csi2->asd.mutex);
 	__ipu_isys_subdev_set_ffmt(&csi2->asd.sd, NULL, &fmt);
 	mutex_unlock(&csi2->asd.mutex);
-
-	snprintf(csi2->av.vdev.name, sizeof(csi2->av.vdev.name),
-		 IPU_ISYS_ENTITY_PREFIX " CSI-2 %u capture", index);
-	csi2->av.isys = isys;
-	csi2->av.aq.css_pin_type = IPU_FW_ISYS_PIN_TYPE_MIPI;
-	csi2->av.pfmts = ipu_isys_pfmts_packed;
-	csi2->av.try_fmt_vid_mplane = csi2_try_fmt;
-	csi2->av.prepare_fw_stream =
-		ipu_isys_prepare_fw_cfg_default;
-	csi2->av.packed = true;
-	csi2->av.line_header_length =
-		IPU_ISYS_CSI2_LONG_PACKET_HEADER_SIZE;
-	csi2->av.line_footer_length =
-		IPU_ISYS_CSI2_LONG_PACKET_FOOTER_SIZE;
-	csi2->av.aq.buf_prepare = ipu_isys_buf_prepare;
-	csi2->av.aq.fill_frame_buff_set_pin =
-	ipu_isys_buffer_to_fw_frame_buff_pin;
-	csi2->av.aq.link_fmt_validate =
-		ipu_isys_link_fmt_validate;
-	csi2->av.aq.vbq.buf_struct_size =
-		sizeof(struct ipu_isys_video_buffer);
-
-	rval = ipu_isys_video_init(&csi2->av,
-				   &csi2->asd.sd.entity,
-				   CSI2_PAD_SOURCE,
-				   MEDIA_PAD_FL_SINK, 0);
-	if (rval) {
-		dev_info(&isys->adev->dev, "can't init video node\n");
-		goto fail;
-	}
 
 	return 0;
 

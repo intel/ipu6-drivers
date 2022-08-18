@@ -204,10 +204,7 @@ long ipu_psys_compat_ioctl32(struct file *file, unsigned int cmd,
 	if (compatible_arg) {
 		err = native_ioctl(file, cmd, (unsigned long)up);
 	} else {
-		mm_segment_t old_fs = force_uaccess_begin();
-
 		err = native_ioctl(file, cmd, (unsigned long)&karg);
-		force_uaccess_end(old_fs);
 	}
 
 	if (err)

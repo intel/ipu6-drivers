@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2014 - 2020 Intel Corporation */
+/* Copyright (C) 2014 - 2022 Intel Corporation */
 
 #ifndef IPU_ISYS_CSI2_BE_H
 #define IPU_ISYS_CSI2_BE_H
@@ -56,9 +56,6 @@ struct ipu_isys_csi2_be_soc {
 	container_of(to_ipu_isys_subdev(sd), \
 	struct ipu_isys_csi2_be_soc, asd)
 
-int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
-			  struct ipu_isys *isys);
-void ipu_isys_csi2_be_cleanup(struct ipu_isys_csi2_be *csi2_be);
 int ipu_isys_csi2_be_soc_init(struct ipu_isys_csi2_be_soc *csi2_be_soc,
 			      struct ipu_isys *isys, int index);
 void ipu_isys_csi2_be_soc_cleanup(struct ipu_isys_csi2_be_soc *csi2_be);
