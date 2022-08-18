@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2021 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -545,9 +545,6 @@ static int vidioc_s_input(struct file *file, void *fh, unsigned int input)
 static bool is_external(struct ipu_isys_video *av, struct media_entity *entity)
 {
 	struct v4l2_subdev *sd;
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	unsigned int i;
-#endif
 
 	/* All video nodes are ours. */
 	if (!is_media_entity_v4l2_subdev(entity))
@@ -557,13 +554,6 @@ static bool is_external(struct ipu_isys_video *av, struct media_entity *entity)
 	if (strncmp(sd->name, IPU_ISYS_ENTITY_PREFIX,
 		    strlen(IPU_ISYS_ENTITY_PREFIX)) != 0)
 		return true;
-
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	for (i = 0; i < av->isys->pdata->ipdata->tpg.ntpgs &&
-	     av->isys->tpg[i].isys; i++)
-		if (entity == &av->isys->tpg[i].asd.sd.entity)
-			return true;
-#endif
 
 	return false;
 }
@@ -984,11 +974,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	if (ip->csi2 && !v4l2_ctrl_g_ctrl(ip->csi2->store_csi2_header))
 		stream_cfg->input_pins[0].mipi_store_mode =
 		    IPU_FW_ISYS_MIPI_STORE_MODE_DISCARD_LONG_HEADER;
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	else if (ip->tpg && !v4l2_ctrl_g_ctrl(ip->tpg->store_csi2_header))
-		stream_cfg->input_pins[0].mipi_store_mode =
-		    IPU_FW_ISYS_MIPI_STORE_MODE_DISCARD_LONG_HEADER;
-#endif
 
 	stream_cfg->src = ip->source;
 	stream_cfg->vc = 0;
@@ -1073,10 +1058,9 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 				       to_dma_addr(msg),
 				       sizeof(*stream_cfg),
 				       IPU_FW_ISYS_SEND_TYPE_STREAM_OPEN);
-	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
-
 	if (rval < 0) {
 		dev_err(dev, "can't open stream (%d)\n", rval);
+		ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
 		goto out_put_stream_handle;
 	}
 
@@ -1084,6 +1068,9 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	tout = wait_for_completion_timeout(&ip->stream_open_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
+
+	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
+
 	if (!tout) {
 		dev_err(dev, "stream open time out\n");
 		rval = -ETIMEDOUT;
@@ -1122,7 +1109,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 					       buf, to_dma_addr(msg),
 					       sizeof(*buf),
 					       send_type);
-		ipu_put_fw_mgs_buf(av->isys, (uintptr_t)buf);
 	} else {
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
 		rval = ipu_fw_isys_simple_cmd(av->isys,
@@ -1302,9 +1288,6 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->csi2_be = NULL;
 	ip->csi2_be_soc = NULL;
 	ip->csi2 = NULL;
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	ip->tpg = NULL;
-#endif
 	ip->seq_index = 0;
 	memset(ip->seq, 0, sizeof(ip->seq));
 
@@ -1550,7 +1533,7 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 	if (state) {
 		rval = start_stream_firmware(av, bl);
 		if (rval)
-			goto out_media_entity_stop_streaming;
+			goto out_update_stream_watermark;
 
 		dev_dbg(dev, "set stream: source %d, stream_handle %d\n",
 			ip->source, ip->stream_handle);
@@ -1575,6 +1558,10 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 
 out_media_entity_stop_streaming_firmware:
 	stop_streaming_firmware(av);
+
+out_update_stream_watermark:
+	if (av->aq.css_pin_type == IPU_FW_ISYS_PIN_TYPE_RAW_SOC)
+		update_stream_watermark(av, 0);
 
 out_media_entity_stop_streaming:
 	mutex_lock(&mdev->graph_mutex);

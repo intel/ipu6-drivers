@@ -134,7 +134,7 @@ u32 ipu_isys_subdev_code_to_uncompressed(u32 sink_code)
 }
 
 struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
-					       struct v4l2_subdev_state *sd_state,
+					       struct v4l2_subdev_state *state,
 					       unsigned int pad,
 					       unsigned int which)
 {
@@ -143,11 +143,11 @@ struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
 	if (which == V4L2_SUBDEV_FORMAT_ACTIVE)
 		return &asd->ffmt[pad];
 	else
-		return v4l2_subdev_get_try_format(sd, sd_state, pad);
+		return v4l2_subdev_get_try_format(sd, state, pad);
 }
 
 struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
-					   struct v4l2_subdev_state *sd_state,
+					   struct v4l2_subdev_state *state,
 					   unsigned int target,
 					   unsigned int pad, unsigned int which)
 {
@@ -163,9 +163,9 @@ struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
 	} else {
 		switch (target) {
 		case V4L2_SEL_TGT_CROP:
-			return v4l2_subdev_get_try_crop(sd, sd_state, pad);
+			return v4l2_subdev_get_try_crop(sd, state, pad);
 		case V4L2_SEL_TGT_COMPOSE:
-			return v4l2_subdev_get_try_compose(sd, sd_state, pad);
+			return v4l2_subdev_get_try_compose(sd, state, pad);
 		}
 	}
 	WARN_ON(1);
@@ -188,7 +188,7 @@ static int target_valid(struct v4l2_subdev *sd, unsigned int target,
 }
 
 int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_state *sd_state,
+				  struct v4l2_subdev_state *state,
 				  struct v4l2_mbus_framefmt *ffmt,
 				  struct v4l2_rect *r,
 				  enum isys_subdev_prop_tgt tgt,
@@ -227,11 +227,12 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 	}
 
 	for (i = 0; i < sd->entity.num_pads; i++) {
-		ffmts[i] = __ipu_isys_get_ffmt(sd, sd_state, i, which);
-		crops[i] = __ipu_isys_get_selection(sd, sd_state,
-						    V4L2_SEL_TGT_CROP, i, which);
-		compose[i] = __ipu_isys_get_selection(sd, sd_state,
-						      V4L2_SEL_TGT_COMPOSE, i, which);
+		ffmts[i] = __ipu_isys_get_ffmt(sd, state, i, which);
+		crops[i] = __ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
+						    i, which);
+		compose[i] = __ipu_isys_get_selection(sd, state,
+						      V4L2_SEL_TGT_COMPOSE,
+						      i, which);
 	}
 
 	switch (tgt) {
@@ -240,8 +241,8 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 		crops[pad]->top = 0;
 		crops[pad]->width = ffmt->width;
 		crops[pad]->height = ffmt->height;
-		rval = ipu_isys_subdev_fmt_propagate(sd, sd_state, ffmt,
-						     crops[pad], tgt + 1, pad, which);
+		rval = ipu_isys_subdev_fmt_propagate(sd, state, ffmt, crops[pad],
+						     tgt + 1, pad, which);
 		goto out_subdev_fmt_propagate;
 	case IPU_ISYS_SUBDEV_PROP_TGT_SINK_CROP:
 		if (WARN_ON(sd->entity.pads[pad].flags & MEDIA_PAD_FL_SOURCE))
@@ -251,8 +252,9 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 		compose[pad]->top = 0;
 		compose[pad]->width = r->width;
 		compose[pad]->height = r->height;
-		rval = ipu_isys_subdev_fmt_propagate(sd, sd_state, ffmt,
-						     compose[pad], tgt + 1, pad, which);
+		rval = ipu_isys_subdev_fmt_propagate(sd, state, ffmt,
+						     compose[pad], tgt + 1,
+						     pad, which);
 		goto out_subdev_fmt_propagate;
 	case IPU_ISYS_SUBDEV_PROP_TGT_SINK_COMPOSE:
 		if (WARN_ON(sd->entity.pads[pad].flags & MEDIA_PAD_FL_SOURCE)) {
@@ -269,8 +271,11 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 			compose[i]->top = 0;
 			compose[i]->width = r->width;
 			compose[i]->height = r->height;
-			rval = ipu_isys_subdev_fmt_propagate(sd, sd_state,
-							ffmt, compose[i], tgt + 1, i, which);
+			rval = ipu_isys_subdev_fmt_propagate(sd, state,
+							     ffmt,
+							     compose[i],
+							     tgt + 1, i,
+							     which);
 			if (rval)
 				goto out_subdev_fmt_propagate;
 		}
@@ -285,8 +290,9 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 		crops[pad]->top = 0;
 		crops[pad]->width = r->width;
 		crops[pad]->height = r->height;
-		rval = ipu_isys_subdev_fmt_propagate(sd, sd_state, ffmt,
-						     crops[pad], tgt + 1, pad, which);
+		rval = ipu_isys_subdev_fmt_propagate(sd, state, ffmt,
+						     crops[pad], tgt + 1,
+						     pad, which);
 		goto out_subdev_fmt_propagate;
 	case IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP:{
 			struct v4l2_subdev_format fmt = {
@@ -306,7 +312,7 @@ int ipu_isys_subdev_fmt_propagate(struct v4l2_subdev *sd,
 				},
 			};
 
-			asd->set_ffmt(sd, sd_state, &fmt);
+			asd->set_ffmt(sd, state, &fmt);
 			goto out_subdev_fmt_propagate;
 		}
 	}
@@ -319,16 +325,16 @@ out_subdev_fmt_propagate:
 }
 
 int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
-				     struct v4l2_subdev_state *sd_state,
+				     struct v4l2_subdev_state *state,
 				     struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 
 	/* No propagation for non-zero pads. */
 	if (fmt->pad) {
 		struct v4l2_mbus_framefmt *sink_ffmt =
-			__ipu_isys_get_ffmt(sd, sd_state, 0, fmt->which);
+			__ipu_isys_get_ffmt(sd, state, 0, fmt->which);
 
 		ffmt->width = sink_ffmt->width;
 		ffmt->height = sink_ffmt->height;
@@ -343,18 +349,18 @@ int ipu_isys_subdev_set_ffmt_default(struct v4l2_subdev *sd,
 	ffmt->code = fmt->format.code;
 	ffmt->field = fmt->format.field;
 
-	return ipu_isys_subdev_fmt_propagate(sd, sd_state, &fmt->format, NULL,
+	return ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format, NULL,
 					     IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
 					     fmt->pad, fmt->which);
 }
 
 int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
-			       struct v4l2_subdev_state *sd_state,
+			       struct v4l2_subdev_state *state,
 			       struct v4l2_subdev_format *fmt)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, sd_state, fmt->pad, fmt->which);
+		__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which);
 	u32 code = asd->supported_codes[fmt->pad][0];
 	unsigned int i;
 
@@ -374,7 +380,7 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 
 	fmt->format.code = code;
 
-	asd->set_ffmt(sd, sd_state, fmt);
+	asd->set_ffmt(sd, state, fmt);
 
 	fmt->format = *ffmt;
 
@@ -382,27 +388,27 @@ int __ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
 }
 
 int ipu_isys_subdev_set_ffmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 	int rval;
 
 	mutex_lock(&asd->mutex);
-	rval = __ipu_isys_subdev_set_ffmt(sd, sd_state, fmt);
+	rval = __ipu_isys_subdev_set_ffmt(sd, state, fmt);
 	mutex_unlock(&asd->mutex);
 
 	return rval;
 }
 
 int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *sd_state,
+			     struct v4l2_subdev_state *state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 
 	mutex_lock(&asd->mutex);
-	fmt->format = *__ipu_isys_get_ffmt(sd, sd_state, fmt->pad,
+	fmt->format = *__ipu_isys_get_ffmt(sd, state, fmt->pad,
 					   fmt->which);
 	mutex_unlock(&asd->mutex);
 
@@ -410,7 +416,7 @@ int ipu_isys_subdev_get_ffmt(struct v4l2_subdev *sd,
 }
 
 int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_state *state,
 			    struct v4l2_subdev_selection *sel)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
@@ -425,7 +431,7 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 	case V4L2_SEL_TGT_CROP:
 		if (pad->flags & MEDIA_PAD_FL_SINK) {
 			struct v4l2_mbus_framefmt *ffmt =
-				__ipu_isys_get_ffmt(sd, sd_state, sel->pad,
+				__ipu_isys_get_ffmt(sd, state, sel->pad,
 						    sel->which);
 
 			__r.width = ffmt->width;
@@ -434,7 +440,7 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 			tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_CROP;
 		} else {
 			/* 0 is the sink pad. */
-			r = __ipu_isys_get_selection(sd, sd_state, sel->target, 0,
+			r = __ipu_isys_get_selection(sd, state, sel->target, 0,
 						     sel->which);
 			tgt = IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP;
 		}
@@ -442,11 +448,11 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 		break;
 	case V4L2_SEL_TGT_COMPOSE:
 		if (pad->flags & MEDIA_PAD_FL_SINK) {
-			r = __ipu_isys_get_selection(sd, sd_state, V4L2_SEL_TGT_CROP,
+			r = __ipu_isys_get_selection(sd, state, V4L2_SEL_TGT_CROP,
 						     sel->pad, sel->which);
 			tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_COMPOSE;
 		} else {
-			r = __ipu_isys_get_selection(sd, sd_state,
+			r = __ipu_isys_get_selection(sd, state,
 						     V4L2_SEL_TGT_COMPOSE, 0,
 						     sel->which);
 			tgt = IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_COMPOSE;
@@ -458,27 +464,27 @@ int ipu_isys_subdev_set_sel(struct v4l2_subdev *sd,
 
 	sel->r.width = clamp(sel->r.width, IPU_ISYS_MIN_WIDTH, r->width);
 	sel->r.height = clamp(sel->r.height, IPU_ISYS_MIN_HEIGHT, r->height);
-	*__ipu_isys_get_selection(sd, sd_state, sel->target, sel->pad,
+	*__ipu_isys_get_selection(sd, state, sel->target, sel->pad,
 				  sel->which) = sel->r;
-	return ipu_isys_subdev_fmt_propagate(sd, sd_state, NULL, &sel->r, tgt,
+	return ipu_isys_subdev_fmt_propagate(sd, state, NULL, &sel->r, tgt,
 					     sel->pad, sel->which);
 }
 
 int ipu_isys_subdev_get_sel(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_state *state,
 			    struct v4l2_subdev_selection *sel)
 {
 	if (!target_valid(sd, sel->target, sel->pad))
 		return -EINVAL;
 
-	sel->r = *__ipu_isys_get_selection(sd, sd_state, sel->target,
+	sel->r = *__ipu_isys_get_selection(sd, state, sel->target,
 					   sel->pad, sel->which);
 
 	return 0;
 }
 
 int ipu_isys_subdev_enum_mbus_code(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_state *sd_state,
+				   struct v4l2_subdev_state *state,
 				   struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
