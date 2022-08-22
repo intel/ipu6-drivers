@@ -1,7 +1,7 @@
 # Kernel driver build guide
 
 ## build kernel
-1. cp -rf ipu6-drivers/* vied-viedlin-intel-next/
+1. cp -rf include/ drivers/ vied-viedlin-intel-next/
 2. cd vied-viedlin-intel-next
 3. echo "" | make oldconfig
 4. make -j8
