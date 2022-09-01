@@ -1,0 +1,106 @@
+diff --git a/drivers/media/i2c/deps.h b/drivers/media/i2c/deps.h
+new file mode 100644
+index 0000000..a957e5a
+--- /dev/null
++++ b/drivers/media/i2c/deps.h
+@@ -0,0 +1,74 @@
++
++#include <linux/module.h>
++#include <linux/kprobes.h>
++#ifndef CONFIG_KPROBES
++# error "You need kprobes :("
++#endif
++
++MODULE_SOFTDEP("pre: intel_vsc");
++
++typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
++
++static int dummy_kprobe_handler(struct kprobe *p, struct pt_regs *rs)
++{
++    return 0;
++}
++
++static kallsyms_lookup_name_t get_kallsyms_lookup_name_ptr(void)
++{
++    struct kprobe probe;
++    int ret;
++    kallsyms_lookup_name_t addr;
++
++    memset(&probe, 0, sizeof(probe));
++    probe.pre_handler = dummy_kprobe_handler;
++    probe.symbol_name = "kallsyms_lookup_name";
++    ret = register_kprobe(&probe);
++    if (ret)
++        return NULL;
++    addr = (kallsyms_lookup_name_t) probe.addr;
++    unregister_kprobe(&probe);
++
++    return addr;
++}
++
++static unsigned long kallsyms_lookup_name_wrapper(const char *name)
++{
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0))
++    static kallsyms_lookup_name_t func_ptr = NULL;
++    if (!func_ptr)
++        func_ptr = get_kallsyms_lookup_name_ptr();
++    return func_ptr(name);
++#else
++    return kallsyms_lookup_name(name);
++#endif
++}
++
++
++static int (*__p_vsc_acquire_camera_sensor)(struct vsc_mipi_config *,
++                                         vsc_privacy_callback_t,
++                                         void *,
++                                         struct vsc_camera_status *)
++    = NULL;
++static int (*__p_vsc_release_camera_sensor)(struct vsc_camera_status *)
++    = NULL;
++
++
++static int vsc_acquire_camera_sensor(struct vsc_mipi_config *m,
++                                      vsc_privacy_callback_t c,
++                                      void *h,
++                                      struct vsc_camera_status *s)
++{
++    if (!__p_vsc_acquire_camera_sensor) {
++        __p_vsc_acquire_camera_sensor = kallsyms_lookup_name_wrapper("vsc_acquire_camera_sensor");
++    }
++    return __p_vsc_acquire_camera_sensor(m, c, h, s);
++}
++
++static int vsc_release_camera_sensor(struct vsc_camera_status *s)
++{
++    if (!__p_vsc_release_camera_sensor) {
++        __p_vsc_release_camera_sensor = kallsyms_lookup_name_wrapper("vsc_release_camera_sensor");
++    }
++    return __p_vsc_release_camera_sensor(s);
++}
+diff --git a/drivers/media/i2c/ov01a10.c b/drivers/media/i2c/ov01a10.c
+index 29c41ef..a38c38a 100644
+--- a/drivers/media/i2c/ov01a10.c
++++ b/drivers/media/i2c/ov01a10.c
+@@ -13,6 +13,8 @@
+ #include <media/v4l2-fwnode.h>
+ #include <linux/vsc.h>
+ 
++#include "deps.h"
++
+ #define OV01A10_LINK_FREQ_400MHZ	400000000ULL
+ #define OV01A10_SCLK			40000000LL
+ #define OV01A10_MCLK			19200000
+diff --git a/drivers/media/i2c/ov02c10.c b/drivers/media/i2c/ov02c10.c
+index 04004b7..812cfcc 100644
+--- a/drivers/media/i2c/ov02c10.c
++++ b/drivers/media/i2c/ov02c10.c
+@@ -13,6 +13,8 @@
+ #include <media/v4l2-fwnode.h>
+ #include <linux/vsc.h>
+ 
++#include "deps.h"
++
+ #define OV02C10_LINK_FREQ_400MHZ	400000000ULL
+ #define OV02C10_SCLK			80000000LL
+ #define OV02C10_MCLK			19200000
