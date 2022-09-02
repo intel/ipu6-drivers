@@ -116,7 +116,7 @@ Three ways are available:
 - Enable the following settings in .config
 	```conf
 	CONFIG_VIDEO_INTEL_IPU6=m
-	CONFIG_POWER_CTRL_LOGIC=m
+	CONFIG_IPU_ISYS_BRIDGE=y
 	CONFIG_VIDEO_OV01A1S=m
 	CONFIG_VIDEO_OV01A10=m
 	CONFIG_VIDEO_HM11B1=m
