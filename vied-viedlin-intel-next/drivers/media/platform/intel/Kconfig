@@ -1,0 +1,40 @@
+config INTEL_IPU6_FPGA_PDATA
+	bool "Enable built in platform data for ipu6 fpga"
+	depends on VIDEO_INTEL_IPU6
+	help
+	Pre-ACPI system platform data is compiled inside kernel
+
+config INTEL_IPU6_TGLRVP_PDATA
+	bool "Enable built in platform data for TGL RVP"
+	depends on VIDEO_INTEL_IPU6
+	help
+	Pre-ACPI system platform data is compiled inside kernel
+
+config INTEL_IPU6_JSLRVP_PDATA
+	bool "Enable built in platform data for JSL RVP"
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	 Pre-ACPI system platform data is compiled inside kernel
+
+config INTEL_IPU6_ADLRVP_PDATA
+	bool "Enable built in platform data for ADL RVP"
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	 Pre-ACPI system platform data is compiled inside kernel
+
+	 This platform data is useful for software development before
+	 the SOC system not ready.
+
+config INTEL_IPU6_OV2775
+	bool "Compile platform data for OV2775"
+	depends on INTEL_IPU6_FPGA_PDATA
+	help
+	"Omnivision OV2775 camera sensor"
+
+config INTEL_IPU6_ACPI
+	bool "Enable IPU ACPI driver"
+	depends on VIDEO_INTEL_IPU6
+	help
+	Driver to read ACPI data from BIOS
+
+	This driver is used to read ACPI data from BIOS
