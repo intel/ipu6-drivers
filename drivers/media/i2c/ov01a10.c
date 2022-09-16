@@ -11,7 +11,9 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
+#endif
 
 #define OV01A10_LINK_FREQ_400MHZ	400000000ULL
 #define OV01A10_SCLK			40000000LL
@@ -557,6 +559,7 @@ static int ov01a10_start_streaming(struct ov01a10 *ov01a10)
 	const struct ov01a10_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 
@@ -568,6 +571,7 @@ static int ov01a10_start_streaming(struct ov01a10 *ov01a10)
 		dev_err(&client->dev, "Acquire VSC failed");
 		return ret;
 	}
+#endif
 	link_freq_index = ov01a10->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov01a10_write_reg_list(ov01a10, reg_list);
@@ -599,15 +603,19 @@ static void ov01a10_stop_streaming(struct ov01a10 *ov01a10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov01a10->sd);
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_camera_status status;
+#endif
 
 	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_MODE_SELECT, 1,
 				OV01A10_MODE_STANDBY);
 	if (ret)
 		dev_err(&client->dev, "failed to stop streaming");
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	ret = vsc_release_camera_sensor(&status);
 	if (ret)
 		dev_err(&client->dev, "Release VSC failed");
+#endif
 }
 
 static int ov01a10_set_stream(struct v4l2_subdev *sd, int enable)
@@ -871,9 +879,12 @@ static int ov01a10_probe(struct i2c_client *client)
 {
 	struct ov01a10 *ov01a10;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
+#endif
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	conf.lane_num = OV01A10_DATA_LANES;
 	/* frequency unit 100k */
 	conf.freq = OV01A10_LINK_FREQ_400MHZ / 100000;
@@ -885,6 +896,7 @@ static int ov01a10_probe(struct i2c_client *client)
 		dev_err(&client->dev, "Acquire VSC failed");
 		return ret;
 	}
+#endif
 	ov01a10 = devm_kzalloc(&client->dev, sizeof(*ov01a10), GFP_KERNEL);
 	if (!ov01a10) {
 		ret = -ENOMEM;
@@ -925,7 +937,9 @@ static int ov01a10_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	vsc_release_camera_sensor(&status);
+#endif
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
@@ -944,7 +958,9 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov01a10->mutex);
 
 probe_error_ret:
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	vsc_release_camera_sensor(&status);
+#endif
 	return ret;
 }
 

@@ -26,6 +26,7 @@ enum ipu_version {
 	IPU_VER_6,
 	IPU_VER_6SE,
 	IPU_VER_6EP,
+	IPU_VER_6EP_MTL,
 };
 
 /*

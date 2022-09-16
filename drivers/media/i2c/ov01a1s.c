@@ -17,6 +17,9 @@
 #elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
 #include "power_ctrl_logic.h"
 #endif
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+#include <linux/vsc.h>
+#endif
 
 #define OV01A1S_LINK_FREQ_400MHZ	400000000ULL
 #define OV01A1S_SCLK			40000000LL
@@ -598,7 +601,19 @@ static int ov01a1s_start_streaming(struct ov01a1s *ov01a1s)
 	const struct ov01a1s_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
 
+	conf.lane_num = OV01A1S_DATA_LANES;
+	/* frequency unit 100k */
+	conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
+	if (ret && ret != -EAGAIN) {
+		dev_err(&client->dev, "Acquire VSC failed");
+		return ret;
+	}
+#endif
 	ov01a1s_set_power(ov01a1s, 1);
 	link_freq_index = ov01a1s->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
@@ -631,11 +646,19 @@ static void ov01a1s_stop_streaming(struct ov01a1s *ov01a1s)
 {
 	struct i2c_client *client = ov01a1s->client;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_camera_status status;
+#endif
 
 	ret = ov01a1s_write_reg(ov01a1s, OV01A1S_REG_MODE_SELECT, 1,
 				OV01A1S_MODE_STANDBY);
 	if (ret)
 		dev_err(&client->dev, "failed to stop streaming");
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	ret = vsc_release_camera_sensor(&status);
+	if (ret && ret != -EAGAIN)
+		dev_err(&client->dev, "Release VSC failed");
+#endif
 	ov01a1s_set_power(ov01a1s, 0);
 }
 
@@ -906,28 +929,28 @@ static int ov01a1s_parse_dt(struct ov01a1s *ov01a1s)
 	ret = PTR_ERR_OR_ZERO(ov01a1s->reset_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting reset gpio: %d\n", ret);
-		return ret;
+		return -EPROBE_DEFER;
 	}
 
 	ov01a1s->powerdown_gpio = devm_gpiod_get(dev, "powerdown", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov01a1s->powerdown_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting powerdown gpio: %d\n", ret);
-		return ret;
+		return -EPROBE_DEFER;
 	}
 
 	ov01a1s->clken_gpio = devm_gpiod_get(dev, "clken", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov01a1s->clken_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting clken_gpio gpio: %d\n", ret);
-		return ret;
+		return -EPROBE_DEFER;
 	}
 
 	ov01a1s->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov01a1s->pled_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting pled gpio: %d\n", ret);
-		return ret;
+		return -EPROBE_DEFER;
 	}
 
 	return 0;
@@ -938,20 +961,31 @@ static int ov01a1s_probe(struct i2c_client *client)
 {
 	struct ov01a1s *ov01a1s;
 	int ret = 0;
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
+	s64 link_freq;
 
 	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
 	if (!ov01a1s)
 		return -ENOMEM;
 	ov01a1s->client = client;
 
+	conf.lane_num = OV01A1S_DATA_LANES;
+	/* frequency unit 100k */
+	conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-	ret = ov01a1s_parse_dt(ov01a1s);
-	if (ret < 0)
-		return -EPROBE_DEFER;
+	if (ret == -EAGAIN)
+		ret = ov01a1s_parse_dt(ov01a1s);
 #elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
-	if (power_ctrl_logic_set_power(1))
-		return -EPROBE_DEFER;
+	if (ret == -EAGAIN)
+		ret = power_ctrl_logic_set_power(1);
 #endif
+	if (ret == -EAGAIN)
+		return -EPROBE_DEFER;
+	else if (ret)
+		return ret;
+
 	ov01a1s_set_power(ov01a1s, 1);
 
 	v4l2_i2c_subdev_init(&ov01a1s->sd, client, &ov01a1s_subdev_ops);
@@ -991,6 +1025,9 @@ static int ov01a1s_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	vsc_release_camera_sensor(&status);
+#endif
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
@@ -1010,6 +1047,9 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov01a1s->mutex);
 
 probe_error_power_off:
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	vsc_release_camera_sensor(&status);
+#endif
 	ov01a1s_set_power(ov01a1s, 0);
 	return ret;
 }

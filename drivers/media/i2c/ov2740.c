@@ -144,7 +144,6 @@ static const struct ov2740_reg mipi_data_rate_720mbps[] = {
 	{0x030e, 0x02},
 	{0x030a, 0x01},
 	{0x0312, 0x11},
-	{0x4837, 0x16},
 };
 
 static const struct ov2740_reg mipi_data_rate_cjfle23_720mbps[] = {
@@ -286,6 +285,7 @@ static const struct ov2740_reg mode_1932x1092_regs[] = {
 	{0x4601, 0x10},
 	{0x4800, 0x00},
 	{0x4816, 0x52},
+	{0x4837, 0x16},
 	{0x5000, 0x7f},
 	{0x5001, 0x00},
 	{0x5005, 0x38},
@@ -520,7 +520,7 @@ static const struct ov2740_mode cjfle23_supported_modes[] = {
 		.hts = 2160,
 		.vts_def = 0x0456,
 		.vts_min = 0x0456,
-		.vts_max = 0x0460,
+		.vts_max = 0x07ff,
 		.reg_list = {
 			.num_of_regs = ARRAY_SIZE(mode_cjfle23_1932x1092_regs),
 			.regs = mode_cjfle23_1932x1092_regs,
@@ -625,14 +625,14 @@ static int ov2740_parse_dt(struct ov2740 *ov2740)
 	ov2740->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov2740->reset_gpio);
 	if (ret < 0) {
-		dev_dbg(dev, "error while getting reset gpio: %d\n", ret);
+		dev_err(dev, "error while getting reset gpio: %d\n", ret);
 		return ret;
 	}
 
 	ov2740->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov2740->pled_gpio);
 	if (ret < 0) {
-		dev_dbg(dev, "error while getting pled gpio: %d\n", ret);
+		dev_err(dev, "error while getting pled gpio: %d\n", ret);
 		return ret;
 	}
 	return 0;
@@ -773,25 +773,21 @@ static int ov2740_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_ANALOGUE_GAIN:
-		printk("haoyao: AG: %u", ctrl->val);
 		ret = ov2740_write_reg(ov2740, OV2740_REG_ANALOG_GAIN, 2,
 				       ctrl->val);
 		break;
 
 	case V4L2_CID_DIGITAL_GAIN:
-		printk("haoyao: DG: %u", ctrl->val);
 		ret = ov2740_update_digital_gain(ov2740, ctrl->val);
 		break;
 
 	case V4L2_CID_EXPOSURE:
-		printk("haoyao: exposure: %u", ctrl->val);
 		/* 4 least significant bits of expsoure are fractional part */
 		ret = ov2740_write_reg(ov2740, OV2740_REG_EXPOSURE, 3,
 				       ctrl->val << 4);
 		break;
 
 	case V4L2_CID_VBLANK:
-		printk("haoyao: vblank: %u", ctrl->val);
 		ret = ov2740_write_reg(ov2740, OV2740_REG_VTS, 2,
 				       ov2740->cur_mode->height + ctrl->val);
 		break;

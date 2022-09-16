@@ -21,7 +21,7 @@ void ipu6_psys_hw_res_variant_init(void)
 	} else if (ipu_ver == IPU_VER_6) {
 		hw_var.queue_num = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
 		hw_var.cell_num = IPU6_FW_PSYS_N_CELL_ID;
-	} else if (ipu_ver == IPU_VER_6EP) {
+	} else if (ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL) {
 		hw_var.queue_num = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
 		hw_var.cell_num = IPU6EP_FW_PSYS_N_CELL_ID;
 	} else {
@@ -40,7 +40,7 @@ static const struct ipu_fw_resource_definitions *get_res(void)
 	if (ipu_ver == IPU_VER_6SE)
 		return ipu6se_res_defs;
 
-	if (ipu_ver == IPU_VER_6EP)
+	if (ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL)
 		return ipu6ep_res_defs;
 
 	return ipu6_res_defs;

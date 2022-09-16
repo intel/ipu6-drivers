@@ -73,6 +73,38 @@ static struct v4l2_subdev_internal_ops csi2_sd_internal_ops = {
 	.close = ipu_isys_subdev_close,
 };
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
+{
+	struct ipu_isys_pipeline *pipe = container_of(csi2->asd.sd.entity.pipe,
+						      struct ipu_isys_pipeline,
+						      pipe);
+	struct v4l2_subdev *ext_sd =
+		media_entity_to_v4l2_subdev(pipe->external->entity);
+	struct device *dev = &csi2->isys->adev->dev;
+	unsigned int bpp, lanes;
+	s64 ret;
+
+	if (!ext_sd) {
+		WARN_ON(1);
+		return -ENODEV;
+	}
+
+	bpp = ipu_isys_mbus_code_to_bpp(csi2->asd.ffmt->code);
+	lanes = csi2->nlanes;
+
+	ret = v4l2_get_link_freq(ext_sd->ctrl_handler, bpp, lanes * 2);
+	if (ret < 0) {
+		dev_err(dev, "can't get link frequency (%lld)\n", ret);
+		return ret;
+	}
+
+	dev_dbg(dev, "link freq of %s is %lld\n", ext_sd->name, ret);
+	*link_freq = ret;
+
+	return 0;
+}
+#else
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
 {
 	struct ipu_isys_pipeline *pipe = container_of(csi2->asd.sd.entity.pipe,
@@ -124,6 +156,7 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
 	*link_freq = qm.value;
 	return 0;
 }
+#endif
 
 static int subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 			   struct v4l2_event_subscription *sub)

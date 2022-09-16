@@ -12,6 +12,7 @@
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu6-isys-csi2.h"
 #include "ipu6-isys-phy.h"
+#include "ipu6-isys-dwc-phy.h"
 #include "ipu-isys-csi2.h"
 
 struct ipu6_csi2_error {
@@ -71,7 +72,8 @@ static int ipu6_csi2_phy_power_set(struct ipu_isys *isys,
 	dev_dbg(&isys->adev->dev, "for phy %d port %d, lanes: %d\n",
 		phy_id, port, cfg->nlanes);
 
-	nr = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+	nr = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+	      ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_ISYS_CSI_PORT_NUM : IPU6SE_ISYS_CSI_PORT_NUM;
 
 	if (!isys_base || port >= nr) {
@@ -117,13 +119,125 @@ static int ipu6_csi2_phy_power_set(struct ipu_isys *isys,
 	return ret;
 }
 
+static int ipu6_csi2_dwc_phy_power_set(struct ipu_isys *isys,
+				       struct ipu_isys_csi2_config *cfg, bool on)
+{
+	int ret = 0;
+	u32 port;
+	u32 phy_id, primary, secondary;
+	u32 nlanes;
+	u32 mbps;
+	void __iomem *isys_base = isys->pdata->base;
+	u32 nr;
+	s64 link_freq;
+
+	port = cfg->port;
+
+	nr = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+	      ipu_ver == IPU_VER_6EP_MTL) ?
+		IPU6_ISYS_CSI_PORT_NUM : IPU6SE_ISYS_CSI_PORT_NUM;
+
+	if (!isys_base || port >= nr) {
+		dev_warn(&isys->adev->dev, "invalid port ID %d\n", port);
+		return -EINVAL;
+	}
+
+	nlanes = cfg->nlanes;
+	/* only port a/c/e support 4 lanes */
+	if (nlanes == 4 && port % 2) {
+		dev_err(&isys->adev->dev, "invalid csi-port %u with %u lanes\n",
+			port, nlanes);
+		return -EINVAL;
+	}
+
+	ret = ipu_isys_csi2_get_link_freq(&isys->csi2[port], &link_freq);
+	if (ret) {
+		dev_err(&isys->adev->dev,
+			"get link freq failed(%d).\n", ret);
+		return ret;
+	}
+
+	do_div(link_freq, 1000000);
+	mbps = link_freq * 2;
+
+	phy_id = port;
+	primary = port & ~1;
+	secondary = primary + 1;
+	if (on) {
+		/* do rext flow for PHY-E */
+		ret = ipu6_isys_dwc_phy_termcal_rext(isys, mbps);
+		if (ret)
+			return ret;
+
+		if (nlanes == 4) {
+			dev_dbg(&isys->adev->dev,
+				"config phy %u and %u in aggregation mode",
+				primary, secondary);
+
+			ipu6_isys_dwc_phy_reset(isys, primary);
+			ipu6_isys_dwc_phy_reset(isys, secondary);
+			ipu6_isys_dwc_phy_aggr_setup(isys, primary,
+						     secondary, mbps);
+
+			ret = ipu6_isys_dwc_phy_config(isys, primary, mbps);
+			if (ret)
+				return ret;
+			ret = ipu6_isys_dwc_phy_config(isys, secondary, mbps);
+			if (ret)
+				return ret;
+
+			ret = ipu6_isys_dwc_phy_powerup_ack(isys, primary);
+			if (ret)
+				return ret;
+			ret = ipu6_isys_dwc_phy_powerup_ack(isys, secondary);
+			if (ret)
+				return ret;
+
+			return 0;
+		}
+
+		dev_dbg(&isys->adev->dev,
+			"config phy %u with %u lanes in non-aggr mode",
+			phy_id, nlanes);
+
+		ipu6_isys_dwc_phy_reset(isys, phy_id);
+		ret = ipu6_isys_dwc_phy_config(isys, phy_id, mbps);
+		if (ret)
+			return ret;
+
+		ret = ipu6_isys_dwc_phy_powerup_ack(isys, phy_id);
+		if (ret)
+			return ret;
+
+		return 0;
+	}
+
+	if (nlanes == 4) {
+		dev_dbg(&isys->adev->dev,
+			"Powerdown phy %u and phy %u for port %u",
+			primary, secondary, port);
+		ipu6_isys_dwc_phy_reset(isys, secondary);
+		ipu6_isys_dwc_phy_reset(isys, primary);
+
+		return 0;
+	}
+
+	dev_dbg(&isys->adev->dev,
+		"Powerdown phy %u with %u lanes", phy_id, nlanes);
+
+	ipu6_isys_dwc_phy_reset(isys, phy_id);
+
+	return 0;
+}
+
 static void ipu6_isys_register_errors(struct ipu_isys_csi2 *csi2)
 {
 	u32 mask = 0;
 	u32 irq = readl(csi2->base + CSI_PORT_REG_BASE_IRQ_CSI +
 			CSI_PORT_REG_BASE_IRQ_STATUS_OFFSET);
 
-	mask = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+	mask = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_CSI_RX_ERROR_IRQ_MASK : IPU6SE_CSI_RX_ERROR_IRQ_MASK;
 
 	writel(irq & mask,
@@ -344,18 +458,19 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	struct ipu_isys_csi2_config *cfg =
 		v4l2_get_subdev_hostdata(media_entity_to_v4l2_subdev
 					 (ip->external->entity));
-	unsigned int port;
+	unsigned int port, port_max;
 	int ret;
 	u32 mask = 0;
+	unsigned int i;
 
 	port = cfg->port;
-	dev_dbg(&isys->adev->dev, "for port %u\n", port);
+	dev_dbg(&isys->adev->dev, "for port %u with %u lanes\n", port, nlanes);
 
-	mask = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+	mask = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_CSI_RX_ERROR_IRQ_MASK : IPU6SE_CSI_RX_ERROR_IRQ_MASK;
 
 	if (!enable) {
-
 		writel(0, csi2->base + CSI_REG_CSI_FE_ENABLE);
 		writel(0, csi2->base + CSI_REG_PPI2CSI_ENABLE);
 
@@ -373,28 +488,20 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 		       csi2->base + CSI_PORT_REG_BASE_IRQ_CSI_SYNC +
 		       CSI_PORT_REG_BASE_IRQ_CLEAR_OFFSET);
 
+		/* power down phy */
+		if (ipu_ver == IPU_VER_6EP_MTL)
+			ret = ipu6_csi2_dwc_phy_power_set(isys, cfg, false);
+
+		if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP)
+			ret = ipu6_csi2_phy_power_set(isys, cfg, false);
+
 		/* Disable clock */
 		writel(0, isys->pdata->base +
 		       CSI_REG_HUB_FW_ACCESS_PORT(port));
 		writel(0, isys->pdata->base +
 		       CSI_REG_HUB_DRV_ACCESS_PORT(port));
 
-		if (ipu_ver == IPU_VER_6SE)
-			return 0;
-
-		/* power down */
-		return ipu6_csi2_phy_power_set(isys, cfg, false);
-	}
-
-	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) {
-		/* Enable DPHY power */
-		ret = ipu6_csi2_phy_power_set(isys, cfg, true);
-		if (ret) {
-			dev_err(&isys->adev->dev,
-				"CSI-%d PHY power up failed %d\n",
-				cfg->port, ret);
-			return ret;
-		}
+		return ret;
 	}
 
 	/* reset port reset */
@@ -402,24 +509,20 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	usleep_range(100, 200);
 	writel(0x0, csi2->base + CSI_REG_PORT_GPREG_SRST);
 
+	/* We need enable clock for all ports for MTL */
+	port_max = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		    ipu_ver == IPU_VER_6EP_MTL) ?
+		IPU6_ISYS_CSI_PORT_NUM : IPU6SE_ISYS_CSI_PORT_NUM;
+
 	/* Enable port clock */
-	writel(1, isys->pdata->base + CSI_REG_HUB_DRV_ACCESS_PORT(port));
-	writel(1, isys->pdata->base + CSI_REG_HUB_FW_ACCESS_PORT(port));
-
-	if (ipu_ver == IPU_VER_6SE) {
-		ipu_isys_csi2_phy_config_by_port(isys, port, nlanes);
-
-		/* 9'b00010.1000 for 400Mhz isys freqency */
-		writel(0x28,
-		       isys->pdata->base + CSI2_HUB_GPREG_DPHY_TIMER_INCR);
-		/* set port cfg and rx timing */
-		ipu_isys_csi2_set_timing(sd, timing, port, nlanes);
-
-		ret = ipu_isys_csi2_set_port_cfg(sd, port, nlanes);
-		if (ret)
-			return ret;
-
-		ipu_isys_csi2_rx_control(isys);
+	for (i = 0; i < port_max; i++) {
+		writel(1, isys->pdata->base + CSI_REG_HUB_DRV_ACCESS_PORT(i));
+		if (ipu_ver == IPU_VER_6EP_MTL)
+			writel(1, isys->pdata->base +
+			       IPU6V6_CSI_REG_HUB_FW_ACCESS_PORT(i));
+		else
+			writel(1, isys->pdata->base +
+			       CSI_REG_HUB_FW_ACCESS_PORT(i));
 	}
 
 	/* enable all error related irq */
@@ -463,6 +566,40 @@ int ipu_isys_csi2_set_stream(struct v4l2_subdev *sd,
 	writel(0x06, csi2->base + CSI_REG_PPI2CSI_CONFIG_CSI_FEATURE);
 	writel(1, csi2->base + CSI_REG_PPI2CSI_ENABLE);
 	writel(1, csi2->base + CSI_REG_CSI_FE_ENABLE);
+
+	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) {
+		/* Enable DPHY power */
+		ret = ipu6_csi2_phy_power_set(isys, cfg, true);
+		if (ret) {
+			dev_err(&isys->adev->dev,
+				"CSI-%d PHY power up failed %d\n",
+				cfg->port, ret);
+			return ret;
+		}
+	} else if (ipu_ver == IPU_VER_6EP_MTL) {
+		/* Enable DWC DPHY power */
+		ret = ipu6_csi2_dwc_phy_power_set(isys, cfg, true);
+		if (ret) {
+			dev_err(&isys->adev->dev,
+				"CSI-%d DWC-PHY power up failed %d\n",
+				cfg->port, ret);
+			return ret;
+		}
+	} else if (ipu_ver == IPU_VER_6SE) {
+		ipu_isys_csi2_phy_config_by_port(isys, port, nlanes);
+
+		/* 9'b00010.1000 for 400Mhz isys freqency */
+		writel(0x28,
+		       isys->pdata->base + CSI2_HUB_GPREG_DPHY_TIMER_INCR);
+		/* set port cfg and rx timing */
+		ipu_isys_csi2_set_timing(sd, timing, port, nlanes);
+
+		ret = ipu_isys_csi2_set_port_cfg(sd, port, nlanes);
+		if (ret)
+			return ret;
+
+		ipu_isys_csi2_rx_control(isys);
+	}
 
 	return 0;
 }
