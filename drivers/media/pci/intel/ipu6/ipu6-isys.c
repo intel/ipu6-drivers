@@ -85,18 +85,27 @@ void isys_setup_hw(struct ipu_isys *isys)
 	u32 irqs = 0;
 	unsigned int i, nr;
 
-	nr = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+	nr = (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+	      ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_ISYS_CSI_PORT_NUM : IPU6SE_ISYS_CSI_PORT_NUM;
 
 	/* Enable irqs for all MIPI ports */
 	for (i = 0; i < nr; i++)
 		irqs |= IPU_ISYS_UNISPART_IRQ_CSI2(i);
 
-	writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_EDGE);
-	writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_LEVEL_NOT_PULSE);
-	writel(0xffffffff, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_CLEAR);
-	writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_MASK);
-	writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_ENABLE);
+	if (ipu_ver == IPU_VER_6EP_MTL) {
+		writel(irqs, base + IPU6V6_REG_ISYS_CSI_TOP_CTRL0_IRQ_EDGE);
+		writel(irqs, base + IPU6V6_REG_ISYS_CSI_TOP_CTRL0_IRQ_LEVEL_NOT_PULSE);
+		writel(0xffffffff, base + IPU6V6_REG_ISYS_CSI_TOP_CTRL0_IRQ_CLEAR);
+		writel(irqs, base + IPU6V6_REG_ISYS_CSI_TOP_CTRL0_IRQ_MASK);
+		writel(irqs, base + IPU6V6_REG_ISYS_CSI_TOP_CTRL0_IRQ_ENABLE);
+	} else {
+		writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_EDGE);
+		writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_LEVEL_NOT_PULSE);
+		writel(0xffffffff, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_CLEAR);
+		writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_MASK);
+		writel(irqs, base + IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_ENABLE);
+	}
 
 	irqs = ISYS_UNISPART_IRQS;
 	writel(irqs, base + IPU_REG_ISYS_UNISPART_IRQ_EDGE);
@@ -118,6 +127,7 @@ irqreturn_t isys_isr(struct ipu_bus_device *adev)
 	struct ipu_isys *isys = ipu_bus_get_drvdata(adev);
 	void __iomem *base = isys->pdata->base;
 	u32 status_sw, status_csi;
+	u32 ctrl0_status, ctrl0_clear;
 
 	spin_lock(&isys->power_lock);
 	if (!isys->power) {
@@ -125,16 +135,23 @@ irqreturn_t isys_isr(struct ipu_bus_device *adev)
 		return IRQ_NONE;
 	}
 
-	status_csi = readl(isys->pdata->base +
-			   IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_STATUS);
+	if (ipu_ver == IPU_VER_6EP_MTL) {
+		ctrl0_status = IPU6V6_REG_ISYS_CSI_TOP_CTRL0_IRQ_STATUS;
+		ctrl0_clear = IPU6V6_REG_ISYS_CSI_TOP_CTRL0_IRQ_CLEAR;
+	} else {
+		ctrl0_status = IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_STATUS;
+		ctrl0_clear = IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_CLEAR;
+	}
+
+	status_csi = readl(isys->pdata->base + ctrl0_status);
 	status_sw = readl(isys->pdata->base + IPU_REG_ISYS_UNISPART_IRQ_STATUS);
 
 	writel(ISYS_UNISPART_IRQS & ~IPU_ISYS_UNISPART_IRQ_SW,
 	       base + IPU_REG_ISYS_UNISPART_IRQ_MASK);
 
 	do {
-		writel(status_csi, isys->pdata->base +
-			   IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_CLEAR);
+		writel(status_csi, isys->pdata->base + ctrl0_clear);
+
 		writel(status_sw, isys->pdata->base +
 			   IPU_REG_ISYS_UNISPART_IRQ_CLEAR);
 
@@ -157,10 +174,9 @@ irqreturn_t isys_isr(struct ipu_bus_device *adev)
 		else
 			status_sw = 0;
 
-		status_csi = readl(isys->pdata->base +
-				       IPU_REG_ISYS_CSI_TOP_CTRL0_IRQ_STATUS);
+		status_csi = readl(isys->pdata->base + ctrl0_status);
 		status_sw |= readl(isys->pdata->base +
-				       IPU_REG_ISYS_UNISPART_IRQ_STATUS);
+				   IPU_REG_ISYS_UNISPART_IRQ_STATUS);
 	} while (((status_csi & isys->isr_csi2_bits) ||
 		  (status_sw & IPU_ISYS_UNISPART_IRQ_SW)) &&
 		 !isys->adev->isp->flr_done);

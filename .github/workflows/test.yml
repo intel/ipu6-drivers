@@ -35,7 +35,7 @@ jobs:
                           run: |
                                   # there is a dependency on the ivsc modules that prevents building the sensor drivers
                                   # remove sensors from the dkms file
-                                  sed -i '/\[[3,4,5,6,7]\]/d' dkms.conf
+                                  sed -i '/\[[3,4,5,6,7,8]\]/d' dkms.conf
                                   # disable sensor modules in the Makefile
                                   sed -i 's/export CONFIG_VIDEO_OV/#export CONFIG_VIDEO_OV/g' Makefile
                                   sed -i 's/export CONFIG_VIDEO_HM/#export CONFIG_VIDEO_HM/g' Makefile

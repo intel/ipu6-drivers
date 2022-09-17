@@ -1500,10 +1500,12 @@ static void calculate_stream_datarate(struct video_stream_watermark *watermark)
 	u64 pixels_per_line, bytes_per_line, line_time_ns;
 	u64 pages_per_line, pb_bytes_per_line, stream_data_rate;
 	u16 sram_granulrity_shift =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		 ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_SRAM_GRANULRITY_SHIFT : IPU6SE_SRAM_GRANULRITY_SHIFT;
 	u16 sram_granulrity_size =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		 ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_SRAM_GRANULRITY_SIZE : IPU6SE_SRAM_GRANULRITY_SIZE;
 
 	pixels_per_line = watermark->width + watermark->hblank;

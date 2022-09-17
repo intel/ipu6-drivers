@@ -23,6 +23,7 @@ intel-ipu6-isys-objs			+= ../ipu-isys.o \
 					   ../ipu-isys-csi2.o \
 					   ipu6-isys.o \
 					   ipu6-isys-phy.o \
+					   ipu6-isys-dwc-phy.o \
 					   ipu6-isys-csi2.o \
 					   ipu6-isys-gpc.o \
 					   ../ipu-isys-csi2-be-soc.o \

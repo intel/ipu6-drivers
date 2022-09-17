@@ -6,12 +6,13 @@ Alder Lake platforms. There are 4 repositories that provide the complete setup:
 - https://github.com/intel/ipu6-drivers - kernel drivers for the IPU and sensors
 - https://github.com/intel/ipu6-camera-hal - HAL for processing of images in userspace
 - https://github.com/intel/ipu6-camera-bins - IPU firmware and proprietary image processing libraries
-- https://github.com/intel/icamerasrc (branch:icamerasrc_slim_api) - Gstreamer src plugin
+- https://github.com/intel/icamerasrc/tree/icamerasrc_slim_api (branch:icamerasrc_slim_api) - Gstreamer src plugin
 
 
 ## Content of this repository:
 - IPU6 kernel driver
-- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10 and OV2740 sensors
+- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10 and HM2170 sensors
+- OV2740 driver and HI556 kernel patch, to enable IPU6 support in linux kernel
 
 ## Build instructions:
 Three ways are available:
@@ -22,7 +23,7 @@ Three ways are available:
 ### 1. Build with kernel source tree
 - Tested with kernel 5.15
 - Check out kernel
-- Patch the diff files in `patch` folder
+- Patch the diff files you need in `patch` folder
 - Copy repo content to kernel source (except Makefile and drivers/media/i2c/{Kconfig,Makefile}, will change manually)
 - Modify related Kconfig and Makefile
 - Add config in LinuxRoot/drivers/media/i2c/Kconfig *(for kernel 5.18+, use `VIDEO_DEV` instead of `VIDEO_V4L2` in `depends on` section)*
@@ -94,6 +95,19 @@ Three ways are available:
 		  To compile this driver as a module, choose M here: the
 		  module will be called ov02c10.
 
+	config VIDEO_HM2170
+		tristate "Himax HM2170 sensor support"
+		depends on VIDEO_V4L2 && I2C
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+			This is a Video4Linux2 sensor driver for the Himax
+			HM2170 camera.
+
+			To compile this driver as a module, choose M here: the
+			module will be called hm2170.
+
 	```
 
 - Add to drivers/media/i2c/Makefile
@@ -103,6 +117,7 @@ Three ways are available:
 	obj-$(CONFIG_VIDEO_HM11B1)  += hm11b1.o
 	obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
 	obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
+	obj-$(CONFIG_VIDEO_HM2170) += hm2170.o
 	```
 
 - Modify drivers/media/pci/Kconfig
@@ -121,6 +136,7 @@ Three ways are available:
 	CONFIG_VIDEO_OV01A10=m
 	CONFIG_VIDEO_HM11B1=m
 	CONFIG_VIDEO_OV02C10=m
+	CONFIG_VIDEO_HM2170=m
 	```
 - LJCA and CVF part as below, refer to https://github.com/intel/ivsc-driver/blob/main/README.md
 	```conf
@@ -137,6 +153,7 @@ Three ways are available:
 	```
 ### 2. Build outside kernel source tree
 - Requires 5.15 kernel header installed on compiling machine
+- Requires iVSC driver be built together
 - To compile:
 	```shell
 	$cd ipu6-drivers

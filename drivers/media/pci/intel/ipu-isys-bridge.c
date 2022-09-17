@@ -38,6 +38,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
 	IPU_SENSOR_CONFIG("HIMX2170", 0, 0),
 	/* Himax hm11b1 */
 	IPU_SENSOR_CONFIG("HIMX11B1", 0, 0),
+	/* Omnivision ov13b10 */
+	IPU_SENSOR_CONFIG("OVTIDB10", 0, 0),
 };
 
 static const struct ipu_property_names prop_names = {

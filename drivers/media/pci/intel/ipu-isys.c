@@ -540,10 +540,12 @@ void update_watermark_setting(struct ipu_isys *isys)
 	u64 threshold_bytes;
 	u64 isys_pb_datarate_mbs = 0;
 	u16 sram_granulrity_shift =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		 ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_SRAM_GRANULRITY_SHIFT : IPU6SE_SRAM_GRANULRITY_SHIFT;
 	int max_sram_size =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
+		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		 ipu_ver == IPU_VER_6EP_MTL) ?
 		IPU6_MAX_SRAM_SIZE : IPU6SE_MAX_SRAM_SIZE;
 
 	mutex_lock(&iwake_watermark->mutex);
@@ -951,6 +953,7 @@ static int isys_runtime_pm_suspend(struct device *dev)
 	isys->reset_needed = false;
 	mutex_unlock(&isys->mutex);
 
+	isys->phy_termcal_val = 0;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
 #else
@@ -1295,7 +1298,8 @@ static int isys_probe(struct ipu_bus_device *adev)
 	isys->pdata = adev->pdata;
 
 	/* initial streamID for different sensor types */
-	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) {
+	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+	    ipu_ver == IPU_VER_6EP_MTL) {
 		isys->sensor_info.vc1_data_start =
 			IPU6_FW_ISYS_VC1_SENSOR_DATA_START;
 		isys->sensor_info.vc1_data_end =
@@ -1346,6 +1350,7 @@ static int isys_probe(struct ipu_bus_device *adev)
 	spin_lock_init(&isys->lock);
 	spin_lock_init(&isys->power_lock);
 	isys->power = 0;
+	isys->phy_termcal_val = 0;
 
 	mutex_init(&isys->mutex);
 	mutex_init(&isys->stream_mutex);
@@ -1672,6 +1677,7 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_MTL_PCI_ID)},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);

@@ -440,6 +440,15 @@ irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr)
 			WARN_ON(1);
 		}
 
+		if (irq_status & (BUTTRESS_ISR_IS_FATAL_MEM_ERR |
+				  BUTTRESS_ISR_PS_FATAL_MEM_ERR)) {
+			dev_err(&isp->pdev->dev,
+				"BUTTRESS_ISR_FATAL_MEM_ERR\n");
+		}
+
+		if (irq_status & BUTTRESS_ISR_UFI_ERROR)
+			dev_err(&isp->pdev->dev, "BUTTRESS_ISR_UFI_ERROR\n");
+
 		irq_status = readl(isp->base + reg_irq_sts);
 	} while (irq_status && !isp->flr_done);
 
@@ -727,6 +736,9 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 	const void *addr;
 	unsigned long n_pages;
 	int rval, i;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	int nents;
+#endif
 
 	n_pages = PAGE_ALIGN(fw->size) >> PAGE_SHIFT;
 
@@ -753,6 +765,17 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 		goto out;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	nents = dma_map_sg(&sys->dev, sgt->sgl, sgt->orig_nents, DMA_TO_DEVICE);
+	if (!nents) {
+		rval = -ENOMEM;
+		sg_free_table(sgt);
+		goto out;
+	}
+	sgt->nents = nents;
+	dma_sync_sg_for_device(&sys->dev, sgt->sgl, sgt->orig_nents,
+			       DMA_TO_DEVICE);
+#else
 	rval = dma_map_sgtable(&sys->dev, sgt, DMA_TO_DEVICE, 0);
 	if (rval < 0) {
 		rval = -ENOMEM;
@@ -761,6 +784,7 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 	}
 
 	dma_sync_sgtable_for_device(&sys->dev, sgt, DMA_TO_DEVICE);
+#endif
 
 out:
 	kfree(pages);
@@ -1300,6 +1324,12 @@ int ipu_buttress_init(struct ipu_device *isp)
 
 	dev_info(&isp->pdev->dev, "IPU in %s mode\n",
 		 isp->secure_mode ? "secure" : "non-secure");
+
+	dev_info(&isp->pdev->dev, "IPU secure touch = 0x%x\n",
+		 readl(isp->base + BUTTRESS_REG_SECURITY_TOUCH));
+
+	dev_info(&isp->pdev->dev, "IPU camera mask = 0x%x\n",
+		 readl(isp->base + BUTTRESS_REG_CAMERA_MASK));
 
 	b->wdt_cached_value = readl(isp->base + BUTTRESS_REG_WDT);
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
