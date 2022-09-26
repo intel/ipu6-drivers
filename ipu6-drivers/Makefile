@@ -12,8 +12,7 @@ export CONFIG_INTEL_IPU6_ADLRVP_PDATA=y
 MODSRC := $(shell pwd)
 ccflags-y += -I$(MODSRC)/include/
 
-KERNEL_SRC=//home/jiangxiaoyu/jiangxiaoyu/git/origin/IPU6_RELEASE/github_release/ipu6-drivers/vied-viedlin-intel-next
-#KERNEL_SRC=/usr/src/vied-viedlin-intel-next
+KERNEL_SRC=/usr/src/vied-viedlin-intel-next
 
 
 obj-y				+= drivers/media/pci/intel/
