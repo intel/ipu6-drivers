@@ -961,19 +961,23 @@ static int ov01a1s_probe(struct i2c_client *client)
 {
 	struct ov01a1s *ov01a1s;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 	s64 link_freq;
+#endif
 
 	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
 	if (!ov01a1s)
 		return -ENOMEM;
 	ov01a1s->client = client;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	conf.lane_num = OV01A1S_DATA_LANES;
 	/* frequency unit 100k */
 	conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
 	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
+#endif
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	if (ret == -EAGAIN)
 		ret = ov01a1s_parse_dt(ov01a1s);

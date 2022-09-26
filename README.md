@@ -4,8 +4,8 @@ This repository supports MIPI cameras through the IPU6 on Intel Tiger Lake and
 Alder Lake platforms. There are 4 repositories that provide the complete setup:
 
 - https://github.com/intel/ipu6-drivers - kernel drivers for the IPU and sensors
-- https://github.com/intel/ipu6-camera-hal - HAL for processing of images in userspace
 - https://github.com/intel/ipu6-camera-bins - IPU firmware and proprietary image processing libraries
+- https://github.com/intel/ipu6-camera-hal - HAL for processing of images in userspace
 - https://github.com/intel/icamerasrc/tree/icamerasrc_slim_api (branch:icamerasrc_slim_api) - Gstreamer src plugin
 
 
@@ -21,12 +21,12 @@ Three ways are available:
 3. and build with dkms
 
 ### 1. Build with kernel source tree
-- Tested with kernel 5.15
+- Tested with kernel 6.0-rc4
 - Check out kernel
 - Patch the diff files you need in `patch` folder
-- Copy repo content to kernel source (except Makefile and drivers/media/i2c/{Kconfig,Makefile}, will change manually)
+- Copy repo content to kernel source **(except Makefile and drivers/media/i2c/{Kconfig,Makefile}, will change manually next)**
 - Modify related Kconfig and Makefile
-- Add config in LinuxRoot/drivers/media/i2c/Kconfig *(for kernel 5.18+, use `VIDEO_DEV` instead of `VIDEO_V4L2` in `depends on` section)*
+- Add config in LinuxRoot/drivers/media/i2c/Kconfig *(for kernel version < 5.18, use `VIDEO_V4L2` instead of `VIDEO_DEV` in `depends on` section)*
 	```conf
 	config POWER_CTRL_LOGIC
 		tristate "power control logic driver"
@@ -42,7 +42,7 @@ Three ways are available:
 
 	config VIDEO_OV01A1S
 		tristate "OmniVision OV01A1S sensor support"
-		depends on VIDEO_V4L2 && I2C
+		depends on VIDEO_DEV && I2C
 		depends on ACPI || COMPILE_TEST
 		select MEDIA_CONTROLLER
 		select VIDEO_V4L2_SUBDEV_API
@@ -56,7 +56,7 @@ Three ways are available:
 
 	config VIDEO_HM11B1
 		tristate "Himax HM11B1 sensor support"
-		depends on VIDEO_V4L2 && I2C
+		depends on VIDEO_DEV && I2C
 		select MEDIA_CONTROLLER
 		select VIDEO_V4L2_SUBDEV_API
 		select V4L2_FWNODE
@@ -69,7 +69,7 @@ Three ways are available:
 
 	config VIDEO_OV01A10
 		tristate "OmniVision OV01A10 sensor support"
-		depends on VIDEO_V4L2 && I2C
+		depends on VIDEO_DEV && I2C
 		depends on ACPI || COMPILE_TEST
 		select MEDIA_CONTROLLER
 		select VIDEO_V4L2_SUBDEV_API
@@ -83,7 +83,7 @@ Three ways are available:
 
 	config VIDEO_OV02C10
 		tristate "OmniVision OV02C10 sensor support"
-		depends on VIDEO_V4L2 && I2C
+		depends on VIDEO_DEV && I2C
 		depends on ACPI || COMPILE_TEST
 		select MEDIA_CONTROLLER
 		select VIDEO_V4L2_SUBDEV_API
@@ -97,7 +97,7 @@ Three ways are available:
 
 	config VIDEO_HM2170
 		tristate "Himax HM2170 sensor support"
-		depends on VIDEO_V4L2 && I2C
+		depends on VIDEO_DEV && I2C
 		select MEDIA_CONTROLLER
 		select VIDEO_V4L2_SUBDEV_API
 		select V4L2_FWNODE
@@ -152,7 +152,7 @@ Three ways are available:
 	CONFIG_INTEL_VSC_ACE_DEBUG=m
 	```
 ### 2. Build outside kernel source tree
-- Requires 5.15 kernel header installed on compiling machine
+- Requires kernel header installed on build machine
 - Requires iVSC driver be built together
 - To compile:
 	```shell
