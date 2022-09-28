@@ -336,13 +336,13 @@ static int csi2_link_validate(struct media_link *link)
 		return rval;
 
 	if (!v4l2_ctrl_g_ctrl(csi2->store_csi2_header)) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 		struct media_pad *remote_pad =
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,0,0))
 		    media_entity_remote_pad(&csi2->asd.pad[CSI2_PAD_SOURCE]);
 #else
+		struct media_pad *remote_pad =
 		    media_pad_remote_pad_first(&csi2->asd.pad[CSI2_PAD_SOURCE]);
 #endif
-
 		if (remote_pad &&
 		    is_media_entity_v4l2_subdev(remote_pad->entity)) {
 			dev_err(&csi2->isys->adev->dev,

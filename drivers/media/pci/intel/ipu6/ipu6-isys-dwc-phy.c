@@ -205,13 +205,37 @@ static u32 dwc_dphy_ifc_read_mask(struct ipu_isys *isys, u32 phy_id, u32 addr,
 static int dwc_dphy_pwr_up(struct ipu_isys *isys, u32 phy_id)
 {
 	u32 fsm_state;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 7, 0)
+	ktime_t __timeout = ktime_add_us(ktime_get(), DWC_DPHY_TIMEOUT);
+#else
 	int ret;
 	u32 timeout = DWC_DPHY_TIMEOUT;
+#endif
 
 	dwc_dphy_write(isys, phy_id, IPU_DWC_DPHY_RSTZ, 1);
 	usleep_range(10, 20);
 	dwc_dphy_write(isys, phy_id, IPU_DWC_DPHY_SHUTDOWNZ, 1);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 7, 0)
+	for (;;) {
+		fsm_state = dwc_dphy_ifc_read_mask(isys, phy_id, 0x1e, 0, 4);
+		if (fsm_state == PHY_FSM_STATE_IDLE ||
+		    fsm_state == PHY_FSM_STATE_ULP)
+			break;
+		if (ktime_compare(ktime_get(), __timeout) > 0) {
+			fsm_state = dwc_dphy_ifc_read_mask(isys, phy_id,
+							   0x1e, 0, 4);
+			break;
+		}
+		usleep_range(50, 100);
+	}
+
+	if (fsm_state != PHY_FSM_STATE_IDLE && fsm_state != PHY_FSM_STATE_ULP) {
+		dev_err(&isys->adev->dev, "DPHY%d power up failed, state 0x%x",
+			phy_id, fsm_state);
+		return -ETIMEDOUT;
+	}
+#else
 	ret = read_poll_timeout(dwc_dphy_ifc_read_mask, fsm_state,
 				(fsm_state == PHY_FSM_STATE_IDLE ||
 				 fsm_state == PHY_FSM_STATE_ULP), 100, timeout,
@@ -222,6 +246,7 @@ static int dwc_dphy_pwr_up(struct ipu_isys *isys, u32 phy_id)
 			phy_id, fsm_state);
 		return ret;
 	}
+#endif
 
 	return 0;
 }
