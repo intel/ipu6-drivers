@@ -33,6 +33,7 @@ source "drivers/media/pci/intel/Kconfig"
 
 ```
 CONFIG_VIDEO_INTEL_IPU6=m
+CONFIG_IPU_ISYS_BRIDGE=n
 ```
 
 ### Build outside kernel source tree
