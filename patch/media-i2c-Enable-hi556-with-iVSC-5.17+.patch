@@ -1,0 +1,204 @@
+From d7f6bdeab03008cc15e8db93017f61ed3049bd47 Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Tue, 30 Aug 2022 17:45:56 +0800
+Subject: [PATCH] media/i2c: Enable hi556 with iVSC
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/i2c/hi556.c | 93 ++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 86 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/media/i2c/hi556.c b/drivers/media/i2c/hi556.c
+index 055d1aa8410e..399c24555443 100644
+--- a/drivers/media/i2c/hi556.c
++++ b/drivers/media/i2c/hi556.c
+@@ -10,6 +10,9 @@
+ #include <media/v4l2-ctrls.h>
+ #include <media/v4l2-device.h>
+ #include <media/v4l2-fwnode.h>
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++#include <linux/vsc.h>
++#endif
+ 
+ #define HI556_REG_VALUE_08BIT		1
+ #define HI556_REG_VALUE_16BIT		2
+@@ -486,6 +489,9 @@ struct hi556 {
+ 	struct v4l2_ctrl *vblank;
+ 	struct v4l2_ctrl *hblank;
+ 	struct v4l2_ctrl *exposure;
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	struct v4l2_ctrl *privacy_status;
++#endif
+ 
+ 	/* Current mode */
+ 	const struct hi556_mode *cur_mode;
+@@ -671,6 +677,12 @@ static int hi556_set_ctrl(struct v4l2_ctrl *ctrl)
+ 		ret = hi556_test_pattern(hi556, ctrl->val);
+ 		break;
+ 
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	case V4L2_CID_PRIVACY:
++		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
++		break;
++#endif
++
+ 	default:
+ 		ret = -EINVAL;
+ 		break;
+@@ -692,7 +704,11 @@ static int hi556_init_controls(struct hi556 *hi556)
+ 	int ret;
+ 
+ 	ctrl_hdlr = &hi556->ctrl_handler;
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
++#else
+ 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
++#endif
+ 	if (ret)
+ 		return ret;
+ 
+@@ -726,6 +742,10 @@ static int hi556_init_controls(struct hi556 *hi556)
+ 					  h_blank);
+ 	if (hi556->hblank)
+ 		hi556->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	hi556->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &hi556_ctrl_ops,
++								V4L2_CID_PRIVACY, 0, 1, 1, 0);
++#endif
+ 
+ 	v4l2_ctrl_new_std(ctrl_hdlr, &hi556_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
+ 			  HI556_ANAL_GAIN_MIN, HI556_ANAL_GAIN_MAX,
+@@ -760,6 +780,16 @@ static void hi556_assign_pad_format(const struct hi556_mode *mode,
+ 	fmt->field = V4L2_FIELD_NONE;
+ }
+ 
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++static void hi556_vsc_privacy_callback(void *handle,
++				        enum vsc_privacy_status status)
++{
++	struct hi556 *hi556 = handle;
++
++	v4l2_ctrl_s_ctrl(hi556->privacy_status, !status);
++}
++#endif
++
+ static int hi556_identify_module(struct hi556 *hi556)
+ {
+ 	struct i2c_client *client = v4l2_get_subdevdata(&hi556->sd);
+@@ -790,6 +820,21 @@ static int hi556_start_streaming(struct hi556 *hi556)
+ 	struct i2c_client *client = v4l2_get_subdevdata(&hi556->sd);
+ 	const struct hi556_reg_list *reg_list;
+ 	int link_freq_index, ret;
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	struct vsc_mipi_config conf;
++	struct vsc_camera_status status;
++
++	conf.lane_num = HI556_DATA_LANES;
++	/* frequency unit 100k */
++	conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
++	ret = vsc_acquire_camera_sensor(&conf, hi556_vsc_privacy_callback,
++					hi556, &status);
++	if (ret) {
++		dev_err(&client->dev, "Acquire VSC failed");
++		return ret;
++	}
++	__v4l2_ctrl_s_ctrl(hi556->privacy_status, !(status.status));
++#endif
+ 
+ 	ret = hi556_identify_module(hi556);
+ 	if (ret)
+@@ -828,10 +873,17 @@ static int hi556_start_streaming(struct hi556 *hi556)
+ static void hi556_stop_streaming(struct hi556 *hi556)
+ {
+ 	struct i2c_client *client = v4l2_get_subdevdata(&hi556->sd);
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	struct vsc_camera_status status;
++#endif
+ 
+ 	if (hi556_write_reg(hi556, HI556_REG_MODE_SELECT,
+ 			    HI556_REG_VALUE_16BIT, HI556_MODE_STANDBY))
+ 		dev_err(&client->dev, "failed to set stream");
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	if (vsc_release_camera_sensor(&status))
++		dev_err(&client->dev, "Release VSC failed");
++#endif
+ }
+ 
+ static int hi556_set_stream(struct v4l2_subdev *sd, int enable)
+@@ -1120,17 +1172,36 @@ static int hi556_probe(struct i2c_client *client)
+ 	struct hi556 *hi556;
+ 	bool full_power;
+ 	int ret;
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	struct vsc_mipi_config conf;
++	struct vsc_camera_status status;
++#endif
+ 
+-	ret = hi556_check_hwcfg(&client->dev);
+-	if (ret) {
+-		dev_err(&client->dev, "failed to check HW configuration: %d",
+-			ret);
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	conf.lane_num = HI556_DATA_LANES;
++	/* frequency unit 100k */
++	conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
++	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
++	if (ret == -EAGAIN) {
++		dev_dbg(&client->dev, "VSC not ready, will re-probe");
++		return -EPROBE_DEFER;
++	} else if (ret) {
++		dev_err(&client->dev, "Acquire VSC failed");
+ 		return ret;
+ 	}
++#endif
++	// ret = hi556_check_hwcfg(&client->dev);
++	// if (ret) {
++	// 	dev_err(&client->dev, "failed to check HW configuration: %d",
++	// 		ret);
++	// 	return ret;
++	// }
+ 
+ 	hi556 = devm_kzalloc(&client->dev, sizeof(*hi556), GFP_KERNEL);
+-	if (!hi556)
+-		return -ENOMEM;
++	if (!hi556) {
++		ret = -ENOMEM;
++		goto probe_error_ret;
++	}
+ 
+ 	v4l2_i2c_subdev_init(&hi556->sd, client, &hi556_subdev_ops);
+ 
+@@ -1139,7 +1210,7 @@ static int hi556_probe(struct i2c_client *client)
+ 		ret = hi556_identify_module(hi556);
+ 		if (ret) {
+ 			dev_err(&client->dev, "failed to find sensor: %d", ret);
+-			return ret;
++			goto probe_error_ret;
+ 		}
+ 	}
+ 
+@@ -1169,6 +1240,10 @@ static int hi556_probe(struct i2c_client *client)
+ 		goto probe_error_media_entity_cleanup;
+ 	}
+ 
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	vsc_release_camera_sensor(&status);
++#endif
++
+ 	/* Set the device's state to active if it's in D0 state. */
+ 	if (full_power)
+ 		pm_runtime_set_active(&client->dev);
+@@ -1184,6 +1259,10 @@ static int hi556_probe(struct i2c_client *client)
+ 	v4l2_ctrl_handler_free(hi556->sd.ctrl_handler);
+ 	mutex_destroy(&hi556->mutex);
+ 
++probe_error_ret:
++#if IS_ENABLED(CONFIG_INTEL_VSC)
++	vsc_release_camera_sensor(&status);
++#endif
+ 	return ret;
+ }
+ 
+-- 
+2.37.2
+
