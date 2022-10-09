@@ -11,8 +11,7 @@ Alder Lake platforms. There are 4 repositories that provide the complete setup:
 
 ## Content of this repository:
 - IPU6 kernel driver
-- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10 and HM2170 sensors
-- OV2740 driver and HI556 kernel patch, to enable IPU6 support in linux kernel
+- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10, OV2740, HM2170 and HI556 sensors
 
 ## Build instructions:
 Three ways are available:
@@ -21,9 +20,19 @@ Three ways are available:
 3. and build with dkms
 
 ### 1. Build with kernel source tree
-- Tested with kernel 6.0-rc4
+- Tested with kernel 6.0
 - Check out kernel
-- Patch the diff files you need in `patch` folder
+- Apply patches:
+	```sh
+	# For IPU6
+	patch/IOMMU-passthrough-for-intel-ipu.diff
+
+	# For 5.15 <= kernel version < 5.17
+	patch/int3472-support-independent-clock-and-LED-gpios.patch
+
+	# For kernel version >= 5.17
+	patch/int3472-support-independent-clock-and-LED-gpios-5.17+.patch
+	```
 - Copy repo content to kernel source **(except Makefile and drivers/media/i2c/{Kconfig,Makefile}, will change manually next)**
 - Modify related Kconfig and Makefile
 - Add config in LinuxRoot/drivers/media/i2c/Kconfig *(for kernel version < 5.18, use `VIDEO_V4L2` instead of `VIDEO_DEV` in `depends on` section)*
@@ -137,8 +146,10 @@ Three ways are available:
 	CONFIG_VIDEO_HM11B1=m
 	CONFIG_VIDEO_OV02C10=m
 	CONFIG_VIDEO_HM2170=m
+	# If your kernel < 5.15 or not set CONFIG_INTEL_SKL_INT3472, please add the line below:
+	# CONFIG_POWER_CTRL_LOGIC=m
 	```
-- LJCA and CVF part as below, refer to https://github.com/intel/ivsc-driver/blob/main/README.md
+- LJCA and CVF part as below, please check details at https://github.com/intel/ivsc-driver/blob/main/README.md
 	```conf
 	CONFIG_MFD_LJCA=m
 	CONFIG_I2C_LJCA=m
@@ -154,18 +165,30 @@ Three ways are available:
 ### 2. Build outside kernel source tree
 - Requires kernel header installed on build machine
 - Requires iVSC driver be built together
-- To compile:
-	```shell
-	$cd ipu6-drivers
-	$make -j`nproc`
+- To prepare dependency:
+	```sh
+	cd ipu6-drivers
+	git clone https://github.com/intel/ivsc-driver.git
+	cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include .
+	rm -rf ivsc-driver
 	```
 
-- To install and use modules
-	```shell
-	$sudo make modules_install
-	$sudo depmod -a
+- To build and install:
+	```sh
+	make -j`nproc` && sudo make modules_install && sudo depmod -a
 	```
 
 ### 3. Build with dkms
-a dkms.conf file is also provided as an example for building with dkms
-which can be used by `dkms` `add`, `build` and `install`.
+- Prepare dependency:
+	```sh
+	cd ipu6-drivers
+	git clone https://github.com/intel/ivsc-driver.git
+	cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include .
+	rm -rf ivsc-driver
+	```
+
+- Register, build and auto install:
+	```sh
+	sudo dkms add .
+	sudo dkms autoinstall ipu6-drivers/0.0.0
+	```
