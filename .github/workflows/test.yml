@@ -13,6 +13,18 @@ jobs:
                         - name: Checkout
                           uses: actions/checkout@v3
 
+                        - name: Checkout ivsc-driver repo
+                          uses: actions/checkout@v3
+                          with:
+                            repository: intel/ivsc-driver
+                            path: ivsc-driver
+
+                        - name: Merge with ivsc-driver
+                          shell: bash
+                          run: |
+                                  cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include .
+                                  rm -rf ivsc-driver
+
                         - name: Prepare environment
                           shell: bash
                           run: |
@@ -32,17 +44,7 @@ jobs:
                                   apt update
                                   apt install --yes linux-headers-generic-wip
 
-                        - name: Patch build scripts
-                          shell: bash
-                          run: |
-                                  # there is a dependency on the ivsc modules that prevents building the sensor drivers
-                                  # remove sensors from the dkms file
-                                  sed -i '/\[[3,4,5,6,7,8]\]/d' dkms.conf
-                                  # disable sensor modules in the Makefile
-                                  sed -i 's/export CONFIG_VIDEO_OV/#export CONFIG_VIDEO_OV/g' Makefile
-                                  sed -i 's/export CONFIG_VIDEO_HM/#export CONFIG_VIDEO_HM/g' Makefile
-
-                        - name: Register w/ dkms
+                        - name: Register with dkms
                           shell: bash
                           run: |
                                   dkms add .
