@@ -1,5 +1,0 @@
-config XLINK_IPC
-	tristate "Support for XLINK IPC"
-	depends on KEEMBAY_VPU_IPC
-	help
-	  XLINK IPC enables the communication/control IPC Sub-System.
