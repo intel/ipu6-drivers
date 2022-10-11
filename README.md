@@ -16,26 +16,26 @@ There are 4 repositories:
 Three ways are available:
 1. build with kernel source tree
 2. build out of kernel source tree
-3. and build with dkms
+3. build with dkms
 
 ### 1. Build with kernel source tree
 - Check out kernel source tree
 - Apply patches:
-	```sh
+```sh
 	patch/IOMMU-passthrough-for-intel-ipu.diff
-	```
+```
 - Copy repo content to kernel source **(except Makefile and {Kconfig, Makefile} under "drivers/media/i2c/", they need to be changed manually)**
 - Modify related Kconfig and Makefile
 - Add config in "drivers/media/i2c/Kconfig"
-	```conf
-	config VIDEO_AR0234 
+```conf
+config VIDEO_AR0234 
   tristate "OnSemi AR0234 sensor support" 
   depends on I2C && VIDEO_V4L2_SUBDEV_API 
   depends on MEDIA_CAMERA_SUPPORT 
   help This is a Video4Linux2 sensor-level driver for the OnSemi ar0234 camera.
     AR0234 is a 2Mp Digital image sensor with global shutter.
 
- config VIDEO_LT6911UXC
+config VIDEO_LT6911UXC
   tristate "Lontium LT6911UXC decoder"
   depends on I2C && VIDEO_V4L2_SUBDEV_API
   help
@@ -50,39 +50,38 @@ Three ways are available:
   tristate "D4XX Camera Driver"
   help
     This is a Video4Linux2 sensor-level driver for intel realsence camera.
-
-	```
+```
 
 - Add to drivers/media/i2c/Makefile
-	```makefile
+```makefile
 obj-$(CONFIG_VIDEO_AR0234) += ar0234.o 
 obj-$(CONFIG_VIDEO_LT6911UXC) += lt6911uxc.o 
 obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
-	```
+```
 
 - Modify drivers/media/pci/Kconfig
-	```conf
+```conf
 	# replace line:
 	# source "drivers/media/pci/intel/ipu3/Kconfig"
 	# with line:
 	source "drivers/media/pci/intel/Kconfig"
-	```
+```
 
 - Enable the following settings in .config
-	```conf
-	CONFIG_VIDEO_INTEL_IPU6=m 
- CONFIG_INTEL_SKL_INT3472=m 
- CONFIG_VIDEO_AR0234=m 
- CONFIG_VIDEO_LT6911UXC=m 
- CONFIG_VIDEO_D4XX=m 
- CONFIG_INTEL_IPU6_ACPI=y 
+```conf
+ CONFIG_VIDEO_INTEL_IPU6=m
+ CONFIG_INTEL_SKL_INT3472=m
+ CONFIG_VIDEO_AR0234=m
+ CONFIG_VIDEO_LT6911UXC=m
+ CONFIG_VIDEO_D4XX=m
+ CONFIG_INTEL_IPU6_ACPI=y
  CONFIG_INTEL_IPU6_ADLRVP_PDATA=y 
  CONFIG_INTEL_IPU6_TGLRVP_PDATA=y 
  CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA=y 
  CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING=y
-	```
+```
 - Enable below settings in .config
-	```conf
+```conf
  CONFIG_VIDEO_INTEL_IPU6=m 
  CONFIG_INTEL_SKL_INT3472=m 
  CONFIG_VIDEO_AR0234=m 
@@ -93,14 +92,14 @@ obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
  CONFIG_INTEL_IPU6_TGLRVP_PDATA=y 
  CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA=y 
  CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING=y
-	```
+```
 ### 2. Build outside kernel source tree
 - Requires kernel header installed on build machine
 
 - To build and install:
-	```sh
+```sh
 	make -j`nproc` && sudo make modules_install && sudo depmod -a
-	```
+```
 
 ### 3. Build with dkms
 - TBD
