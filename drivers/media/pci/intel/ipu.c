@@ -539,9 +539,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (rval)
 		dev_err(&pdev->dev, "Trace support not available\n");
 
-	pm_runtime_put_noidle(&pdev->dev);
-	pm_runtime_allow(&pdev->dev);
-
 	/*
 	 * NOTE Device hierarchy below is important to ensure proper
 	 * runtime suspend and resume order.
@@ -625,7 +622,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	ipu_mmu_hw_cleanup(isp->psys->mmu);
-	pm_runtime_put(&isp->psys->dev);
 
 #ifdef CONFIG_DEBUG_FS
 	rval = ipu_init_debugfs(isp);
@@ -644,6 +640,9 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		 IPU_MAJOR_VERSION,
 		 IPU_MINOR_VERSION);
 
+	pm_runtime_allow(&pdev->dev);
+	pm_runtime_put(&isp->psys->dev);
+	pm_runtime_put(&pdev->dev);
 	return 0;
 
 out_ipu_bus_del_devices:
