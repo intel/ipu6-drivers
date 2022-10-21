@@ -149,6 +149,9 @@ static struct mutex ipu_bus_mutex;
 
 static void ipu_bus_release(struct device *dev)
 {
+	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
+
+	kfree(adev);
 }
 
 struct ipu_bus_device *ipu_bus_initialize_device(struct pci_dev *pdev,
@@ -159,7 +162,7 @@ struct ipu_bus_device *ipu_bus_initialize_device(struct pci_dev *pdev,
 	struct ipu_bus_device *adev;
 	struct ipu_device *isp = pci_get_drvdata(pdev);
 
-	adev = devm_kzalloc(&pdev->dev, sizeof(*adev), GFP_KERNEL);
+	adev = kzalloc(sizeof(*adev), GFP_KERNEL);
 	if (!adev)
 		return ERR_PTR(-ENOMEM);
 
