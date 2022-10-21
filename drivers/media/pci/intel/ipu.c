@@ -61,8 +61,8 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 {
 	struct ipu_bus_device *isys;
 	struct ipu_isys_pdata *pdata;
-#if defined(CONFIG_IPU_ISYS_BRIDGE)
 	int ret;
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
 	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 
 	ret = ipu_isys_check_fwnode_graph(fwnode);
@@ -92,8 +92,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	if (ipu_ver == IPU_VER_6SE)
 		ctrl->ratio = IPU6SE_IS_FREQ_CTL_DEFAULT_RATIO;
 
-	isys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
-				  IPU_ISYS_NAME, nr);
+	isys = ipu_bus_initialize_device(pdev, parent, pdata, ctrl, IPU_ISYS_NAME, nr);
 	if (IS_ERR(isys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(isys), "ipu_bus_add_device(isys) failed\n");
 		return ERR_CAST(isys);
@@ -108,6 +107,10 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 
 	isys->mmu->dev = &isys->dev;
 
+	ret = ipu_bus_add_device(isys);
+	if (ret)
+		return ERR_PTR(ret);
+
 	return isys;
 }
 
@@ -120,6 +123,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 {
 	struct ipu_bus_device *psys;
 	struct ipu_psys_pdata *pdata;
+	int ret;
 
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -128,8 +132,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	pdata->base = base;
 	pdata->ipdata = ipdata;
 
-	psys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
-				  IPU_PSYS_NAME, nr);
+	psys = ipu_bus_initialize_device(pdev, parent, pdata, ctrl, IPU_PSYS_NAME, nr);
 	if (IS_ERR(psys)) {
 		dev_err_probe(&pdev->dev, PTR_ERR(psys), "ipu_bus_add_device(psys) failed\n");
 		return ERR_CAST(psys);
@@ -143,6 +146,10 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	}
 
 	psys->mmu->dev = &psys->dev;
+
+	ret = ipu_bus_add_device(psys);
+	if (ret)
+		return ERR_PTR(ret);
 
 	return psys;
 }
