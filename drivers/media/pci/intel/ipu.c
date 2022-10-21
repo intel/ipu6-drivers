@@ -70,12 +70,14 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 		if (fwnode && !IS_ERR_OR_NULL(fwnode->secondary)) {
 			dev_err(&pdev->dev,
 				"fwnode graph has no endpoints connection\n");
-			return ERR_PTR(-ENOMEM);
+			return ERR_PTR(-EINVAL);
 		}
 
 		ret = ipu_isys_bridge_init(pdev);
-		if (ret)
-			return ERR_PTR(-ENOMEM);
+		if (ret) {
+			dev_err_probe(&pdev->dev, ret, "ipu_isys_bridge_init() failed\n");
+			return ERR_PTR(ret);
+		}
 	}
 #endif
 
@@ -92,13 +94,17 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 
 	isys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
 				  IPU_ISYS_NAME, nr);
-	if (IS_ERR(isys))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(isys)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(isys), "ipu_bus_add_device(isys) failed\n");
+		return ERR_CAST(isys);
+	}
 
 	isys->mmu = ipu_mmu_init(&pdev->dev, base, ISYS_MMID,
 				 &ipdata->hw_variant);
-	if (IS_ERR(isys->mmu))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(isys->mmu)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(isys), "ipu_mmu_init(isys->mmu) failed\n");
+		return ERR_CAST(isys->mmu);
+	}
 
 	isys->mmu->dev = &isys->dev;
 
@@ -124,13 +130,17 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 
 	psys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
 				  IPU_PSYS_NAME, nr);
-	if (IS_ERR(psys))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(psys)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(psys), "ipu_bus_add_device(psys) failed\n");
+		return ERR_CAST(psys);
+	}
 
 	psys->mmu = ipu_mmu_init(&pdev->dev, base, PSYS_MMID,
 				 &ipdata->hw_variant);
-	if (IS_ERR(psys->mmu))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(psys->mmu)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(psys), "ipu_mmu_init(psys->mmu) failed\n");
+		return ERR_CAST(psys->mmu);
+	}
 
 	psys->mmu->dev = &psys->dev;
 
