@@ -1274,7 +1274,7 @@ static int ov02c10_identify_module(struct ov02c10 *ov02c10)
 	return 0;
 }
 
-static int ov02c10_remove(struct i2c_client *client)
+static void ov02c10_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov02c10 *ov02c10 = to_ov02c10(sd);
@@ -1284,9 +1284,15 @@ static int ov02c10_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov02c10->mutex);
+}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int ov02c10_remove_bp(struct i2c_client *client)
+{
+	ov02c10_remove(client);
 	return 0;
 }
+#endif
 
 static int ov02c10_probe(struct i2c_client *client)
 {
@@ -1400,7 +1406,11 @@ static struct i2c_driver ov02c10_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(ov02c10_acpi_ids),
 	},
 	.probe_new = ov02c10_probe,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	.remove = ov02c10_remove_bp,
+#else
 	.remove = ov02c10_remove,
+#endif
 };
 
 module_i2c_driver(ov02c10_i2c_driver);

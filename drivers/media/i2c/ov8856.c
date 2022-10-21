@@ -1197,7 +1197,7 @@ static int ov8856_identify_module(struct ov8856 *ov8856)
 	return 0;
 }
 
-static int ov8856_remove(struct i2c_client *client)
+static void ov8856_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov8856 *ov8856 = to_ov8856(sd);
@@ -1207,9 +1207,15 @@ static int ov8856_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov8856->mutex);
+}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int ov8856_remove_bp(struct i2c_client *client)
+{
+	ov8856_remove(client);
 	return 0;
 }
+#endif
 
 static int ov8856_probe(struct i2c_client *client)
 {
@@ -1303,7 +1309,11 @@ static struct i2c_driver ov8856_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(ov8856_acpi_ids),
 	},
 	.probe_new = ov8856_probe,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	.remove = ov8856_remove_bp,
+#else
 	.remove = ov8856_remove,
+#endif
 	.id_table = ov8856_id_table,
 };
 
