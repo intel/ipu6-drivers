@@ -565,6 +565,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 				  0);
 	if (IS_ERR(isp->isys)) {
 		rval = PTR_ERR(isp->isys);
+		isp->isys = NULL;
 		goto out_ipu_bus_del_devices;
 	}
 
@@ -582,6 +583,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 				  &psys_ipdata, 0);
 	if (IS_ERR(isp->psys)) {
 		rval = PTR_ERR(isp->psys);
+		isp->psys = NULL;
 		goto out_ipu_bus_del_devices;
 	}
 
