@@ -1086,7 +1086,7 @@ static const struct v4l2_subdev_internal_ops hi556_internal_ops = {
 	.open = hi556_open,
 };
 
-static int hi556_remove(struct i2c_client *client)
+static void hi556_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct hi556 *hi556 = to_hi556(sd);
@@ -1096,9 +1096,15 @@ static int hi556_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&hi556->mutex);
+}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int hi556_remove_bp(struct i2c_client *client)
+{
+	hi556_remove(client);
 	return 0;
 }
+#endif
 
 static int hi556_probe(struct i2c_client *client)
 {
@@ -1215,7 +1221,11 @@ static struct i2c_driver hi556_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(hi556_acpi_ids),
 	},
 	.probe_new = hi556_probe,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	.remove = hi556_remove_bp,
+#else
 	.remove = hi556_remove,
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 	.flags = I2C_DRV_ACPI_WAIVE_D0_PROBE,
 #endif
