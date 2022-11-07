@@ -42,6 +42,7 @@ struct ipu_isys_subdev_pdata *get_acpi_subdev_pdata(void)
 	ptr = &acpi_subdev_pdata;
 	return ptr;
 }
+EXPORT_SYMBOL(get_acpi_subdev_pdata);
 
 void print_serdes_sdinfo(struct serdes_subdev_info *sdinfo)
 {
@@ -730,7 +731,8 @@ int populate_sensor_pdata(struct device *dev,
 
 		/* Use DISCRETE Control Logic or No Control Logic for serdes */
 		if (ctl_data->type != CL_DISCRETE && ctl_data->type != CL_EMPTY) {
-			dev_err(dev, "IPU6 ACPI: Incorrect Control Logic Type for serdes");
+			dev_err(dev, "IPU6 ACPI: Incorrect Control Logic Type for serdes (%d)",
+				ctl_data->type);
 			return -1;
 		}
 
@@ -834,6 +836,7 @@ int get_sensor_pdata(struct i2c_client *client,
 	kfree(ctl_data);
 	return rval;
 }
+EXPORT_SYMBOL(get_sensor_pdata);
 
 MODULE_AUTHOR("Khai Wen, Ng <khai.wen.ng@intel.com>");
 MODULE_LICENSE("GPL");

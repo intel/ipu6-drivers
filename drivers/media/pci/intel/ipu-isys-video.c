@@ -28,6 +28,7 @@
 #include "ipu-bus.h"
 #include "ipu-cpd.h"
 #include "ipu-isys.h"
+#include "ipu-buttress.h"
 #include "ipu-isys-video.h"
 #include "ipu-platform.h"
 #include "ipu-platform-regs.h"
@@ -35,9 +36,6 @@
 #include "ipu-trace.h"
 #include "ipu-fw-isys.h"
 #include "ipu-fw-com.h"
-
-/* use max resolution pixel rate by default */
-#define DEFAULT_PIXEL_RATE	(360000000ULL * 2 * 4 / 10)
 
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
@@ -647,6 +645,7 @@ static void get_stream_opened(struct ipu_isys_video *av)
 	spin_lock_irqsave(&av->isys->lock, flags);
 	av->isys->stream_opened++;
 	spin_unlock_irqrestore(&av->isys->lock, flags);
+
 }
 
 static void put_stream_opened(struct ipu_isys_video *av)
@@ -656,6 +655,7 @@ static void put_stream_opened(struct ipu_isys_video *av)
 	spin_lock_irqsave(&av->isys->lock, flags);
 	av->isys->stream_opened--;
 	spin_unlock_irqrestore(&av->isys->lock, flags);
+
 }
 
 static int get_stream_handle(struct ipu_isys_video *av)
@@ -1800,111 +1800,6 @@ out_enum_cleanup:
 	return rval;
 }
 
-static void configure_stream_watermark(struct ipu_isys_video *av)
-{
-	u32 vblank, hblank;
-	u64 pixel_rate;
-	int ret = 0;
-	struct v4l2_subdev *esd;
-	struct v4l2_ctrl *ctrl;
-	struct ipu_isys_pipeline *ip;
-	struct isys_iwake_watermark *iwake_watermark;
-	struct v4l2_control vb = { .id = V4L2_CID_VBLANK, .value = 0 };
-	struct v4l2_control hb = { .id = V4L2_CID_HBLANK, .value = 0 };
-
-	ip = to_ipu_isys_pipeline(av->vdev.entity.pipe);
-	if (!ip->external->entity) {
-		WARN_ON(1);
-		return;
-	}
-	esd = media_entity_to_v4l2_subdev(ip->external->entity);
-
-	av->watermark->width = av->mpix.width;
-	av->watermark->height = av->mpix.height;
-
-	ret = v4l2_g_ctrl(esd->ctrl_handler, &vb);
-	if (!ret && vb.value >= 0)
-		vblank = vb.value;
-	else
-		vblank = 0;
-
-	ret = v4l2_g_ctrl(esd->ctrl_handler, &hb);
-	if (!ret && hb.value >= 0)
-		hblank = hb.value;
-	else
-		hblank = 0;
-
-	ctrl = v4l2_ctrl_find(esd->ctrl_handler, V4L2_CID_PIXEL_RATE);
-
-	if (!ctrl)
-		pixel_rate = DEFAULT_PIXEL_RATE;
-	else
-		pixel_rate = v4l2_ctrl_g_ctrl_int64(ctrl);
-
-	av->watermark->vblank = vblank;
-	av->watermark->hblank = hblank;
-	av->watermark->pixel_rate = pixel_rate;
-	if (!pixel_rate) {
-		iwake_watermark = av->isys->iwake_watermark;
-		mutex_lock(&iwake_watermark->mutex);
-		iwake_watermark->force_iwake_disable = true;
-		mutex_unlock(&iwake_watermark->mutex);
-		WARN(1, "%s Invalid pixel_rate, disable iwake.\n", __func__);
-		return;
-	}
-}
-
-static void calculate_stream_datarate(struct video_stream_watermark *watermark)
-{
-	u64 pixels_per_line, bytes_per_line, line_time_ns;
-	u64 pages_per_line, pb_bytes_per_line, stream_data_rate;
-	u16 sram_granulrity_shift =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
-		 ipu_ver == IPU_VER_6EP_MTL) ?
-		IPU6_SRAM_GRANULRITY_SHIFT : IPU6SE_SRAM_GRANULRITY_SHIFT;
-	u16 sram_granulrity_size =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
-		 ipu_ver == IPU_VER_6EP_MTL) ?
-		IPU6_SRAM_GRANULRITY_SIZE : IPU6SE_SRAM_GRANULRITY_SIZE;
-
-	pixels_per_line = watermark->width + watermark->hblank;
-	line_time_ns =
-		pixels_per_line * 1000 / (watermark->pixel_rate / 1000000);
-	/* 2 bytes per Bayer pixel */
-	bytes_per_line = watermark->width << 1;
-	/* bytes to IS pixel buffer pages */
-	pages_per_line = bytes_per_line >> sram_granulrity_shift;
-
-	/* pages for each line */
-	pages_per_line = DIV_ROUND_UP(bytes_per_line,
-				      sram_granulrity_size);
-	pb_bytes_per_line = pages_per_line << sram_granulrity_shift;
-
-	/* data rate MB/s */
-	stream_data_rate = (pb_bytes_per_line * 1000) / line_time_ns;
-	watermark->stream_data_rate = stream_data_rate;
-}
-
-static void update_stream_watermark(struct ipu_isys_video *av, bool state)
-{
-	struct isys_iwake_watermark *iwake_watermark;
-
-	iwake_watermark = av->isys->iwake_watermark;
-	if (state) {
-		calculate_stream_datarate(av->watermark);
-		mutex_lock(&iwake_watermark->mutex);
-		list_add(&av->watermark->stream_node,
-			 &iwake_watermark->video_list);
-		mutex_unlock(&iwake_watermark->mutex);
-	} else {
-		av->watermark->stream_data_rate = 0;
-		mutex_lock(&iwake_watermark->mutex);
-		list_del(&av->watermark->stream_node);
-		mutex_unlock(&iwake_watermark->mutex);
-	}
-	update_watermark_setting(av->isys);
-}
-
 int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 				 unsigned int state,
 				 struct ipu_isys_buffer_list *bl)
@@ -2005,17 +1900,11 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 
 	mutex_unlock(&mdev->graph_mutex);
 
-	if (av->aq.css_pin_type == IPU_FW_ISYS_PIN_TYPE_RAW_SOC) {
-		if (state)
-			configure_stream_watermark(av);
-		update_stream_watermark(av, state);
-	}
-
 	/* Oh crap */
 	if (state) {
 		rval = start_stream_firmware(av, bl);
 		if (rval)
-			goto out_update_stream_watermark;
+			goto out_media_entity_stop_streaming;
 
 		dev_dbg(dev, "set stream: source %d, stream_handle %d\n",
 			ip->source, ip->stream_handle);
@@ -2051,10 +1940,6 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 
 out_media_entity_stop_streaming_firmware:
 	stop_streaming_firmware(av);
-
-out_update_stream_watermark:
-	if (av->aq.css_pin_type == IPU_FW_ISYS_PIN_TYPE_RAW_SOC)
-		update_stream_watermark(av, 0);
 
 out_media_entity_stop_streaming:
 	mutex_lock(&mdev->graph_mutex);
@@ -2180,14 +2065,6 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	av->reset = false;
 	av->skipframe = 0;
 
-	if (!av->watermark) {
-		av->watermark = kzalloc(sizeof(*av->watermark), GFP_KERNEL);
-		if (!av->watermark) {
-			rval = -ENOMEM;
-			goto out_mutex_destroy;
-		}
-	}
-
 	av->vdev.device_caps = V4L2_CAP_STREAMING;
 	if (pad_flags & MEDIA_PAD_FL_SINK) {
 		av->aq.vbq.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
@@ -2255,7 +2132,6 @@ out_ipu_isys_queue_cleanup:
 	ipu_isys_queue_cleanup(&av->aq);
 
 out_mutex_destroy:
-	kfree(av->watermark);
 	mutex_destroy(&av->mutex);
 
 	return rval;
@@ -2263,7 +2139,6 @@ out_mutex_destroy:
 
 void ipu_isys_video_cleanup(struct ipu_isys_video *av)
 {
-	kfree(av->watermark);
 	video_unregister_device(&av->vdev);
 	media_entity_cleanup(&av->vdev.entity);
 	mutex_destroy(&av->mutex);

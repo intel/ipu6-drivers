@@ -1,5 +1,5 @@
- //SPDX-License-Identifier: GPL-2.0
- //Copyright (c) 2021 Intel Corporation.
+// SPDX-License-Identifier: GPL-2.0
+// Copyright (c) 2022 Intel Corporation.
 
 #include <linux/acpi.h>
 #include <linux/i2c.h>

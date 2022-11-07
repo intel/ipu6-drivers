@@ -13,23 +13,14 @@
 #define CL_DISCRETE 1
 #define SERDES_MAX_PORT 4
 #define SERDES_MAX_GPIO_POWERUP_SEQ 4
-
-int sensor_populate(struct device *dev,
-			struct ipu_isys_subdev_info **sensor_sd,
-			char sensor_name[I2C_NAME_SIZE],
-			struct sensor_bios_data *cam_data,
-			struct control_logic_data *ctl_data);
+#define LOOP_SIZE 10
 
 int get_sensor_pdata(struct i2c_client *client,
 			struct ipu_camera_module_data *data,
 			struct ipu_i2c_helper *helper,
 			void *priv, size_t size,
-			enum connection_type connect, const char *serdes_name);
-
-int get_serdes_pdata(struct i2c_client *client,
-			struct ipu_camera_module_data *data,
-			struct ipu_i2c_helper *helper,
-			void *priv, size_t size);
+			enum connection_type connect,
+			const char *serdes_name);
 
 struct ipu_isys_subdev_pdata *get_acpi_subdev_pdata(void);
 

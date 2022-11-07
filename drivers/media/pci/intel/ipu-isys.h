@@ -60,46 +60,8 @@
 
 #define NR_OF_CSI2_BE_SOC_DEV 8
 
-/* the threshold granularity is 2KB on IPU6 */
-#define IPU6_SRAM_GRANULRITY_SHIFT	11
-#define IPU6_SRAM_GRANULRITY_SIZE	2048
-/* the threshold granularity is 1KB on IPU6SE */
-#define IPU6SE_SRAM_GRANULRITY_SHIFT	10
-#define IPU6SE_SRAM_GRANULRITY_SIZE	1024
-
 struct task_struct;
 
-struct ltr_did {
-	union {
-		u32 value;
-		struct {
-			u8 val0;
-			u8 val1;
-			u8 val2;
-			u8 val3;
-		} bits;
-	} lut_ltr;
-	union {
-		u32 value;
-		struct {
-			u8 th0;
-			u8 th1;
-			u8 th2;
-			u8 th3;
-		} bits;
-	} lut_fill_time;
-};
-
-struct isys_iwake_watermark {
-	bool iwake_enabled;
-	bool force_iwake_disable;
-	u32 iwake_threshold;
-	u64 isys_pixelbuffer_datarate;
-	struct ltr_did ltrdid;
-	struct mutex mutex; /* protect whole struct */
-	struct ipu_isys *isys;
-	struct list_head video_list;
-};
 struct ipu_isys_sensor_info {
 	unsigned int vc1_data_start;
 	unsigned int vc1_data_end;
@@ -194,14 +156,14 @@ struct ipu_isys {
 	spinlock_t listlock;	/* Protect framebuflist */
 	struct list_head framebuflist;
 	struct list_head framebuflist_fw;
-	struct isys_iwake_watermark *iwake_watermark;
+#if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+	struct v4l2_async_notifier notifier;
+#endif
 
 	struct mutex reset_mutex;
 	bool in_reset;
 	bool in_stop_streaming;
 };
-
-void update_watermark_setting(struct ipu_isys *isys);
 
 struct isys_fw_msgs {
 	union {

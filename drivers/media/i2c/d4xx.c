@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+// SPDX-License-Identifier: GPL-2.0
 /*
  * ds5.c - Intel(R) RealSense(TM) D4XX camera driver
  *
