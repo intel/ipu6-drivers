@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2020-2021 Intel Corporation.
+// Copyright (c) 2020-2022 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -7,10 +7,19 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/version.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+#include <linux/clk.h>
+#include <linux/gpio/consumer.h>
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+#include "power_ctrl_logic.h"
+#endif
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
+#endif
 
 #define OV01A1S_LINK_FREQ_400MHZ	400000000ULL
 #define OV01A1S_SCLK			40000000LL
@@ -300,6 +309,20 @@ struct ov01a1s {
 	/* To serialize asynchronus callbacks */
 	struct mutex mutex;
 
+	/* i2c client */
+	struct i2c_client *client;
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	/* GPIO for reset */
+	struct gpio_desc *reset_gpio;
+	/* GPIO for powerdown */
+	struct gpio_desc *powerdown_gpio;
+	/* GPIO for clock enable */
+	struct gpio_desc *clken_gpio;
+	/* GPIO for privacy LED */
+	struct gpio_desc *pled_gpio;
+#endif
+
 	/* Streaming on/off */
 	bool streaming;
 };
@@ -309,9 +332,24 @@ static inline struct ov01a1s *to_ov01a1s(struct v4l2_subdev *subdev)
 	return container_of(subdev, struct ov01a1s, sd);
 }
 
+static void ov01a1s_set_power(struct ov01a1s *ov01a1s, int on)
+{
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	if (!(ov01a1s->reset_gpio && ov01a1s->powerdown_gpio))
+		return;
+	gpiod_set_value_cansleep(ov01a1s->reset_gpio, on);
+	gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, on);
+	gpiod_set_value_cansleep(ov01a1s->clken_gpio, on);
+	gpiod_set_value_cansleep(ov01a1s->pled_gpio, on);
+	msleep(20);
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	power_ctrl_logic_set_power(on);
+#endif
+}
+
 static int ov01a1s_read_reg(struct ov01a1s *ov01a1s, u16 reg, u16 len, u32 *val)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	struct i2c_msg msgs[2];
 	u8 addr_buf[2];
 	u8 data_buf[4] = {0};
@@ -341,7 +379,7 @@ static int ov01a1s_read_reg(struct ov01a1s *ov01a1s, u16 reg, u16 len, u32 *val)
 
 static int ov01a1s_write_reg(struct ov01a1s *ov01a1s, u16 reg, u16 len, u32 val)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	u8 buf[6];
 	int ret = 0;
 
@@ -361,7 +399,7 @@ static int ov01a1s_write_reg(struct ov01a1s *ov01a1s, u16 reg, u16 len, u32 val)
 static int ov01a1s_write_reg_list(struct ov01a1s *ov01a1s,
 				  const struct ov01a1s_reg_list *r_list)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	unsigned int i;
 	int ret = 0;
 
@@ -381,7 +419,7 @@ static int ov01a1s_write_reg_list(struct ov01a1s *ov01a1s,
 
 static int ov01a1s_update_digital_gain(struct ov01a1s *ov01a1s, u32 d_gain)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	u32 real = d_gain << 6;
 	int ret = 0;
 
@@ -422,7 +460,7 @@ static int ov01a1s_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ov01a1s *ov01a1s = container_of(ctrl->handler,
 					     struct ov01a1s, ctrl_handler);
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	s64 exposure_max;
 	int ret = 0;
 
@@ -559,11 +597,24 @@ static void ov01a1s_update_pad_format(const struct ov01a1s_mode *mode,
 
 static int ov01a1s_start_streaming(struct ov01a1s *ov01a1s)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	const struct ov01a1s_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
 
+	conf.lane_num = OV01A1S_DATA_LANES;
+	/* frequency unit 100k */
+	conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
+	if (ret && ret != -EAGAIN) {
+		dev_err(&client->dev, "Acquire VSC failed");
+		return ret;
+	}
+#endif
+	ov01a1s_set_power(ov01a1s, 1);
 	link_freq_index = ov01a1s->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov01a1s_write_reg_list(ov01a1s, reg_list);
@@ -593,19 +644,28 @@ static int ov01a1s_start_streaming(struct ov01a1s *ov01a1s)
 
 static void ov01a1s_stop_streaming(struct ov01a1s *ov01a1s)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_camera_status status;
+#endif
 
 	ret = ov01a1s_write_reg(ov01a1s, OV01A1S_REG_MODE_SELECT, 1,
 				OV01A1S_MODE_STANDBY);
 	if (ret)
 		dev_err(&client->dev, "failed to stop streaming");
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	ret = vsc_release_camera_sensor(&status);
+	if (ret && ret != -EAGAIN)
+		dev_err(&client->dev, "Release VSC failed");
+#endif
+	ov01a1s_set_power(ov01a1s, 0);
 }
 
 static int ov01a1s_set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct i2c_client *client = ov01a1s->client;
 	int ret = 0;
 
 	if (ov01a1s->streaming == enable)
@@ -675,7 +735,11 @@ exit:
 }
 
 static int ov01a1s_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			      struct v4l2_subdev_pad_config *cfg,
+#else
+			      struct v4l2_subdev_state *sd_state,
+#endif
 			      struct v4l2_subdev_format *fmt)
 {
 	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
@@ -690,7 +754,11 @@ static int ov01a1s_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&ov01a1s->mutex);
 	ov01a1s_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		ov01a1s->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ov01a1s->link_freq, mode->link_freq_index);
@@ -713,15 +781,24 @@ static int ov01a1s_set_format(struct v4l2_subdev *sd,
 }
 
 static int ov01a1s_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			      struct v4l2_subdev_pad_config *cfg,
+#else
+			      struct v4l2_subdev_state *sd_state,
+#endif
 			      struct v4l2_subdev_format *fmt)
 {
 	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
 
 	mutex_lock(&ov01a1s->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov01a1s->sd, cfg,
 							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_get_try_format(&ov01a1s->sd,
+							  sd_state, fmt->pad);
+#endif
 	else
 		ov01a1s_update_pad_format(ov01a1s->cur_mode, &fmt->format);
 
@@ -731,7 +808,11 @@ static int ov01a1s_get_format(struct v4l2_subdev *sd,
 }
 
 static int ov01a1s_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				  struct v4l2_subdev_pad_config *cfg,
+#else
+				  struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index > 0)
@@ -743,7 +824,11 @@ static int ov01a1s_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov01a1s_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				   struct v4l2_subdev_pad_config *cfg,
+#else
+				   struct v4l2_subdev_state *sd_state,
+#endif
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -765,8 +850,13 @@ static int ov01a1s_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
 
 	mutex_lock(&ov01a1s->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ov01a1s_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#else
+	ov01a1s_update_pad_format(&supported_modes[0],
+				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+#endif
 	mutex_unlock(&ov01a1s->mutex);
 
 	return 0;
@@ -798,7 +888,7 @@ static const struct v4l2_subdev_internal_ops ov01a1s_internal_ops = {
 
 static int ov01a1s_identify_module(struct ov01a1s *ov01a1s)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&ov01a1s->sd);
+	struct i2c_client *client = ov01a1s->client;
 	int ret;
 	u32 val;
 
@@ -829,34 +919,84 @@ static int ov01a1s_remove(struct i2c_client *client)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+static int ov01a1s_parse_dt(struct ov01a1s *ov01a1s)
+{
+	struct device *dev = &ov01a1s->client->dev;
+	int ret;
+
+	ov01a1s->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(ov01a1s->reset_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting reset gpio: %d\n", ret);
+		return -EPROBE_DEFER;
+	}
+
+	ov01a1s->powerdown_gpio = devm_gpiod_get(dev, "powerdown", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(ov01a1s->powerdown_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting powerdown gpio: %d\n", ret);
+		return -EPROBE_DEFER;
+	}
+
+	ov01a1s->clken_gpio = devm_gpiod_get(dev, "clken", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(ov01a1s->clken_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting clken_gpio gpio: %d\n", ret);
+		return -EPROBE_DEFER;
+	}
+
+	ov01a1s->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(ov01a1s->pled_gpio);
+	if (ret < 0) {
+		dev_err(dev, "error while getting pled gpio: %d\n", ret);
+		return -EPROBE_DEFER;
+	}
+
+	return 0;
+}
+#endif
+
 static int ov01a1s_probe(struct i2c_client *client)
 {
 	struct ov01a1s *ov01a1s;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 	s64 link_freq;
+#endif
 
+	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
+	if (!ov01a1s)
+		return -ENOMEM;
+	ov01a1s->client = client;
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	conf.lane_num = OV01A1S_DATA_LANES;
 	/* frequency unit 100k */
 	conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
 	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
-	if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed.\n");
+#endif
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	if (ret == -EAGAIN)
+		ret = ov01a1s_parse_dt(ov01a1s);
+#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
+	if (ret == -EAGAIN)
+		ret = power_ctrl_logic_set_power(1);
+#endif
+	if (ret == -EAGAIN)
+		return -EPROBE_DEFER;
+	else if (ret)
 		return ret;
-	}
 
-	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
-	if (!ov01a1s) {
-		ret = -ENOMEM;
-		goto probe_error_ret;
-	}
+	ov01a1s_set_power(ov01a1s, 1);
 
 	v4l2_i2c_subdev_init(&ov01a1s->sd, client, &ov01a1s_subdev_ops);
 	ret = ov01a1s_identify_module(ov01a1s);
 	if (ret) {
 		dev_err(&client->dev, "failed to find sensor: %d", ret);
-		goto probe_error_ret;
+		goto probe_error_power_off;
 	}
 
 	mutex_init(&ov01a1s->mutex);
@@ -878,14 +1018,20 @@ static int ov01a1s_probe(struct i2c_client *client)
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
+	ret = v4l2_async_register_subdev_sensor_common(&ov01a1s->sd);
+#else
 	ret = v4l2_async_register_subdev_sensor(&ov01a1s->sd);
+#endif
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);
 		goto probe_error_media_entity_cleanup;
 	}
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	vsc_release_camera_sensor(&status);
+#endif
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
@@ -894,6 +1040,7 @@ static int ov01a1s_probe(struct i2c_client *client)
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
 
+	ov01a1s_set_power(ov01a1s, 0);
 	return 0;
 
 probe_error_media_entity_cleanup:
@@ -903,8 +1050,11 @@ probe_error_v4l2_ctrl_handler_free:
 	v4l2_ctrl_handler_free(ov01a1s->sd.ctrl_handler);
 	mutex_destroy(&ov01a1s->mutex);
 
-probe_error_ret:
+probe_error_power_off:
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	vsc_release_camera_sensor(&status);
+#endif
+	ov01a1s_set_power(ov01a1s, 0);
 	return ret;
 }
 

@@ -586,7 +586,15 @@ static struct ipu_dma_mapping *alloc_dma_mapping(struct ipu_device *isp)
 		kfree(dmap);
 		return NULL;
 	}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
+	init_iova_domain(&dmap->iovad,
+			 dmap->mmu_info->aperture_end >> PAGE_SHIFT);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
+	init_iova_domain(&dmap->iovad, SZ_4K, 1,
+			 dmap->mmu_info->aperture_end >> PAGE_SHIFT);
+#else
 	init_iova_domain(&dmap->iovad, SZ_4K, 1);
+#endif
 	dmap->mmu_info->dmap = dmap;
 
 	kref_init(&dmap->ref);

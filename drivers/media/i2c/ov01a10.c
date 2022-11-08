@@ -7,10 +7,13 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/version.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
+#endif
 
 #define OV01A10_LINK_FREQ_400MHZ	400000000ULL
 #define OV01A10_SCLK			40000000LL
@@ -556,7 +559,19 @@ static int ov01a10_start_streaming(struct ov01a10 *ov01a10)
 	const struct ov01a10_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
 
+	conf.lane_num = OV01A10_DATA_LANES;
+	/* frequency unit 100k */
+	conf.freq = OV01A10_LINK_FREQ_400MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
+	if (ret) {
+		dev_err(&client->dev, "Acquire VSC failed");
+		return ret;
+	}
+#endif
 	link_freq_index = ov01a10->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov01a10_write_reg_list(ov01a10, reg_list);
@@ -588,11 +603,19 @@ static void ov01a10_stop_streaming(struct ov01a10 *ov01a10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov01a10->sd);
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_camera_status status;
+#endif
 
 	ret = ov01a10_write_reg(ov01a10, OV01A10_REG_MODE_SELECT, 1,
 				OV01A10_MODE_STANDBY);
 	if (ret)
 		dev_err(&client->dev, "failed to stop streaming");
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	ret = vsc_release_camera_sensor(&status);
+	if (ret)
+		dev_err(&client->dev, "Release VSC failed");
+#endif
 }
 
 static int ov01a10_set_stream(struct v4l2_subdev *sd, int enable)
@@ -668,7 +691,11 @@ exit:
 }
 
 static int ov01a10_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			      struct v4l2_subdev_pad_config *cfg,
+#else
+			      struct v4l2_subdev_state *sd_state,
+#endif
 			      struct v4l2_subdev_format *fmt)
 {
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
@@ -683,7 +710,11 @@ static int ov01a10_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&ov01a10->mutex);
 	ov01a10_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		ov01a10->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ov01a10->link_freq, mode->link_freq_index);
@@ -706,15 +737,24 @@ static int ov01a10_set_format(struct v4l2_subdev *sd,
 }
 
 static int ov01a10_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			      struct v4l2_subdev_pad_config *cfg,
+#else
+			      struct v4l2_subdev_state *sd_state,
+#endif
 			      struct v4l2_subdev_format *fmt)
 {
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 
 	mutex_lock(&ov01a10->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov01a10->sd, cfg,
 							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_get_try_format(&ov01a10->sd,
+							  sd_state, fmt->pad);
+#endif
 	else
 		ov01a10_update_pad_format(ov01a10->cur_mode, &fmt->format);
 
@@ -724,7 +764,11 @@ static int ov01a10_get_format(struct v4l2_subdev *sd,
 }
 
 static int ov01a10_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				  struct v4l2_subdev_pad_config *cfg,
+#else
+				  struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index > 0)
@@ -736,7 +780,11 @@ static int ov01a10_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov01a10_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				   struct v4l2_subdev_pad_config *cfg,
+#else
+				   struct v4l2_subdev_state *sd_state,
+#endif
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -758,8 +806,13 @@ static int ov01a10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct ov01a10 *ov01a10 = to_ov01a10(sd);
 
 	mutex_lock(&ov01a10->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ov01a10_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#else
+	ov01a10_update_pad_format(&supported_modes[0],
+				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+#endif
 	mutex_unlock(&ov01a10->mutex);
 
 	return 0;
@@ -826,18 +879,24 @@ static int ov01a10_probe(struct i2c_client *client)
 {
 	struct ov01a10 *ov01a10;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
-	s64 link_freq;
+#endif
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	conf.lane_num = OV01A10_DATA_LANES;
 	/* frequency unit 100k */
 	conf.freq = OV01A10_LINK_FREQ_400MHZ / 100000;
 	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
-	if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed.\n");
+	if (ret == -EAGAIN) {
+		dev_dbg(&client->dev, "VSC not ready, will re-probe");
+		return -EPROBE_DEFER;
+	} else if (ret) {
+		dev_err(&client->dev, "Acquire VSC failed");
 		return ret;
 	}
+#endif
 	ov01a10 = devm_kzalloc(&client->dev, sizeof(*ov01a10), GFP_KERNEL);
 	if (!ov01a10) {
 		ret = -ENOMEM;
@@ -878,7 +937,9 @@ static int ov01a10_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	vsc_release_camera_sensor(&status);
+#endif
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
@@ -897,7 +958,9 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov01a10->mutex);
 
 probe_error_ret:
+#if IS_ENABLED(CONFIG_INTEL_VSC)
 	vsc_release_camera_sensor(&status);
+#endif
 	return ret;
 }
 

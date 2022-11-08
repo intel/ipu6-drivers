@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2014 - 2020 Intel Corporation */
+/* Copyright (C) 2014 - 2022 Intel Corporation */
 
 #ifndef MEDIA_IPU_H
 #define MEDIA_IPU_H
