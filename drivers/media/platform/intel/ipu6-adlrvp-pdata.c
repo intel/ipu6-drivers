@@ -15,6 +15,8 @@
 
 #include "ipu.h"
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 static void ar0234_fixup_spdata(const void *spdata_rep, void *spdata)
 {
 	const struct ipu_spdata_rep *rep = spdata_rep;
@@ -49,6 +51,8 @@ static void lt6911uxc_fixup_spdata(const void *spdata_rep, void *spdata)
 	}
 }
 
+#endif
+
 #define AR0234_LANES       2
 #define AR0234_I2C_ADDRESS 0x10
 
@@ -78,7 +82,10 @@ static struct ipu_isys_subdev_info ar0234_sd_1 = {
 	},
 	.i2c_adapter_bdf = "0000:00:15.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = ar0234_fixup_spdata,
+#endif
 };
 
 static struct ipu_isys_csi2_config ar0234_csi2_cfg_2 = {
@@ -107,7 +114,10 @@ static struct ipu_isys_subdev_info ar0234_sd_2 = {
 	},
 	.i2c_adapter_bdf = "0000:00:19.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = ar0234_fixup_spdata,
+#endif
 };
 
 #if IS_ENABLED(CONFIG_VIDEO_IMX390)
@@ -401,7 +411,10 @@ static struct ipu_isys_subdev_info  lt6911uxc_sd_1 = {
 	},
 	.i2c_adapter_bdf = "0000:00:15.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = lt6911uxc_fixup_spdata,
+#endif
 };
 
 static struct ipu_isys_csi2_config lt6911uxc_csi2_cfg_2 = {
@@ -432,7 +445,10 @@ static struct ipu_isys_subdev_info lt6911uxc_sd_2 = {
 	},
 	.i2c_adapter_bdf = "0000:00:19.1",
 	},
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 	.fixup_spdata = lt6911uxc_fixup_spdata,
+#endif
 };
 
 #if IS_ENABLED(CONFIG_VIDEO_D4XX)
@@ -560,3 +576,5 @@ static void ipu6_quirk(struct pci_dev *pci_dev)
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID, ipu6_quirk);
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID, ipu6_quirk);
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID, ipu6_quirk);
+
+MODULE_LICENSE("GPL");

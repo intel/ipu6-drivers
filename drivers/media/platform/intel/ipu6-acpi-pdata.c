@@ -21,6 +21,14 @@
 #define SUFFIX_BASE 96
 #define MSG_LEN 128
 
+static struct ipu_isys_subdev_pdata *ptr_built_in_pdata;
+
+void set_built_in_pdata(struct ipu_isys_subdev_pdata *pdata)
+{
+	ptr_built_in_pdata = pdata;
+};
+EXPORT_SYMBOL(set_built_in_pdata);
+
 static struct ipu_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
 };
@@ -42,6 +50,7 @@ struct ipu_isys_subdev_pdata *get_acpi_subdev_pdata(void)
 	ptr = &acpi_subdev_pdata;
 	return ptr;
 }
+EXPORT_SYMBOL(get_acpi_subdev_pdata);
 
 void print_serdes_sdinfo(struct serdes_subdev_info *sdinfo)
 {
@@ -141,7 +150,7 @@ void print_subdev(struct ipu_isys_subdev_info *sd)
 	pr_debug("\t\treset_pin \t\t= %d", spdata->reset_pin);
 	pr_debug("\t\tdetect_pin \t\t= %d", spdata->detect_pin);
 
-	for (i = 0; i < IPU_SPLATA_GPIO_NUM; i++)
+	for (i = 0; i < IPU_SPDATA_GPIO_NUM; i++)
 		pr_debug("\t\tgpios[%d] \t\t= %d", i, spdata->gpios[i]);
 }
 
@@ -249,7 +258,7 @@ void update_subdev(struct device *dev,
 	update_str(dev, "pdata irq_pin_name", old_pdata->irq_pin_name, new_pdata->irq_pin_name);
 	update_int(dev, "pdata reset_pin", &(old_pdata)->reset_pin, new_pdata->reset_pin);
 	update_int(dev, "pdata detect_pin", &(old_pdata)->detect_pin, new_pdata->detect_pin);
-	update_inta(dev, "pdata gpios", old_pdata->gpios, new_pdata->gpios, IPU_SPLATA_GPIO_NUM);
+	update_inta(dev, "pdata gpios", old_pdata->gpios, new_pdata->gpios, IPU_SPDATA_GPIO_NUM);
 }
 
 void update_serdes_subdev(struct device *dev,
@@ -370,15 +379,12 @@ void update_pdata(struct device *dev,
 			enum connection_type connect)
 {
 	struct ipu_isys_subdev_info *acpi_subdev;
-	struct ipu_isys_subdev_pdata *ptr_built_in_pdata;
 	bool found = false;
 
 	acpi_subdev = new_subdev;
 
 	/* update local ipu_isys_subdev_pdata */
 	add_local_subdevs(acpi_subdev);
-
-	ptr_built_in_pdata = get_built_in_pdata();
 
 	/* if there is existing pdata, update the existing one */
 	if (ptr_built_in_pdata) {
@@ -730,7 +736,8 @@ int populate_sensor_pdata(struct device *dev,
 
 		/* Use DISCRETE Control Logic or No Control Logic for serdes */
 		if (ctl_data->type != CL_DISCRETE && ctl_data->type != CL_EMPTY) {
-			dev_err(dev, "IPU6 ACPI: Incorrect Control Logic Type for serdes");
+			dev_err(dev, "IPU6 ACPI: Incorrect Control Logic Type for serdes (%d)",
+				ctl_data->type);
 			return -1;
 		}
 
@@ -834,6 +841,7 @@ int get_sensor_pdata(struct i2c_client *client,
 	kfree(ctl_data);
 	return rval;
 }
+EXPORT_SYMBOL(get_sensor_pdata);
 
 MODULE_AUTHOR("Khai Wen, Ng <khai.wen.ng@intel.com>");
 MODULE_LICENSE("GPL");

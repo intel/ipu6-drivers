@@ -69,7 +69,7 @@ struct ipu_isys_pipeline {
 	atomic_t sequence;
 	unsigned int seq_index;
 	struct sequence_info seq[IPU_ISYS_MAX_PARALLEL_SOF];
-	int source;	/* SSI stream source, sensor's source pad */
+	int source;	/* SSI stream source */
 	int stream_handle;	/* stream handle for CSS API */
 	unsigned int nr_output_pins;	/* How many firmware pins? */
 	enum ipu_isl_mode isl_mode;
@@ -125,17 +125,6 @@ struct ipu_isys_pipeline {
 #define to_ipu_isys_pipeline(__pipe)				\
 	container_of((__pipe), struct ipu_isys_pipeline, pipe)
 
-struct video_stream_watermark {
-	u32 width;
-	u32 height;
-	u32 vblank;
-	u32 hblank;
-	u32 frame_rate;
-	u64 pixel_rate;
-	u64 stream_data_rate;
-	struct list_head stream_node;
-};
-
 struct ipu_isys_video {
 	/* Serialise access to other fields in the struct. */
 	struct mutex mutex;
@@ -157,8 +146,6 @@ struct ipu_isys_video {
 	unsigned int ts_offsets[VIDEO_MAX_PLANES];
 	unsigned int line_header_length;	/* bits */
 	unsigned int line_footer_length;	/* bits */
-
-	struct video_stream_watermark *watermark;
 
 	const struct ipu_isys_pixelformat *
 		(*try_fmt_vid_mplane)(struct ipu_isys_video *av,

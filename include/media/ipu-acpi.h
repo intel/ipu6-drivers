@@ -28,6 +28,8 @@
 #define GPIO_READY_STAT		0x13
 #define GPIO_HDMI_DETECT	0x14
 
+void set_built_in_pdata(struct ipu_isys_subdev_pdata *pdata);
+
 enum connection_type {
 	TYPE_DIRECT,
 	TYPE_SERDES
@@ -122,7 +124,7 @@ struct ipu_gpio_info {
 
 struct ipu_irq_info {
 	int irq_pin;
-	char irq_pin_name[IPU_SPLATA_IRQ_PIN_NAME_LEN];
+	char irq_pin_name[IPU_SPDATA_IRQ_PIN_NAME_LEN];
 };
 
 /* Each I2C client linked to 1 set of CTL Logic */

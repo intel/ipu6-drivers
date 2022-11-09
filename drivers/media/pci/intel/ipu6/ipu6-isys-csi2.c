@@ -95,8 +95,14 @@ static int ipu6_csi2_phy_power_set(struct ipu_isys *isys,
 			return ret;
 
 		ipu6_isys_phy_reset(isys, phy_id, 0);
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 		ipu6_isys_phy_common_init(isys, cfg);
 		ret = ipu6_isys_phy_config(isys, cfg);
+#else
+		ipu6_isys_phy_common_init(isys);
+
+		ret = ipu6_isys_phy_config(isys);
+#endif
 		if (ret)
 			return ret;
 
