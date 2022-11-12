@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 Intel Corporation
+// Copyright (C) 2022 Intel Corporation
 
 #include <linux/uaccess.h>
 #include <linux/device.h>
@@ -10,7 +10,11 @@
 #include <linux/kthread.h>
 #include <linux/init_task.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+#include <linux/sched.h>
+#else
 #include <uapi/linux/sched/types.h>
+#endif
 #include <linux/module.h>
 #include <linux/fs.h>
 

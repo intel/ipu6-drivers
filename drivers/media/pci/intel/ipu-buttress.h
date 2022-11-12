@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2020 Intel Corporation */
+/* Copyright (C) 2013 - 2022 Intel Corporation */
 
 #ifndef IPU_BUTTRESS_H
 #define IPU_BUTTRESS_H
@@ -66,6 +66,7 @@ struct ipu_buttress {
 	u32 wdt_cached_value;
 	u8 psys_force_ratio;
 	bool force_suspend;
+	u32 ref_clk;
 };
 
 struct ipu_buttress_sensor_clk_freq {
@@ -113,7 +114,7 @@ int ipu_buttress_reset_authentication(struct ipu_device *isp);
 bool ipu_buttress_auth_done(struct ipu_device *isp);
 int ipu_buttress_start_tsc_sync(struct ipu_device *isp);
 int ipu_buttress_tsc_read(struct ipu_device *isp, u64 *val);
-u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks);
+u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu_device *isp);
 
 irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr);
 irqreturn_t ipu_buttress_isr_threaded(int irq, void *isp_ptr);
@@ -124,5 +125,6 @@ void ipu_buttress_csi_port_config(struct ipu_device *isp,
 				  u32 legacy, u32 combo);
 int ipu_buttress_restore(struct ipu_device *isp);
 
+int ipu_buttress_isys_freq_set(void *data, u64 val);
 int ipu_buttress_psys_freq_get(void *data, u64 *val);
 #endif /* IPU_BUTTRESS_H */

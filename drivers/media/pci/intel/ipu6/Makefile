@@ -17,6 +17,9 @@ intel-ipu6-objs				+= ../ipu.o \
 					   ../ipu-cpd.o \
 					   ipu6.o \
 					   ../ipu-fw-com.o
+ifdef CONFIG_IPU_ISYS_BRIDGE
+intel-ipu6-objs				+= ../cio2-bridge.o
+endif
 
 obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6.o
 
@@ -24,6 +27,7 @@ intel-ipu6-isys-objs			+= ../ipu-isys.o \
 					   ../ipu-isys-csi2.o \
 					   ipu6-isys.o \
 					   ipu6-isys-phy.o \
+					   ipu6-isys-dwc-phy.o \
 					   ipu6-isys-csi2.o \
 					   ipu6-isys-gpc.o \
 					   ../ipu-isys-csi2-be-soc.o \
@@ -31,11 +35,6 @@ intel-ipu6-isys-objs			+= ../ipu-isys.o \
 					   ../ipu-isys-video.o \
 					   ../ipu-isys-queue.o \
 					   ../ipu-isys-subdev.o
-intel-ipu6-isys-objs			+= ../ipu-isys-csi2-be.o
-
-ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-intel-ipu6-isys-objs                    += ../ipu-isys-tpg.o
-endif
 
 obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6-isys.o
 

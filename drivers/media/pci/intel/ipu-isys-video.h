@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2020 Intel Corporation */
+/* Copyright (C) 2013 - 2022 Intel Corporation */
 
 #ifndef IPU_ISYS_VIDEO_H
 #define IPU_ISYS_VIDEO_H
@@ -54,9 +54,6 @@ struct ipu_isys_pipeline {
 	struct ipu_isys_csi2_be *csi2_be;
 	struct ipu_isys_csi2_be_soc *csi2_be_soc;
 	struct ipu_isys_csi2 *csi2;
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	struct ipu_isys_tpg *tpg;
-#endif
 
 	/*
 	 * Number of capture queues, write access serialised using struct
@@ -90,7 +87,13 @@ struct ipu_isys_pipeline {
 	spinlock_t short_packet_queue_lock;
 	struct list_head pending_interlaced_bufs;
 	unsigned int short_packet_trace_index;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	struct media_graph graph;
+#else
+	struct media_entity_graph graph;
+#endif
+#endif
 	struct media_entity_enum entity_enum;
 };
 

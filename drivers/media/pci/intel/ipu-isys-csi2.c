@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2021 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/version.h>
-#include <linux/vsc.h>
 
 #include <media/ipu-isys.h>
 #include <media/media-entity.h>
@@ -74,6 +73,38 @@ static struct v4l2_subdev_internal_ops csi2_sd_internal_ops = {
 	.close = ipu_isys_subdev_close,
 };
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
+{
+	struct ipu_isys_pipeline *pipe = container_of(csi2->asd.sd.entity.pipe,
+						      struct ipu_isys_pipeline,
+						      pipe);
+	struct v4l2_subdev *ext_sd =
+		media_entity_to_v4l2_subdev(pipe->external->entity);
+	struct device *dev = &csi2->isys->adev->dev;
+	unsigned int bpp, lanes;
+	s64 ret;
+
+	if (!ext_sd) {
+		WARN_ON(1);
+		return -ENODEV;
+	}
+
+	bpp = ipu_isys_mbus_code_to_bpp(csi2->asd.ffmt->code);
+	lanes = csi2->nlanes;
+
+	ret = v4l2_get_link_freq(ext_sd->ctrl_handler, bpp, lanes * 2);
+	if (ret < 0) {
+		dev_err(dev, "can't get link frequency (%lld)\n", ret);
+		return ret;
+	}
+
+	dev_dbg(dev, "link freq of %s is %lld\n", ext_sd->name, ret);
+	*link_freq = ret;
+
+	return 0;
+}
+#else
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
 {
 	struct ipu_isys_pipeline *pipe = container_of(csi2->asd.sd.entity.pipe,
@@ -92,10 +123,18 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
 		WARN_ON(1);
 		return -ENODEV;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler,
 				ext_sd->devnode,
 				ext_sd->v4l2_dev->mdev,
 				&cs);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler,
+				ext_sd->v4l2_dev->mdev,
+				&cs);
+#else
+	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler, &cs);
+#endif
 	if (rval) {
 		dev_info(&csi2->isys->adev->dev, "can't get link frequency\n");
 		return rval;
@@ -117,6 +156,7 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
 	*link_freq = qm.value;
 	return 0;
 }
+#endif
 
 static int subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 			   struct v4l2_event_subscription *sub)
@@ -225,9 +265,6 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	struct ipu_isys_csi2_timing timing = {0};
 	unsigned int nlanes;
 	int rval;
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
-	s64 link_freq;
 
 	dev_dbg(&csi2->isys->adev->dev, "csi2 s_stream %d\n", enable);
 
@@ -240,12 +277,6 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 
 	if (!enable) {
 		ipu_isys_csi2_set_stream(sd, timing, 0, enable);
-		rval = vsc_release_camera_sensor(&status);
-		if (rval) {
-			dev_err(&csi2->isys->adev->dev,
-				"Release VSC failed.\n");
-			return rval;
-		}
 		return 0;
 	}
 
@@ -260,18 +291,6 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 		return rval;
 
 	rval = ipu_isys_csi2_set_stream(sd, timing, nlanes, enable);
-	rval = ipu_isys_csi2_get_link_freq(csi2, &link_freq);
-	if (rval)
-		return rval;
-
-	conf.lane_num = nlanes;
-	/* frequency unit 100k */
-	conf.freq = link_freq / 100000;
-	rval = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
-	if (rval) {
-		dev_err(&csi2->isys->adev->dev, "Acquire VSC failed.\n");
-		return rval;
-	}
 
 	return rval;
 }
@@ -317,8 +336,13 @@ static int csi2_link_validate(struct media_link *link)
 		return rval;
 
 	if (!v4l2_ctrl_g_ctrl(csi2->store_csi2_header)) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 		struct media_pad *remote_pad =
 		    media_entity_remote_pad(&csi2->asd.pad[CSI2_PAD_SOURCE]);
+#else
+		struct media_pad *remote_pad =
+		    media_pad_remote_pad_first(&csi2->asd.pad[CSI2_PAD_SOURCE]);
+#endif
 
 		if (remote_pad &&
 		    is_media_entity_v4l2_subdev(remote_pad->entity)) {
@@ -335,19 +359,37 @@ static const struct v4l2_subdev_video_ops csi2_sd_video_ops = {
 	.s_stream = set_stream,
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_pad_config *cfg,
 				 struct v4l2_subdev_format *fmt)
 {
 	return ipu_isys_subdev_get_ffmt(sd, cfg, fmt);
 }
+#else
+static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_state *state,
+				 struct v4l2_subdev_format *fmt)
+{
+	return ipu_isys_subdev_get_ffmt(sd, state, fmt);
+}
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_pad_config *cfg,
 				 struct v4l2_subdev_format *fmt)
 {
 	return ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
 }
+#else
+static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_state *state,
+				 struct v4l2_subdev_format *fmt)
+{
+	return ipu_isys_subdev_set_ffmt(sd, state, fmt);
+}
+#endif
 
 static int __subdev_link_validate(struct v4l2_subdev *sd,
 				  struct media_link *link,
@@ -382,12 +424,20 @@ static struct media_entity_operations csi2_entity_ops = {
 };
 
 static void csi2_set_ffmt(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			  struct v4l2_subdev_pad_config *cfg,
+#else
+			  struct v4l2_subdev_state *state,
+#endif
 			  struct v4l2_subdev_format *fmt)
 {
 	enum isys_subdev_prop_tgt tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT;
 	struct v4l2_mbus_framefmt *ffmt =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
+#else
+		__ipu_isys_get_ffmt(sd, state, fmt->pad,
+#endif
 				    fmt->which);
 
 	if (fmt->format.field != V4L2_FIELD_ALTERNATE)
@@ -395,8 +445,13 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 
 	if (fmt->pad == CSI2_PAD_SINK) {
 		*ffmt = fmt->format;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format, NULL,
 					      tgt, fmt->pad, fmt->which);
+#else
+		ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format, NULL,
+					      tgt, fmt->pad, fmt->which);
+#endif
 		return;
 	}
 
@@ -416,10 +471,16 @@ static const struct ipu_isys_pixelformat *
 csi2_try_fmt(struct ipu_isys_video *av,
 	     struct v4l2_pix_format_mplane *mpix)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	struct v4l2_subdev *sd =
+	    media_entity_to_v4l2_subdev(av->vdev.entity.links[0].source->
+					entity);
+#else
 	struct media_link *link = list_first_entry(&av->vdev.entity.links,
 						   struct media_link, list);
 	struct v4l2_subdev *sd =
 	    media_entity_to_v4l2_subdev(link->source->entity);
+#endif
 	struct ipu_isys_csi2 *csi2;
 
 	if (!sd)
@@ -438,7 +499,6 @@ void ipu_isys_csi2_cleanup(struct ipu_isys_csi2 *csi2)
 
 	v4l2_device_unregister_subdev(&csi2->asd.sd);
 	ipu_isys_subdev_cleanup(&csi2->asd);
-	ipu_isys_video_cleanup(&csi2->av);
 	csi2->isys = NULL;
 }
 
@@ -520,36 +580,6 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 	mutex_lock(&csi2->asd.mutex);
 	__ipu_isys_subdev_set_ffmt(&csi2->asd.sd, NULL, &fmt);
 	mutex_unlock(&csi2->asd.mutex);
-
-	snprintf(csi2->av.vdev.name, sizeof(csi2->av.vdev.name),
-		 IPU_ISYS_ENTITY_PREFIX " CSI-2 %u capture", index);
-	csi2->av.isys = isys;
-	csi2->av.aq.css_pin_type = IPU_FW_ISYS_PIN_TYPE_MIPI;
-	csi2->av.pfmts = ipu_isys_pfmts_packed;
-	csi2->av.try_fmt_vid_mplane = csi2_try_fmt;
-	csi2->av.prepare_fw_stream =
-		ipu_isys_prepare_fw_cfg_default;
-	csi2->av.packed = true;
-	csi2->av.line_header_length =
-		IPU_ISYS_CSI2_LONG_PACKET_HEADER_SIZE;
-	csi2->av.line_footer_length =
-		IPU_ISYS_CSI2_LONG_PACKET_FOOTER_SIZE;
-	csi2->av.aq.buf_prepare = ipu_isys_buf_prepare;
-	csi2->av.aq.fill_frame_buff_set_pin =
-	ipu_isys_buffer_to_fw_frame_buff_pin;
-	csi2->av.aq.link_fmt_validate =
-		ipu_isys_link_fmt_validate;
-	csi2->av.aq.vbq.buf_struct_size =
-		sizeof(struct ipu_isys_video_buffer);
-
-	rval = ipu_isys_video_init(&csi2->av,
-				   &csi2->asd.sd.entity,
-				   CSI2_PAD_SOURCE,
-				   MEDIA_PAD_FL_SINK, 0);
-	if (rval) {
-		dev_info(&isys->adev->dev, "can't init video node\n");
-		goto fail;
-	}
 
 	return 0;
 

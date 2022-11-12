@@ -180,7 +180,8 @@ static int ipu_cpd_parse_module_data(struct ipu_device *isp,
 
 		*p++ = dma_addr_module_data + dir_ent->offset;
 
-		if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP)
+		if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		    ipu_ver == IPU_VER_6EP_MTL)
 			id = ipu6_cpd_metadata_get_cmpnt_id(isp, metadata,
 							    metadata_size, i);
 		else
@@ -193,7 +194,8 @@ static int ipu_cpd_parse_module_data(struct ipu_device *isp,
 			return -EINVAL;
 		}
 
-		if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP)
+		if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		    ipu_ver == IPU_VER_6EP_MTL)
 			ver = ipu6_cpd_metadata_cmpnt_version(isp, metadata,
 							      metadata_size, i);
 		else
@@ -239,7 +241,11 @@ void *ipu_cpd_create_pkg_dir(struct ipu_bus_device *adev,
 	*pkg_dir_size = PKG_DIR_SIZE + man_sz + met_sz;
 	pkg_dir = dma_alloc_attrs(&adev->dev, *pkg_dir_size, dma_addr,
 				  GFP_KERNEL,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+				  NULL);
+#else
 				  0);
+#endif
 	if (!pkg_dir)
 		return pkg_dir;
 
@@ -265,7 +271,11 @@ void *ipu_cpd_create_pkg_dir(struct ipu_bus_device *adev,
 			"Unable to parse module data section!\n");
 		dma_free_attrs(&isp->psys->dev, *pkg_dir_size, pkg_dir,
 			       *dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL);
+#else
 			       0);
+#endif
 		return NULL;
 	}
 
@@ -288,7 +298,11 @@ void ipu_cpd_free_pkg_dir(struct ipu_bus_device *adev,
 			  u64 *pkg_dir,
 			  dma_addr_t dma_addr, unsigned int pkg_dir_size)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	dma_free_attrs(&adev->dev, pkg_dir_size, pkg_dir, dma_addr, NULL);
+#else
 	dma_free_attrs(&adev->dev, pkg_dir_size, pkg_dir, dma_addr, 0);
+#endif
 }
 EXPORT_SYMBOL_GPL(ipu_cpd_free_pkg_dir);
 
@@ -377,7 +391,8 @@ static int ipu_cpd_validate_metadata(struct ipu_device *isp,
 	}
 
 	/* Validate metadata size multiple of metadata components */
-	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP)
+	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+	    ipu_ver == IPU_VER_6EP_MTL)
 		size = sizeof(struct ipu6_cpd_metadata_cmpnt);
 	else
 		size = sizeof(struct ipu_cpd_metadata_cmpnt);

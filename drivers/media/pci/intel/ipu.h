@@ -16,13 +16,17 @@
 
 #define IPU6_PCI_ID	0x9a19
 #define IPU6SE_PCI_ID	0x4e19
-#define IPU6EP_PCI_ID	0x465d
+#define IPU6EP_ADL_P_PCI_ID	0x465d
+#define IPU6EP_ADL_N_PCI_ID	0x462e
+#define IPU6EP_RPL_P_PCI_ID	0xa75d
+#define IPU6EP_MTL_PCI_ID	0x7d19
 
 enum ipu_version {
 	IPU_VER_INVALID = 0,
 	IPU_VER_6,
 	IPU_VER_6SE,
 	IPU_VER_6EP,
+	IPU_VER_6EP_MTL,
 };
 
 /*
@@ -104,5 +108,8 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 		   struct device *device);
 extern enum ipu_version ipu_ver;
 void ipu_internal_pdata_init(void);
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
+int cio2_bridge_init(struct pci_dev *cio2);
+#endif
 
 #endif /* IPU_H */

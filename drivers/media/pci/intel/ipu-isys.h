@@ -16,9 +16,6 @@
 #include "ipu-isys-media.h"
 #include "ipu-isys-csi2.h"
 #include "ipu-isys-csi2-be.h"
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-#include "ipu-isys-tpg.h"
-#endif
 #include "ipu-isys-video.h"
 #include "ipu-pdata.h"
 #include "ipu-fw-isys.h"
@@ -59,7 +56,7 @@
 #define IPU_ISYS_MAX_WIDTH		16384U
 #define IPU_ISYS_MAX_HEIGHT		16384U
 
-#define NR_OF_CSI2_BE_SOC_DEV 8
+#define NR_OF_CSI2_BE_SOC_DEV 1
 
 /* the threshold granularity is 2KB on IPU6 */
 #define IPU6_SRAM_GRANULRITY_SHIFT	11
@@ -126,6 +123,7 @@ struct ipu_isys_sensor_info {
  * @fwcom: fw communication layer private pointer
  *         or optional external library private pointer
  * @line_align: line alignment in memory
+ * @phy_termcal_val: the termination calibration value, only used for DWC PHY
  * @reset_needed: Isys requires d0i0->i3 transition
  * @video_opened: total number of opened file handles on video nodes
  * @mutex: serialise access isys video open/release related operations
@@ -133,9 +131,6 @@ struct ipu_isys_sensor_info {
  * @lib_mutex: optional external library mutex
  * @pdata: platform data pointer
  * @csi2: CSI-2 receivers
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
- * @tpg: test pattern generators
-#endif
  * @csi2_be: CSI-2 back-ends
  * @fw: ISYS firmware binary (unsecure firmware)
  * @fw_sgt: fw scatterlist
@@ -157,6 +152,7 @@ struct ipu_isys {
 	struct ipu_isys_pipeline *pipes[IPU_ISYS_MAX_STREAMS];
 	void *fwcom;
 	unsigned int line_align;
+	u32 phy_termcal_val;
 	bool reset_needed;
 	bool icache_prefetch;
 	bool csi2_cse_ipc_not_supported;
@@ -175,9 +171,6 @@ struct ipu_isys {
 	struct ipu_isys_pdata *pdata;
 
 	struct ipu_isys_csi2 *csi2;
-#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
-	struct ipu_isys_tpg *tpg;
-#endif
 	struct ipu_isys_csi2_be csi2_be;
 	struct ipu_isys_csi2_be_soc csi2_be_soc[NR_OF_CSI2_BE_SOC_DEV];
 	const struct firmware *fw;
@@ -220,6 +213,9 @@ struct isys_fw_msgs {
 #define to_stream_cfg_msg_buf(a) (&(a)->fw_msg.stream)
 #define to_dma_addr(a) ((a)->dma_addr)
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+int ipu_pipeline_pm_use(struct media_entity *entity, int use);
+#endif
 struct isys_fw_msgs *ipu_get_fw_msg_buf(struct ipu_isys_pipeline *ip);
 void ipu_put_fw_mgs_buf(struct ipu_isys *isys, u64 data);
 void ipu_cleanup_fw_msg_bufs(struct ipu_isys *isys);
