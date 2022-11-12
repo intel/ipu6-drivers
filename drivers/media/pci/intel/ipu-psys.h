@@ -19,7 +19,6 @@
 #define IPU_PSYS_EVENT_FRAGMENT_COMPLETE IPU_FW_PSYS_EVENT_TYPE_SUCCESS
 #define IPU_PSYS_CLOSE_TIMEOUT_US   50
 #define IPU_PSYS_CLOSE_TIMEOUT (100000 / IPU_PSYS_CLOSE_TIMEOUT_US)
-#define IPU_PSYS_WORK_QUEUE		system_power_efficient_wq
 #define IPU_MAX_RESOURCES 128
 
 /* Opaque structure. Do not access fields. */

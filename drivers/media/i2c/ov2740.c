@@ -29,6 +29,8 @@
 #define OV2740_MODE_STANDBY		0x00
 #define OV2740_MODE_STREAMING		0x01
 
+#define OV2740_REG_DELAY 		0xffff
+
 /* vertical-timings from sensor */
 #define OV2740_REG_VTS			0x380e
 
@@ -139,6 +141,7 @@ static const guid_t cio2_sensor_module_guid =
 
 static const struct ov2740_reg mipi_data_rate_720mbps[] = {
 	{0x0103, 0x01},
+	{0xffff, 0x10},
 	{0x0302, 0x4b},
 	{0x030d, 0x4b},
 	{0x030e, 0x02},
@@ -148,6 +151,7 @@ static const struct ov2740_reg mipi_data_rate_720mbps[] = {
 
 static const struct ov2740_reg mipi_data_rate_cjfle23_720mbps[] = {
 	{0x0103, 0x01},
+	{0xffff, 0x10},
 	{0x0302, 0x4b},
 	{0x0303, 0x01},
 	{0x030d, 0x4b},
@@ -676,6 +680,11 @@ static int ov2740_write_reg(struct ov2740 *ov2740, u16 reg, u16 len, u32 val)
 
 	if (len > 4)
 		return -EINVAL;
+
+	if (reg == OV2740_REG_DELAY) {
+		msleep(val);
+		return 0;
+	}
 
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << 8 * (4 - len), buf + 2);

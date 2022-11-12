@@ -23,6 +23,8 @@
 #define HM2170_DATA_LANES		2
 #define HM2170_RGB_DEPTH		10
 
+#define HM2170_REG_DELAY 		0xffff
+
 #define HM2170_REG_CHIP_ID		0x0000
 #define HM2170_CHIP_ID			0x2170
 
@@ -111,6 +113,7 @@ struct hm2170_mode {
 
 static const struct hm2170_reg mode_1928x1088_regs[] = {
 	{0x0103, 0x00},
+	{0xffff, 0x10},
 	{0x0202, 0x03},
 	{0x0203, 0x60},
 	{0x0300, 0x5E},
@@ -418,6 +421,11 @@ static int hm2170_write_reg(struct hm2170 *hm2170, u16 reg, u16 len, u32 val)
 
 	if (len > 4)
 		return -EINVAL;
+
+	if (reg == HM2170_REG_DELAY) {
+		msleep(val);
+		return 0;
+	}
 
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << 8 * (4 - len), buf + 2);
