@@ -529,9 +529,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (rval)
 		dev_err(&pdev->dev, "Trace support not available\n");
 
-	pm_runtime_put_noidle(&pdev->dev);
-	pm_runtime_allow(&pdev->dev);
-
 	/*
 	 * NOTE Device hierarchy below is important to ensure proper
 	 * runtime suspend and resume order.
@@ -632,21 +629,26 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		 IPU_MAJOR_VERSION,
 		 IPU_MINOR_VERSION);
 
+	pm_runtime_put_noidle(&pdev->dev);
+	pm_runtime_allow(&pdev->dev);
+
 	return 0;
 
 out_ipu_bus_del_devices:
 	if (isp->pkg_dir) {
-		ipu_cpd_free_pkg_dir(isp->psys, isp->pkg_dir,
-				     isp->pkg_dir_dma_addr,
-				     isp->pkg_dir_size);
-		ipu_buttress_unmap_fw_image(isp->psys, &isp->fw_sgt);
+		if (isp->psys) {
+			ipu_cpd_free_pkg_dir(isp->psys, isp->pkg_dir,
+					     isp->pkg_dir_dma_addr,
+					     isp->pkg_dir_size);
+			ipu_buttress_unmap_fw_image(isp->psys, &isp->fw_sgt);
+		}
 		isp->pkg_dir = NULL;
 	}
-	if (isp->psys && isp->psys->mmu)
+	if (!IS_ERR_OR_NULL(isp->psys) && !IS_ERR_OR_NULL(isp->psys->mmu))
 		ipu_mmu_cleanup(isp->psys->mmu);
-	if (isp->isys && isp->isys->mmu)
+	if (!IS_ERR_OR_NULL(isp->isys) && !IS_ERR_OR_NULL(isp->isys->mmu))
 		ipu_mmu_cleanup(isp->isys->mmu);
-	if (isp->psys)
+	if (!IS_ERR_OR_NULL(isp->psys))
 		pm_runtime_put(&isp->psys->dev);
 	ipu_bus_del_devices(pdev);
 	ipu_buttress_exit(isp);
