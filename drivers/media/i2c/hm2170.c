@@ -9,7 +9,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/nvmem-provider.h>
 #include <linux/regmap.h>
-#include <linux/version.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
@@ -22,6 +21,8 @@
 #define HM2170_MCLK			19200000
 #define HM2170_DATA_LANES		2
 #define HM2170_RGB_DEPTH		10
+
+#define HM2170_REG_DELAY 		0xffff
 
 #define HM2170_REG_CHIP_ID		0x0000
 #define HM2170_CHIP_ID			0x2170
@@ -111,6 +112,7 @@ struct hm2170_mode {
 
 static const struct hm2170_reg mode_1928x1088_regs[] = {
 	{0x0103, 0x00},
+	{0xffff, 0x10},
 	{0x0202, 0x03},
 	{0x0203, 0x60},
 	{0x0300, 0x5E},
@@ -418,6 +420,11 @@ static int hm2170_write_reg(struct hm2170 *hm2170, u16 reg, u16 len, u32 val)
 
 	if (len > 4)
 		return -EINVAL;
+
+	if (reg == HM2170_REG_DELAY) {
+		msleep(val);
+		return 0;
+	}
 
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << 8 * (4 - len), buf + 2);
@@ -898,7 +905,7 @@ static int hm2170_identify_module(struct hm2170 *hm2170)
 	return 0;
 }
 
-static void hm2170_remove(struct i2c_client *client)
+static int hm2170_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct hm2170 *hm2170 = to_hm2170(sd);
@@ -908,15 +915,9 @@ static void hm2170_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&hm2170->mutex);
-}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-static int hm2170_remove_bp(struct i2c_client *client)
-{
-	hm2170_remove(client);
 	return 0;
 }
-#endif
 
 static int hm2170_probe(struct i2c_client *client)
 {
@@ -1024,11 +1025,7 @@ static struct i2c_driver hm2170_i2c_driver = {
 		.acpi_match_table = hm2170_acpi_ids,
 	},
 	.probe_new = hm2170_probe,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	.remove = hm2170_remove_bp,
-#else
 	.remove = hm2170_remove,
-#endif
 };
 
 module_i2c_driver(hm2170_i2c_driver);

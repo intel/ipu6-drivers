@@ -1680,8 +1680,6 @@ static void ipu_psys_remove(struct ipu_bus_device *adev)
 		debugfs_remove_recursive(psys->debugfsdir);
 #endif
 
-	flush_workqueue(IPU_PSYS_WORK_QUEUE);
-
 	if (psys->sched_cmd_thread) {
 		kthread_stop(psys->sched_cmd_thread);
 		psys->sched_cmd_thread = NULL;
