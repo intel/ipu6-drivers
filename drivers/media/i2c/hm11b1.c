@@ -1053,7 +1053,7 @@ static int hm11b1_identify_module(struct hm11b1 *hm11b1)
 	return 0;
 }
 
-static int hm11b1_remove(struct i2c_client *client)
+static void hm11b1_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct hm11b1 *hm11b1 = to_hm11b1(sd);
@@ -1063,9 +1063,15 @@ static int hm11b1_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&hm11b1->mutex);
+}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int hm11b1_remove_bp(struct i2c_client *client)
+{
+	hm11b1_remove(client);
 	return 0;
 }
+#endif
 
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 static int hm11b1_parse_dt(struct hm11b1 *hm11b1)
@@ -1205,7 +1211,11 @@ static struct i2c_driver hm11b1_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(hm11b1_acpi_ids),
 	},
 	.probe_new = hm11b1_probe,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	.remove = hm11b1_remove_bp,
+#else
 	.remove = hm11b1_remove,
+#endif
 };
 
 module_i2c_driver(hm11b1_i2c_driver);
