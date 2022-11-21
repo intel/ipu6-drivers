@@ -602,8 +602,7 @@ static int link_validate(struct media_link *link)
 	struct ipu_isys_video *av =
 	    container_of(link->sink, struct ipu_isys_video, pad);
 	/* All sub-devices connected to a video node are ours. */
-	struct ipu_isys_pipeline *ip =
-		to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct ipu_isys_pipeline *ip = &av->ip;
 	struct v4l2_subdev *sd;
 
 	if (!link->source->entity)
@@ -645,8 +644,9 @@ static void put_stream_opened(struct ipu_isys_video *av)
 
 static int get_stream_handle(struct ipu_isys_video *av)
 {
-	struct ipu_isys_pipeline *ip =
-	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	unsigned int stream_handle;
 	unsigned long flags;
 
@@ -667,8 +667,9 @@ static int get_stream_handle(struct ipu_isys_video *av)
 
 static void put_stream_handle(struct ipu_isys_video *av)
 {
-	struct ipu_isys_pipeline *ip =
-	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	unsigned long flags;
 
 	spin_lock_irqsave(&av->isys->lock, flags);
@@ -883,8 +884,9 @@ void
 ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 				struct ipu_fw_isys_stream_cfg_data_abi *cfg)
 {
-	struct ipu_isys_pipeline *ip =
-	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	struct ipu_isys_queue *aq = &av->aq;
 	struct ipu_fw_isys_output_pin_info_abi *pin_info;
 	struct ipu_isys *isys = av->isys;
@@ -1036,8 +1038,9 @@ static unsigned int get_comp_format(u32 code)
 static int start_stream_firmware(struct ipu_isys_video *av,
 				 struct ipu_isys_buffer_list *bl)
 {
-	struct ipu_isys_pipeline *ip =
-	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	struct device *dev = &av->isys->adev->dev;
 	struct v4l2_subdev_selection sel_fmt = {
 		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
@@ -1275,8 +1278,9 @@ out_put_stream_handle:
 
 static void stop_streaming_firmware(struct ipu_isys_video *av)
 {
-	struct ipu_isys_pipeline *ip =
-	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	struct device *dev = &av->isys->adev->dev;
 	int rval, tout;
 	enum ipu_fw_isys_send_type send_type =
@@ -1304,8 +1308,9 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 
 static void close_streaming_firmware(struct ipu_isys_video *av)
 {
-	struct ipu_isys_pipeline *ip =
-	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	struct device *dev = &av->isys->adev->dev;
 	int rval, tout;
 
@@ -1376,12 +1381,19 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	dev_dbg(dev, "prepare stream: %d\n", state);
 
 	if (!state) {
-		ip = to_ipu_isys_pipeline(av->vdev.entity.pipe);
+		struct media_pipeline *media_pipe =
+			media_entity_pipeline(&av->vdev.entity);
+
+		ip = to_ipu_isys_pipeline(media_pipe);
 
 		if (ip->interlaced && isys->short_packet_source ==
 		    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 			short_packet_queue_destroy(ip);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		media_pipeline_stop(av->vdev.entity.pads);
+#else
 		media_pipeline_stop(&av->vdev.entity);
+#endif
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;
 	}
@@ -1410,7 +1422,11 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	if (rval)
 		return rval;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	rval = media_pipeline_start(av->vdev.entity.pads, &ip->pipe);
+#else
 	rval = media_pipeline_start(&av->vdev.entity, &ip->pipe);
+#endif
 	if (rval < 0) {
 		dev_dbg(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
@@ -1451,7 +1467,11 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	return 0;
 
 out_pipeline_stop:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	media_pipeline_stop(av->vdev.entity.pads);
+#else
 	media_pipeline_stop(&av->vdev.entity);
+#endif
 
 out_enum_cleanup:
 	media_entity_enum_cleanup(&ip->entity_enum);
@@ -1470,8 +1490,10 @@ static void configure_stream_watermark(struct ipu_isys_video *av)
 	struct isys_iwake_watermark *iwake_watermark;
 	struct v4l2_control vb = { .id = V4L2_CID_VBLANK, .value = 0 };
 	struct v4l2_control hb = { .id = V4L2_CID_HBLANK, .value = 0 };
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
 
-	ip = to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	ip = to_ipu_isys_pipeline(media_pipe);
 	if (!ip->external->entity) {
 		WARN_ON(1);
 		return;
@@ -1578,8 +1600,9 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 	struct media_entity_enum entities;
 
 	struct media_entity *entity, *entity2;
-	struct ipu_isys_pipeline *ip =
-	    to_ipu_isys_pipeline(av->vdev.entity.pipe);
+	struct media_pipeline *media_pipe =
+		media_entity_pipeline(&av->vdev.entity);
+	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
 	struct v4l2_subdev *sd, *esd;
 	int rval = 0;
 
