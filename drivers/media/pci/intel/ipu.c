@@ -649,6 +649,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	pm_runtime_put_noidle(&pdev->dev);
 	pm_runtime_allow(&pdev->dev);
 
+	ipu_bus_ready_to_probe = true;
 	return 0;
 
 out_ipu_bus_del_devices:

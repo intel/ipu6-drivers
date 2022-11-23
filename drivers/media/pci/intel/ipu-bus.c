@@ -15,6 +15,9 @@
 #include "ipu-platform.h"
 #include "ipu-dma.h"
 
+bool ipu_bus_ready_to_probe;
+EXPORT_SYMBOL(ipu_bus_ready_to_probe);
+
 #ifdef CONFIG_PM
 static struct bus_type ipu_bus;
 
@@ -90,6 +93,9 @@ static int ipu_bus_probe(struct device *dev)
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 	struct ipu_bus_driver *adrv = to_ipu_bus_driver(dev->driver);
 	int rval;
+
+	if (!ipu_bus_ready_to_probe)
+		return -EPROBE_DEFER;
 
 	dev_dbg(dev, "bus probe dev %s\n", dev_name(dev));
 
