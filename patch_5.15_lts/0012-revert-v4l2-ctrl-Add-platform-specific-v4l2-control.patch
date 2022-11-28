@@ -1,0 +1,30 @@
+From e84eb56ffd14b7e623c5fccbe7fe81cdd0512414 Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Wed, 31 Aug 2022 14:28:16 +0800
+Subject: [PATCH 012/102] revert: v4l2-ctrl: Add platform specific v4l2 control
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ include/uapi/linux/v4l2-controls.h | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/include/uapi/linux/v4l2-controls.h b/include/uapi/linux/v4l2-controls.h
+index bb261be1c332..5532b5f68493 100644
+--- a/include/uapi/linux/v4l2-controls.h
++++ b/include/uapi/linux/v4l2-controls.h
+@@ -1119,11 +1119,6 @@ enum v4l2_jpeg_chroma_subsampling {
+ #define V4L2_CID_TEST_PATTERN_GREENB		(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 7)
+ #define V4L2_CID_UNIT_CELL_SIZE			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 8)
+ 
+-#define V4L2_CID_MIPI_LANES			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 64)
+-#define V4L2_CID_WDR_MODE			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 65)
+-#define V4L2_CID_PWM_DUTY			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 66)
+-#define V4L2_CID_IRIS_MODE			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 67)
+-#define V4L2_CID_IRIS_STEP			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 68)
+ 
+ /* Image processing controls */
+ 
+-- 
+2.17.1
+

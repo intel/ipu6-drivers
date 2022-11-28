@@ -1,0 +1,88 @@
+From 5bc2814870dc01aa20393116c1b602938bcc7e6e Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Wed, 31 Aug 2022 14:30:10 +0800
+Subject: [PATCH 014/102] revert: v4l: Extend struct v4l2_mbus_frame_desc_entry
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ include/media/v4l2-subdev.h | 37 -------------------------------------
+ 1 file changed, 37 deletions(-)
+
+diff --git a/include/media/v4l2-subdev.h b/include/media/v4l2-subdev.h
+index f2d0b2ec51df..95ec18c2f49c 100644
+--- a/include/media/v4l2-subdev.h
++++ b/include/media/v4l2-subdev.h
+@@ -312,18 +312,6 @@ struct v4l2_subdev_audio_ops {
+ 	int (*s_stream)(struct v4l2_subdev *sd, int enable);
+ };
+ 
+-/**
+- * struct v4l2_mbus_frame_desc_entry_csi2
+- *
+- * @channel: CSI-2 virtual channel
+- * @data_type: CSI-2 data type ID
+- */
+-struct v4l2_mbus_frame_desc_entry_csi2 {
+-	u8 channel;
+-	u8 data_type;
+-};
+-
+-
+ /**
+  * enum v4l2_mbus_frame_desc_flags - media bus frame description flags
+  *
+@@ -343,50 +331,25 @@ enum v4l2_mbus_frame_desc_flags {
+  * struct v4l2_mbus_frame_desc_entry - media bus frame description structure
+  *
+  * @flags:	bitmask flags, as defined by &enum v4l2_mbus_frame_desc_flags.
+- * @bpp:	bits per pixel
+  * @pixelcode:	media bus pixel code, valid if @flags
+  *		%FRAME_DESC_FL_BLOB is not set.
+- * @start_line:	start line of the data for 2D DMA
+- * @start_pixel	start pixel of the data for 2D DMA
+- * @width	image width for 2D DMA
+- * @height	image height for 2D DMA
+  * @length:	number of octets per frame, valid if @flags
+  *		%V4L2_MBUS_FRAME_DESC_FL_LEN_MAX is set.
+- * @csi2:	CSI-2 specific bus configuration
+  */
+ struct v4l2_mbus_frame_desc_entry {
+ 	enum v4l2_mbus_frame_desc_flags flags;
+-	u8 bpp;
+ 	u32 pixelcode;
+-	struct {
+-		u16 start_line;
+-		u16 start_pixel;
+-		u16 width;
+-		u16 height;
+-	} two_dim;
+ 	u32 length;
+-	union {
+-		struct v4l2_mbus_frame_desc_entry_csi2 csi2;
+-	} bus;
+ };
+ 
+ #define V4L2_FRAME_DESC_ENTRY_MAX	4
+ 
+-enum {
+-	V4L2_MBUS_FRAME_DESC_TYPE_PLATFORM,
+-	V4L2_MBUS_FRAME_DESC_TYPE_PARALLEL,
+-	V4L2_MBUS_FRAME_DESC_TYPE_CCP2,
+-	V4L2_MBUS_FRAME_DESC_TYPE_CSI2,
+-};
+-
+ /**
+  * struct v4l2_mbus_frame_desc - media bus data frame description
+- * @type: type of the bus (V4L2_MBUS_FRAME_DESC_TYPE_*)
+  * @entry: frame descriptors array
+  * @num_entries: number of entries in @entry array
+  */
+ struct v4l2_mbus_frame_desc {
+-	u32 type;
+ 	struct v4l2_mbus_frame_desc_entry entry[V4L2_FRAME_DESC_ENTRY_MAX];
+ 	unsigned short num_entries;
+ };
+-- 
+2.17.1
+

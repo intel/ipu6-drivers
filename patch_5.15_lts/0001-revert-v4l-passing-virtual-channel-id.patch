@@ -1,0 +1,44 @@
+From 6a8e4cc5761e5edffd9d118ddef835f7e78471dc Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Wed, 31 Aug 2022 10:40:35 +0800
+Subject: [PATCH 001/102] revert: v4l: passing virtual channel id
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/common/videobuf2/videobuf2-v4l2.c | 6 +-----
+ include/media/videobuf2-v4l2.h                  | 1 -
+ 2 files changed, 1 insertion(+), 6 deletions(-)
+
+diff --git a/drivers/media/common/videobuf2/videobuf2-v4l2.c b/drivers/media/common/videobuf2/videobuf2-v4l2.c
+index f4b90ab1572a..2988bb38ceb1 100644
+--- a/drivers/media/common/videobuf2/videobuf2-v4l2.c
++++ b/drivers/media/common/videobuf2/videobuf2-v4l2.c
+@@ -533,11 +533,7 @@ static void __fill_v4l2_buffer(struct vb2_buffer *vb, void *pb)
+ 	b->timecode = vbuf->timecode;
+ 	b->sequence = vbuf->sequence;
+ 	b->reserved2 = 0;
+-	/*
+-	 * Use reserved to save vc_id, delete request_fd which is not used
+-	 * currently, it's union for reserved and request_id.
+-	 */
+-	b->reserved = vbuf->reserved;
++	b->request_fd = 0;
+ 
+ 	if (q->is_multiplanar) {
+ 		/*
+diff --git a/include/media/videobuf2-v4l2.h b/include/media/videobuf2-v4l2.h
+index b42f45870c83..b66585e304e2 100644
+--- a/include/media/videobuf2-v4l2.h
++++ b/include/media/videobuf2-v4l2.h
+@@ -51,7 +51,6 @@ struct vb2_v4l2_buffer {
+ 	__s32			request_fd;
+ 	bool			is_held;
+ 	struct vb2_plane	planes[VB2_MAX_PLANES];
+-	__u32                   reserved;
+ };
+ 
+ /* VB2 V4L2 flags as set in vb2_queue.subsystem_flags */
+-- 
+2.17.1
+

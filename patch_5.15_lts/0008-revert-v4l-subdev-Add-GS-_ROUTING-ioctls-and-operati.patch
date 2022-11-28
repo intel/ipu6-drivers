@@ -1,0 +1,306 @@
+From 374bbfa96f4717e4355e0fae575699226bc15bc0 Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Wed, 31 Aug 2022 14:06:46 +0800
+Subject: [PATCH 008/102] revert: v4l: subdev: Add [GS]_ROUTING ioctls and
+ operations
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/mc/mc-entity.c                  |  4 ++
+ drivers/media/v4l2-core/v4l2-compat-ioctl32.c | 60 -------------------
+ drivers/media/v4l2-core/v4l2-ioctl.c          | 17 ------
+ drivers/media/v4l2-core/v4l2-subdev.c         | 42 -------------
+ include/media/v4l2-subdev.h                   |  4 --
+ include/uapi/linux/v4l2-subdev.h              | 45 --------------
+ 6 files changed, 4 insertions(+), 168 deletions(-)
+
+diff --git a/drivers/media/mc/mc-entity.c b/drivers/media/mc/mc-entity.c
+index a9ea5764c549..0311db98a82a 100644
+--- a/drivers/media/mc/mc-entity.c
++++ b/drivers/media/mc/mc-entity.c
+@@ -481,6 +481,10 @@ __must_check int __media_pipeline_start(struct media_entity *entity,
+ 
+ 		entity->pipe = pipe;
+ 
++		/* Already streaming --- no need to check. */
++		if (entity->stream_count > 1)
++			continue;
++
+ 		if (!entity->ops || !entity->ops->link_validate)
+ 			continue;
+ 
+diff --git a/drivers/media/v4l2-core/v4l2-compat-ioctl32.c b/drivers/media/v4l2-core/v4l2-compat-ioctl32.c
+index 7647faf1241a..80aaf07b16f2 100644
+--- a/drivers/media/v4l2-core/v4l2-compat-ioctl32.c
++++ b/drivers/media/v4l2-core/v4l2-compat-ioctl32.c
+@@ -808,54 +808,6 @@ static int put_v4l2_event32_time32(struct v4l2_event *p64,
+ }
+ #endif
+ 
+-struct v4l2_subdev_routing32 {
+-	compat_caddr_t routes;
+-	__u32 num_routes;
+-	__u32 reserved[5];
+-};
+-
+-static int get_v4l2_subdev_routing(struct v4l2_subdev_routing *kp,
+-				   struct v4l2_subdev_routing32 __user *up)
+-{
+-	compat_caddr_t p;
+-
+-	if (!access_ok(up, sizeof(*up)) ||
+-	    get_user(p, &up->routes) ||
+-	    get_user(kp->num_routes, &up->num_routes) ||
+-	    !access_ok(up->reserved, sizeof(*up->reserved)) ||
+-	    kp->num_routes > U32_MAX / sizeof(*kp->routes))
+-		return -EFAULT;
+-
+-	kp->routes = compat_ptr(p);
+-
+-	if (!access_ok(kp->routes,
+-		       kp->num_routes * (u32)sizeof(*kp->routes)))
+-		return -EFAULT;
+-
+-	return 0;
+-}
+-
+-static int put_v4l2_subdev_routing(struct v4l2_subdev_routing *kp,
+-				   struct v4l2_subdev_routing32 __user *up)
+-{
+-	struct v4l2_subdev_route __user *uroutes;
+-	compat_caddr_t p;
+-
+-	if (!access_ok(up, sizeof(*up)) ||
+-	    get_user(p, &up->routes) ||
+-	    put_user(kp->num_routes, &up->num_routes) ||
+-	    !access_ok(up->reserved, sizeof(*up->reserved)))
+-		return -EFAULT;
+-
+-	uroutes = compat_ptr(p);
+-
+-	if (!access_ok(uroutes,
+-		       kp->num_routes * sizeof(*kp->routes)))
+-		return -EFAULT;
+-
+-	return 0;
+-}
+-
+ struct v4l2_edid32 {
+ 	__u32 pad;
+ 	__u32 start_block;
+@@ -911,8 +863,6 @@ static int put_v4l2_edid32(struct v4l2_edid *p64,
+ #define	VIDIOC_DQEVENT32	_IOR ('V', 89, struct v4l2_event32)
+ #define VIDIOC_CREATE_BUFS32	_IOWR('V', 92, struct v4l2_create_buffers32)
+ #define VIDIOC_PREPARE_BUF32	_IOWR('V', 93, struct v4l2_buffer32)
+-#define VIDIOC_SUBDEV_G_ROUTING32 _IOWR('V', 38, struct v4l2_subdev_routing32)
+-#define VIDIOC_SUBDEV_S_ROUTING32 _IOWR('V', 39, struct v4l2_subdev_routing32)
+ 
+ #ifdef CONFIG_COMPAT_32BIT_TIME
+ #define VIDIOC_QUERYBUF32_TIME32	_IOWR('V',  9, struct v4l2_buffer32_time32)
+@@ -977,10 +927,6 @@ unsigned int v4l2_compat_translate_cmd(unsigned int cmd)
+ 	case VIDIOC_DQEVENT32_TIME32:
+ 		return VIDIOC_DQEVENT;
+ #endif
+-	case VIDIOC_SUBDEV_G_ROUTING32:
+-		return VIDIOC_SUBDEV_G_ROUTING;
+-	case VIDIOC_SUBDEV_S_ROUTING32:
+-		return VIDIOC_SUBDEV_S_ROUTING;
+ 	}
+ 	return cmd;
+ }
+@@ -1025,9 +971,6 @@ int v4l2_compat_get_user(void __user *arg, void *parg, unsigned int cmd)
+ 	case VIDIOC_G_EDID32:
+ 	case VIDIOC_S_EDID32:
+ 		return get_v4l2_edid32(parg, arg);
+-	case VIDIOC_SUBDEV_G_ROUTING32:
+-	case VIDIOC_SUBDEV_S_ROUTING32:
+-		return get_v4l2_subdev_routing(parg, arg);
+ 	}
+ 	return 0;
+ }
+@@ -1080,9 +1023,6 @@ int v4l2_compat_put_user(void __user *arg, void *parg, unsigned int cmd)
+ 	case VIDIOC_DQEVENT32_TIME32:
+ 		return put_v4l2_event32_time32(parg, arg);
+ #endif
+-	case VIDIOC_SUBDEV_G_ROUTING32:
+-	case VIDIOC_SUBDEV_S_ROUTING32:
+-		return put_v4l2_subdev_routing(parg, arg);
+ 	}
+ 	return 0;
+ }
+diff --git a/drivers/media/v4l2-core/v4l2-ioctl.c b/drivers/media/v4l2-core/v4l2-ioctl.c
+index 51b069fd7abd..d5a0a9062287 100644
+--- a/drivers/media/v4l2-core/v4l2-ioctl.c
++++ b/drivers/media/v4l2-core/v4l2-ioctl.c
+@@ -16,7 +16,6 @@
+ #include <linux/kernel.h>
+ #include <linux/version.h>
+ 
+-#include <linux/v4l2-subdev.h>
+ #include <linux/videodev2.h>
+ 
+ #include <media/v4l2-common.h>
+@@ -3091,22 +3090,6 @@ static int check_array_args(unsigned int cmd, void *parg, size_t *array_size,
+ 		ret = 1;
+ 		break;
+ 	}
+-	case VIDIOC_SUBDEV_G_ROUTING:
+-	case VIDIOC_SUBDEV_S_ROUTING: {
+-		struct v4l2_subdev_routing *route = parg;
+-
+-		if (route->num_routes > 0) {
+-			if (route->num_routes > 256)
+-				return -EINVAL;
+-
+-			*user_ptr = (void __user *)route->routes;
+-			*kernel_ptr = (void *)&route->routes;
+-			*array_size = sizeof(struct v4l2_subdev_route)
+-				    * route->num_routes;
+-			ret = 1;
+-		}
+-		break;
+-	}
+ 	}
+ 
+ 	return ret;
+diff --git a/drivers/media/v4l2-core/v4l2-subdev.c b/drivers/media/v4l2-core/v4l2-subdev.c
+index 6e94c357911a..5d27a27cc2f2 100644
+--- a/drivers/media/v4l2-core/v4l2-subdev.c
++++ b/drivers/media/v4l2-core/v4l2-subdev.c
+@@ -634,40 +634,6 @@ static long subdev_do_ioctl(struct file *file, unsigned int cmd, void *arg)
+ 
+ 		return v4l2_subdev_call(sd, video, s_dv_timings, arg);
+ 
+-	case VIDIOC_SUBDEV_G_ROUTING:
+-		return v4l2_subdev_call(sd, pad, get_routing, arg);
+-
+-	case VIDIOC_SUBDEV_S_ROUTING: {
+-		struct v4l2_subdev_routing *route = arg;
+-		unsigned int i;
+-		int rval;
+-
+-		if (route->num_routes > sd->entity.num_pads)
+-			return -EINVAL;
+-
+-		for (i = 0; i < route->num_routes; ++i) {
+-			unsigned int sink = route->routes[i].sink_pad;
+-			unsigned int source = route->routes[i].source_pad;
+-			struct media_pad *pads = sd->entity.pads;
+-
+-			if (sink >= sd->entity.num_pads ||
+-			   source >= sd->entity.num_pads)
+-				return -EINVAL;
+-
+-			if ((!(route->routes[i].flags &
+-				V4L2_SUBDEV_ROUTE_FL_SOURCE) &&
+-			   !(pads[sink].flags & MEDIA_PAD_FL_SINK)) ||
+-			   !(pads[source].flags & MEDIA_PAD_FL_SOURCE))
+-				return -EINVAL;
+-		}
+-
+-		mutex_lock(&sd->entity.graph_obj.mdev->graph_mutex);
+-		rval = v4l2_subdev_call(sd, pad, set_routing, route);
+-		mutex_unlock(&sd->entity.graph_obj.mdev->graph_mutex);
+-
+-		return rval;
+-	}
+-
+ 	case VIDIOC_SUBDEV_G_STD:
+ 		return v4l2_subdev_call(sd, video, g_std, arg);
+ 
+@@ -844,14 +810,6 @@ int v4l2_subdev_link_validate_default(struct v4l2_subdev *sd,
+ 		pass = false;
+ 	}
+ 
+-	if (source_fmt->stream != sink_fmt->stream) {
+-		dev_dbg(sd->entity.graph_obj.mdev->dev,
+-			"%s: stream does not match (source %u, sink %u)\n",
+-			__func__,
+-			source_fmt->stream, sink_fmt->stream);
+-		pass = false;
+-	}
+-
+ 	if (pass)
+ 		return 0;
+ 
+diff --git a/include/media/v4l2-subdev.h b/include/media/v4l2-subdev.h
+index d4a1057832dc..49b8d01bfd2a 100644
+--- a/include/media/v4l2-subdev.h
++++ b/include/media/v4l2-subdev.h
+@@ -808,10 +808,6 @@ struct v4l2_subdev_pad_ops {
+ 	*/
+ 	int (*set_frame_desc)(struct v4l2_subdev *sd, unsigned int pad,
+ 			      struct v4l2_mbus_frame_desc *fd);
+-	int (*get_routing)(struct v4l2_subdev *sd,
+-			   struct v4l2_subdev_routing *route);
+-	int (*set_routing)(struct v4l2_subdev *sd,
+-			   struct v4l2_subdev_routing *route);
+ 	int (*get_mbus_config)(struct v4l2_subdev *sd, unsigned int pad,
+ 			       struct v4l2_mbus_config *config);
+ 	int (*set_mbus_config)(struct v4l2_subdev *sd, unsigned int pad,
+diff --git a/include/uapi/linux/v4l2-subdev.h b/include/uapi/linux/v4l2-subdev.h
+index d577cf589b8a..658106f5b5dc 100644
+--- a/include/uapi/linux/v4l2-subdev.h
++++ b/include/uapi/linux/v4l2-subdev.h
+@@ -188,49 +188,6 @@ struct v4l2_subdev_capability {
+ /* The v4l2 sub-device video device node is registered in read-only mode. */
+ #define V4L2_SUBDEV_CAP_RO_SUBDEV		0x00000001
+ 
+-#define V4L2_SUBDEV_ROUTE_FL_ACTIVE	(1 << 0)
+-#define V4L2_SUBDEV_ROUTE_FL_IMMUTABLE	(1 << 1)
+-#define V4L2_SUBDEV_ROUTE_FL_SOURCE	(1 << 2)
+-
+-/**
+- * struct v4l2_subdev_route - A signal route inside a subdev
+- * @sink_pad: the sink pad
+- * @sink_stream: the sink stream
+- * @source_pad: the source pad
+- * @source_stream: the source stream
+- * @flags: route flags:
+- *
+- *	V4L2_SUBDEV_ROUTE_FL_ACTIVE: Is the stream in use or not? An
+- *	active stream will start when streaming is enabled on a video
+- *	node. Set by the user.
+- *
+- *	V4L2_SUBDEV_ROUTE_FL_IMMUTABLE: Is the stream immutable, i.e.
+- *	can it be activated and inactivated? Set by the driver.
+- *
+- *	V4L2_SUBDEV_ROUTE_FL_SOURCE: Is the sub-device the source of a
+- *	stream? In this case the sink information is unused (and
+- *	zero). Set by the driver.
+- */
+-struct v4l2_subdev_route {
+-	__u32 sink_pad;
+-	__u32 sink_stream;
+-	__u32 source_pad;
+-	__u32 source_stream;
+-	__u32 flags;
+-	__u32 reserved[5];
+-};
+-
+-/**
+- * struct v4l2_subdev_routing - Routing information
+- * @routes: the routes array
+- * @num_routes: the total number of routes in the routes array
+- */
+-struct v4l2_subdev_routing {
+-	struct v4l2_subdev_route *routes;
+-	__u32 num_routes;
+-	__u32 reserved[5];
+-};
+-
+ /* Backwards compatibility define --- to be removed */
+ #define v4l2_subdev_edid v4l2_edid
+ 
+@@ -258,7 +215,5 @@ struct v4l2_subdev_routing {
+ #define VIDIOC_SUBDEV_ENUM_DV_TIMINGS		_IOWR('V', 98, struct v4l2_enum_dv_timings)
+ #define VIDIOC_SUBDEV_QUERY_DV_TIMINGS		_IOR('V', 99, struct v4l2_dv_timings)
+ #define VIDIOC_SUBDEV_DV_TIMINGS_CAP		_IOWR('V', 100, struct v4l2_dv_timings_cap)
+-#define VIDIOC_SUBDEV_G_ROUTING			_IOWR('V', 38, struct v4l2_subdev_routing)
+-#define VIDIOC_SUBDEV_S_ROUTING			_IOWR('V', 39, struct v4l2_subdev_routing)
+ 
+ #endif
+-- 
+2.17.1
+

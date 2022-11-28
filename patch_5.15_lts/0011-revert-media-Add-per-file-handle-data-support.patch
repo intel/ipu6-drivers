@@ -1,0 +1,132 @@
+From 7678d1696fdd45a17cfa8c0811b949b43363a46f Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Wed, 31 Aug 2022 14:27:03 +0800
+Subject: [PATCH 011/102] revert: media: Add per-file-handle data support
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/mc/mc-device.c  | 20 --------------------
+ drivers/media/mc/mc-devnode.c | 18 +++++++++---------
+ include/media/media-devnode.h | 18 +-----------------
+ 3 files changed, 10 insertions(+), 46 deletions(-)
+
+diff --git a/drivers/media/mc/mc-device.c b/drivers/media/mc/mc-device.c
+index 106ce313ae2b..cf5e459b1d96 100644
+--- a/drivers/media/mc/mc-device.c
++++ b/drivers/media/mc/mc-device.c
+@@ -25,14 +25,6 @@
+ #include <media/media-request.h>
+ 
+ #ifdef CONFIG_MEDIA_CONTROLLER
+-struct media_device_fh {
+-       struct media_devnode_fh fh;
+-};
+-
+-static inline struct media_device_fh *media_device_fh(struct file *filp)
+-{
+-       return container_of(filp->private_data, struct media_device_fh, fh);
+-}
+ 
+ /*
+  * Legacy defines from linux/media.h. This is the only place we need this
+@@ -55,23 +47,11 @@ static inline void __user *media_get_uptr(__u64 arg)
+ 
+ static int media_device_open(struct file *filp)
+ {
+-	struct media_device_fh *fh;
+-
+-	fh = kzalloc(sizeof(*fh), GFP_KERNEL);
+-	if (!fh)
+-		return -ENOMEM;
+-
+-	filp->private_data = &fh->fh;
+-
+ 	return 0;
+ }
+ 
+ static int media_device_close(struct file *filp)
+ {
+-	struct media_device_fh *fh = media_device_fh(filp);
+-
+-	kfree(fh);
+-
+ 	return 0;
+ }
+ 
+diff --git a/drivers/media/mc/mc-devnode.c b/drivers/media/mc/mc-devnode.c
+index 8efe4a09a520..f11382afe23b 100644
+--- a/drivers/media/mc/mc-devnode.c
++++ b/drivers/media/mc/mc-devnode.c
+@@ -141,7 +141,6 @@ static long media_compat_ioctl(struct file *filp, unsigned int cmd,
+ /* Override for the open function */
+ static int media_open(struct inode *inode, struct file *filp)
+ {
+-	struct media_devnode_fh *fh;
+ 	struct media_devnode *devnode;
+ 	int ret;
+ 
+@@ -163,15 +162,16 @@ static int media_open(struct inode *inode, struct file *filp)
+ 	get_device(&devnode->dev);
+ 	mutex_unlock(&media_devnode_lock);
+ 
+-	ret = devnode->fops->open(filp);
+-	if (ret) {
+-		put_device(&devnode->dev);
+-		filp->private_data = NULL;
+-		return ret;
+-	}
++	filp->private_data = devnode;
+ 
+-	fh = filp->private_data;
+-	fh->devnode = devnode;
++	if (devnode->fops->open) {
++		ret = devnode->fops->open(filp);
++		if (ret) {
++			put_device(&devnode->dev);
++			filp->private_data = NULL;
++			return ret;
++		}
++	}
+ 
+ 	return 0;
+ }
+diff --git a/include/media/media-devnode.h b/include/media/media-devnode.h
+index 6c2e253dde49..d27c1c646c28 100644
+--- a/include/media/media-devnode.h
++++ b/include/media/media-devnode.h
+@@ -55,20 +55,6 @@ struct media_file_operations {
+ 	int (*release) (struct file *);
+ };
+ 
+-/**
+- * struct media_devnode_fh - Media device node file handle
+- * @devnode:	pointer to the media device node
+- *
+- * This structure serves as a base for per-file-handle data storage. Media
+- * device node users embed media_devnode_fh in their custom file handle data
+- * structures and store the media_devnode_fh in the file private_data in order
+- * to let the media device node core locate the media_devnode corresponding to a
+- * file handle.
+- */
+-struct media_devnode_fh {
+-	struct media_devnode *devnode;
+-};
+-
+ /**
+  * struct media_devnode - Media device node
+  * @media_dev:	pointer to struct &media_device
+@@ -160,9 +146,7 @@ void media_devnode_unregister(struct media_devnode *devnode);
+  */
+ static inline struct media_devnode *media_devnode_data(struct file *filp)
+ {
+-	struct media_devnode_fh *fh = filp->private_data;
+-
+-	return fh->devnode;
++	return filp->private_data;
+ }
+ 
+ /**
+-- 
+2.17.1
+
