@@ -468,8 +468,13 @@ struct hm11b1 {
 	struct gpio_desc *reset_gpio;
 	/* GPIO for powerdown */
 	struct gpio_desc *powerdown_gpio;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	/* GPIO for clock enable */
 	struct gpio_desc *clken_gpio;
+#else
+	/* Clock provider */
+	struct clk *clk;
+#endif
 	/* GPIO for privacy LED */
 	struct gpio_desc *pled_gpio;
 #endif
@@ -508,7 +513,14 @@ static void hm11b1_set_power(struct hm11b1 *hm11b1, int on)
 		return;
 	gpiod_set_value_cansleep(hm11b1->reset_gpio, on);
 	gpiod_set_value_cansleep(hm11b1->powerdown_gpio, on);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	gpiod_set_value_cansleep(hm11b1->clken_gpio, on);
+#else
+	if (on)
+		clk_prepare_enable(hm11b1->clk);
+	else
+		clk_disable_unprepare(hm11b1->clk);
+#endif
 	gpiod_set_value_cansleep(hm11b1->pled_gpio, on);
 	msleep(20);
 #elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
@@ -1093,12 +1105,18 @@ static int hm11b1_parse_dt(struct hm11b1 *hm11b1)
 		return ret;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	hm11b1->clken_gpio = devm_gpiod_get(dev, "clken", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(hm11b1->clken_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting clken_gpio gpio: %d\n", ret);
 		return ret;
 	}
+#else
+	hm11b1->clk = devm_clk_get_optional(dev, "clk");
+	if (IS_ERR(hm11b1->clk))
+		return dev_err_probe(dev, PTR_ERR(hm11b1->clk), "getting clk\n");
+#endif
 
 	hm11b1->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(hm11b1->pled_gpio);
