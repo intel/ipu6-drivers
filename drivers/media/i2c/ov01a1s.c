@@ -988,7 +988,6 @@ static int ov01a1s_probe(struct i2c_client *client)
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
-	s64 link_freq;
 #endif
 
 	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
