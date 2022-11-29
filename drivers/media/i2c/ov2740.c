@@ -596,7 +596,7 @@ static void ov2740_set_power(struct ov2740 *ov2740, int on)
 {
 	if (!(ov2740->reset_gpio && ov2740->pled_gpio))
 		return;
-	gpiod_set_value_cansleep(ov2740->reset_gpio, on);
+	gpiod_set_value_cansleep(ov2740->reset_gpio, !on);
 	gpiod_set_value_cansleep(ov2740->pled_gpio, on);
 	msleep(20);
 }

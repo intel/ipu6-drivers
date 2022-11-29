@@ -511,8 +511,8 @@ static void hm11b1_set_power(struct hm11b1 *hm11b1, int on)
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	if (!(hm11b1->reset_gpio && hm11b1->powerdown_gpio))
 		return;
-	gpiod_set_value_cansleep(hm11b1->reset_gpio, on);
-	gpiod_set_value_cansleep(hm11b1->powerdown_gpio, on);
+	gpiod_set_value_cansleep(hm11b1->reset_gpio, !on);
+	gpiod_set_value_cansleep(hm11b1->powerdown_gpio, !on);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	gpiod_set_value_cansleep(hm11b1->clken_gpio, on);
 #else

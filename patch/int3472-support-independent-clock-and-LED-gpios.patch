@@ -65,7 +65,7 @@ index e59d79c7e82f..5cf6dd63d43f 100644
  	case INT3472_GPIO_TYPE_RESET:
  		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, "reset",
 -						     GPIO_ACTIVE_LOW);
-+						     polarity);
++						     polarity ^ GPIO_ACTIVE_LOW);
  		if (ret)
  			err_msg = "Failed to map reset pin to sensor\n";
  
@@ -73,7 +73,7 @@ index e59d79c7e82f..5cf6dd63d43f 100644
  	case INT3472_GPIO_TYPE_POWERDOWN:
  		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, "powerdown",
 -						     GPIO_ACTIVE_LOW);
-+						     polarity);
++						     polarity ^ GPIO_ACTIVE_LOW);
  		if (ret)
  			err_msg = "Failed to map powerdown pin to sensor\n";
  

@@ -342,8 +342,8 @@ static void ov01a1s_set_power(struct ov01a1s *ov01a1s, int on)
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	if (!(ov01a1s->reset_gpio && ov01a1s->powerdown_gpio))
 		return;
-	gpiod_set_value_cansleep(ov01a1s->reset_gpio, on);
-	gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, on);
+	gpiod_set_value_cansleep(ov01a1s->reset_gpio, !on);
+	gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, !on);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	gpiod_set_value_cansleep(ov01a1s->clken_gpio, on);
 #else
