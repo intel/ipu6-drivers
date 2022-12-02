@@ -86,7 +86,3 @@ obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
 
 ### 3. Build with dkms
 - TBD
-
-### 4. NOTE
-- IOTG LTS kernel 5.15.71 is not aligned with kernel 5.15, should define
-- LINUX_VERSION_CODE as 5.15.255 when build on it.
