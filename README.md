@@ -75,6 +75,9 @@ obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
  CONFIG_VIDEO_LT6911UXC=m 
  CONFIG_VIDEO_D4XX=m 
  CONFIG_INTEL_IPU6_ACPI=m
+ CONFIG_VIDEO_INTEL_IPU_SOC=y
+ CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA=m
+
 ```
 ### 2. Build outside kernel source tree
 - Requires kernel header installed on build machine
