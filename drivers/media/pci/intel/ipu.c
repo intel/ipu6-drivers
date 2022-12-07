@@ -70,6 +70,7 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	struct ipu_isys_subdev_pdata *acpi_pdata;
 #endif
+	int ret;
 
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -85,27 +86,38 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	if (ipu_ver == IPU_VER_6SE)
 		ctrl->ratio = IPU6SE_IS_FREQ_CTL_DEFAULT_RATIO;
 
-	isys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
-				  IPU_ISYS_NAME, nr);
-	if (IS_ERR(isys))
-		return ERR_PTR(-ENOMEM);
-
+	isys = ipu_bus_initialize_device(pdev, parent, pdata, ctrl,
+					 IPU_ISYS_NAME, nr);
+	if (IS_ERR(isys)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(isys),
+			      "ipu_bus_add_device(isys) failed\n");
+		return ERR_CAST(isys);
+	}
 #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
 	if (!spdata) {
 		dev_err(&pdev->dev, "No subdevice info provided");
-		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, NULL, isys_init_acpi_add_device);
+		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, NULL,
+				     isys_init_acpi_add_device);
 		pdata->spdata = acpi_pdata;
 	} else {
 		dev_dbg(&pdev->dev, "Subdevice info found");
-		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, &spdata, isys_init_acpi_add_device);
+		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, &spdata,
+				     isys_init_acpi_add_device);
 	}
 #endif
 	isys->mmu = ipu_mmu_init(&pdev->dev, base, ISYS_MMID,
 				 &ipdata->hw_variant);
-	if (IS_ERR(isys->mmu))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(isys->mmu)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(isys),
+			      "ipu_mmu_init(isys->mmu) failed\n");
+		return ERR_CAST(isys->mmu);
+	}
 
 	isys->mmu->dev = &isys->dev;
+
+	ret = ipu_bus_add_device(isys);
+	if (ret)
+		return ERR_PTR(ret);
 
 	return isys;
 }
@@ -119,6 +131,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 {
 	struct ipu_bus_device *psys;
 	struct ipu_psys_pdata *pdata;
+	int ret;
 
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -127,17 +140,27 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	pdata->base = base;
 	pdata->ipdata = ipdata;
 
-	psys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
-				  IPU_PSYS_NAME, nr);
-	if (IS_ERR(psys))
-		return ERR_PTR(-ENOMEM);
+	psys = ipu_bus_initialize_device(pdev, parent, pdata, ctrl,
+					 IPU_PSYS_NAME, nr);
+	if (IS_ERR(psys)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(psys),
+			      "ipu_bus_add_device(psys) failed\n");
+		return ERR_CAST(psys);
+	}
 
 	psys->mmu = ipu_mmu_init(&pdev->dev, base, PSYS_MMID,
 				 &ipdata->hw_variant);
-	if (IS_ERR(psys->mmu))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(psys->mmu)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(psys),
+			      "ipu_mmu_init(psys->mmu) failed\n");
+		return ERR_CAST(psys->mmu);
+	}
 
 	psys->mmu->dev = &psys->dev;
+
+	ret = ipu_bus_add_device(psys);
+	if (ret)
+		return ERR_PTR(ret);
 
 	return psys;
 }

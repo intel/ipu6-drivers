@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2016 - 2020 Intel Corporation
+// Copyright (C) 2016 - 2022 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/gpio.h>
@@ -283,8 +283,12 @@ static int ti964_set_routing(struct v4l2_subdev *sd,
 }
 
 static int ti964_enum_mbus_code(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
-				      struct v4l2_subdev_mbus_code_enum *code)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				struct v4l2_subdev_pad_config *cfg,
+#else
+				struct v4l2_subdev_state *sd_state,
+#endif
+				struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ti964 *va = to_ti964(sd);
 	const uint32_t *supported_code =
@@ -369,21 +373,33 @@ static int ti964_get_frame_desc(struct v4l2_subdev *sd,
 
 static struct v4l2_mbus_framefmt *
 __ti964_get_ffmt(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 			 struct v4l2_subdev_pad_config *cfg,
+#else
+			 struct v4l2_subdev_state *sd_state,
+#endif
 			 unsigned int pad, unsigned int which,
 			 unsigned int stream)
 {
 	struct ti964 *va = to_ti964(subdev);
 
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		return v4l2_subdev_get_try_format(subdev, cfg, pad);
+#else
+		return v4l2_subdev_get_try_format(subdev, sd_state, pad);
+#endif
 	else
 		return &va->ffmts[pad][stream];
 }
 
 static int ti964_get_format(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg,
-				struct v4l2_subdev_format *fmt)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			    struct v4l2_subdev_pad_config *cfg,
+#else
+			    struct v4l2_subdev_state *sd_state,
+#endif
+			    struct v4l2_subdev_format *fmt)
 {
 	struct ti964 *va = to_ti964(subdev);
 
@@ -391,8 +407,13 @@ static int ti964_get_format(struct v4l2_subdev *subdev,
 		return -EINVAL;
 
 	mutex_lock(&va->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	fmt->format = *__ti964_get_ffmt(subdev, cfg, fmt->pad,
-						    fmt->which, fmt->stream);
+					fmt->which, fmt->stream);
+#else
+	fmt->format = *__ti964_get_ffmt(subdev, sd_state, fmt->pad,
+					fmt->which, fmt->stream);
+#endif
 	mutex_unlock(&va->mutex);
 
 	dev_dbg(subdev->dev, "subdev_format: which: %s, pad: %d, stream: %d.\n",
@@ -407,8 +428,12 @@ static int ti964_get_format(struct v4l2_subdev *subdev,
 }
 
 static int ti964_set_format(struct v4l2_subdev *subdev,
-				  struct v4l2_subdev_pad_config *cfg,
-				struct v4l2_subdev_format *fmt)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			    struct v4l2_subdev_pad_config *cfg,
+#else
+			    struct v4l2_subdev_state *sd_state,
+#endif
+			    struct v4l2_subdev_format *fmt)
 {
 	struct ti964 *va = to_ti964(subdev);
 	const struct ti964_csi_data_format *csi_format;
@@ -421,8 +446,13 @@ static int ti964_set_format(struct v4l2_subdev *subdev,
 		fmt->format.code);
 
 	mutex_lock(&va->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ffmt = __ti964_get_ffmt(subdev, cfg, fmt->pad, fmt->which,
-				      fmt->stream);
+				fmt->stream);
+#else
+	ffmt = __ti964_get_ffmt(subdev, sd_state, fmt->pad, fmt->which,
+				fmt->stream);
+#endif
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		ffmt->width = fmt->format.width;
@@ -441,9 +471,13 @@ static int ti964_set_format(struct v4l2_subdev *subdev,
 static int ti964_open(struct v4l2_subdev *subdev,
 				struct v4l2_subdev_fh *fh)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	struct v4l2_mbus_framefmt *try_fmt =
 		v4l2_subdev_get_try_format(subdev, fh->pad, 0);
-
+#else
+	struct v4l2_mbus_framefmt *try_fmt =
+		v4l2_subdev_get_try_format(subdev, fh->state, 0);
+#endif
 	struct v4l2_subdev_format fmt = {
 		.which = V4L2_SUBDEV_FORMAT_TRY,
 		.pad = TI964_PAD_SOURCE,

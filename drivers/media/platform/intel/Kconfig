@@ -1,11 +1,11 @@
 config INTEL_IPU6_TGLRVP_PDATA
-	tristate "Enable built in platform data for TGL RVP"
+	bool "Enable built in platform data for TGL RVP"
 	depends on MEDIA_CAMERA_SUPPORT
 	help
 	Pre-ACPI system platform data is compiled inside kernel
 
 config INTEL_IPU6_ADLRVP_PDATA
-	tristate "Enable built in platform data for ADL RVP"
+	bool "Enable built in platform data for ADL RVP"
 	depends on MEDIA_CAMERA_SUPPORT
 	help
 	 Pre-ACPI system platform data is compiled inside kernel

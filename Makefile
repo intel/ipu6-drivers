@@ -4,6 +4,8 @@
 export EXTERNAL_BUILD = 1
 
 export CONFIG_VIDEO_INTEL_IPU6 = m
+export CONFIG_VIDEO_INTEL_IPU_SOC = y
+export CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA = y
 export CONFIG_INTEL_SKL_INT3472 = m
 export CONFIG_INTEL_IPU6_ACPI = m
 obj-y += drivers/media/pci/intel/
