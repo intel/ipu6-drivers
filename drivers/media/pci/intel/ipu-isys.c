@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2021 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -361,9 +361,16 @@ static int isys_register_ext_subdev(struct ipu_isys *isys,
 			sd_info->i2c.i2c_adapter_bdf,
 			sizeof(sd_info->i2c.i2c_adapter_bdf));
 	if (bus < 0) {
-		dev_err(&isys->adev->dev, "Failed to find adapter!");
+		dev_err(&isys->adev->dev,
+			"getting i2c bus id for adapter %d (bdf %s) failed",
+			sd_info->i2c.i2c_adapter_id,
+			sd_info->i2c.i2c_adapter_bdf);
 		return -ENOENT;
 	}
+	dev_info(&isys->adev->dev,
+		 "got i2c bus id %d for adapter %d (bdf %s)", bus,
+		 sd_info->i2c.i2c_adapter_id,
+		 sd_info->i2c.i2c_adapter_bdf);
 	adapter = i2c_get_adapter(bus);
 	if (!adapter) {
 		dev_warn(&isys->adev->dev, "can't find adapter\n");
@@ -610,7 +617,7 @@ static int isys_fwnode_parse(struct device *dev,
 	return 0;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 15, 71)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
 static int isys_notifier_init(struct ipu_isys *isys)
 {
 	struct ipu_device *isp = isys->adev->isp;

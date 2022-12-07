@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2020 Intel Corporation */
+/* Copyright (C) 2022 Intel Corporation */
 
 #ifndef TI960_REG_H
 #define TI960_REG_H
@@ -90,7 +90,7 @@ static const struct ti960_register_write ti960_init_settings[] = {
 	{0x33, 0x03},
 	{0x32, 0x12},
 	{0x33, 0x03},
-	{0x20, 0x00},
+	{0x20, 0xf0},
 	{0x21, 0x03},
 };
 
@@ -135,7 +135,9 @@ static const struct ti960_register_write ti960_init_settings[] = {
 #define TI960_GPIO3_FSIN	0xa0
 #define TI960_GPIO2_MASK	0x0f
 #define TI960_GPIO3_MASK	0xf0
+#define TI960_MIPI_400MBPS	0x3
 #define TI960_MIPI_800MBPS	0x2
+#define TI960_MIPI_1200MBPS	0x1
 #define TI960_MIPI_1600MBPS	0x0
 #define TI960_CSI_ENABLE	0x1
 #define TI960_CSI_CONTS_CLOCK	0x2
