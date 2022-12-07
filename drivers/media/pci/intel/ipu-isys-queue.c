@@ -566,7 +566,7 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	if (ib->req)
 		return;
 
-	if (!pipe_av || !vb->vb2_queue->streaming) {
+	if (!pipe_av || !media_pipe || !vb->vb2_queue->streaming) {
 		dev_dbg(&av->isys->adev->dev,
 			"not pipe_av set, adding to incoming\n");
 		return;
