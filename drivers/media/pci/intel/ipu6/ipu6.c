@@ -318,7 +318,8 @@ int ipu_buttress_psys_freq_get(void *data, u64 *val)
 
 void ipu_internal_pdata_init(void)
 {
-	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) {
+	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+	    ipu_ver == IPU_VER_6EP_MTL) {
 		isys_ipdata.csi2.nports = ARRAY_SIZE(ipu6_csi_offsets);
 		isys_ipdata.csi2.offsets = ipu6_csi_offsets;
 		isys_ipdata.num_parallel_streams = IPU6_ISYS_NUM_STREAMS;

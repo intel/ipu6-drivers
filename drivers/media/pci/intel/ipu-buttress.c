@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/clk.h>
 #include <linux/clkdev.h>
@@ -439,6 +439,15 @@ irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr)
 				"BUTTRESS_ISR_SAI_VIOLATION\n");
 			WARN_ON(1);
 		}
+
+		if (irq_status & (BUTTRESS_ISR_IS_FATAL_MEM_ERR |
+				  BUTTRESS_ISR_PS_FATAL_MEM_ERR)) {
+			dev_err(&isp->pdev->dev,
+				"BUTTRESS_ISR_FATAL_MEM_ERR\n");
+		}
+
+		if (irq_status & BUTTRESS_ISR_UFI_ERROR)
+			dev_err(&isp->pdev->dev, "BUTTRESS_ISR_UFI_ERROR\n");
 
 		irq_status = readl(isp->base + reg_irq_sts);
 	} while (irq_status && !isp->flr_done);
@@ -984,6 +993,32 @@ int ipu_buttress_tsc_read(struct ipu_device *isp, u64 *val)
 }
 EXPORT_SYMBOL_GPL(ipu_buttress_tsc_read);
 
+int ipu_buttress_isys_freq_set(void *data, u64 val)
+{
+	struct ipu_device *isp = data;
+	int rval;
+
+	if (val < BUTTRESS_MIN_FORCE_IS_FREQ ||
+	    val > BUTTRESS_MAX_FORCE_IS_FREQ)
+		return -EINVAL;
+
+	rval = pm_runtime_get_sync(&isp->isys->dev);
+	if (rval < 0) {
+		pm_runtime_put(&isp->isys->dev);
+		dev_err(&isp->pdev->dev, "Runtime PM failed (%d)\n", rval);
+		return rval;
+	}
+
+	do_div(val, BUTTRESS_IS_FREQ_STEP);
+	if (val)
+		ipu_buttress_set_isys_ratio(isp, val);
+
+	pm_runtime_put(&isp->isys->dev);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(ipu_buttress_isys_freq_set);
+
 #ifdef CONFIG_DEBUG_FS
 
 static int ipu_buttress_reg_open(struct inode *inode, struct file *file)
@@ -1105,31 +1140,6 @@ static int ipu_buttress_isys_freq_get(void *data, u64 *val)
 
 	*val = IPU_IS_FREQ_RATIO_BASE *
 	    (reg_val & IPU_BUTTRESS_IS_FREQ_CTL_DIVISOR_MASK);
-
-	return 0;
-}
-
-static int ipu_buttress_isys_freq_set(void *data, u64 val)
-{
-	struct ipu_device *isp = data;
-	int rval;
-
-	if (val < BUTTRESS_MIN_FORCE_IS_FREQ ||
-	    val > BUTTRESS_MAX_FORCE_IS_FREQ)
-		return -EINVAL;
-
-	rval = pm_runtime_get_sync(&isp->isys->dev);
-	if (rval < 0) {
-		pm_runtime_put(&isp->isys->dev);
-		dev_err(&isp->pdev->dev, "Runtime PM failed (%d)\n", rval);
-		return rval;
-	}
-
-	do_div(val, BUTTRESS_IS_FREQ_STEP);
-	if (val)
-		ipu_buttress_set_isys_ratio(isp, val);
-
-	pm_runtime_put(&isp->isys->dev);
 
 	return 0;
 }
@@ -1300,6 +1310,12 @@ int ipu_buttress_init(struct ipu_device *isp)
 
 	dev_info(&isp->pdev->dev, "IPU in %s mode\n",
 		 isp->secure_mode ? "secure" : "non-secure");
+
+	dev_info(&isp->pdev->dev, "IPU secure touch = 0x%x\n",
+		 readl(isp->base + BUTTRESS_REG_SECURITY_TOUCH));
+
+	dev_info(&isp->pdev->dev, "IPU camera mask = 0x%x\n",
+		 readl(isp->base + BUTTRESS_REG_CAMERA_MASK));
 
 	b->wdt_cached_value = readl(isp->base + BUTTRESS_REG_WDT);
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
