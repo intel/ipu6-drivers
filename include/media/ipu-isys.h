@@ -20,6 +20,10 @@ struct ipu_isys_subdev_i2c_info {
 	int i2c_adapter_id;
 	char i2c_adapter_bdf[32];
 };
+#define IPU_SPDATA_NAME_LEN	20
+#define IPU_SPDATA_BDF_LEN	32
+#define IPU_SPLATA_GPIO_NUM 4
+#define IPU_SPLATA_IRQ_PIN_NAME_LEN 16
 
 struct ipu_isys_subdev_info {
 	struct ipu_isys_csi2_config *csi2;

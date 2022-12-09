@@ -123,6 +123,7 @@ struct ipu_isys_sensor_info {
  * @fwcom: fw communication layer private pointer
  *         or optional external library private pointer
  * @line_align: line alignment in memory
+ * @phy_termcal_val: the termination calibration value, only used for DWC PHY
  * @reset_needed: Isys requires d0i0->i3 transition
  * @video_opened: total number of opened file handles on video nodes
  * @mutex: serialise access isys video open/release related operations
@@ -151,6 +152,7 @@ struct ipu_isys {
 	struct ipu_isys_pipeline *pipes[IPU_ISYS_MAX_STREAMS];
 	void *fwcom;
 	unsigned int line_align;
+	u32 phy_termcal_val;
 	bool reset_needed;
 	bool icache_prefetch;
 	bool csi2_cse_ipc_not_supported;

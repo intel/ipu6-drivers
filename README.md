@@ -1,6 +1,6 @@
 # ipu6-drivers
 
-This repository supports MIPI cameras through the IPU6EP on Intel Alderlake platforms. There are 4 repositories that provide the complete setup:
+This repository supports MIPI cameras through the IPU6EP on Intel Alder Lake / Raptor Lake platforms. There are 4 repositories that provide the complete setup:
 
 * https://github.com/intel/ipu6-drivers/tree/ccg_plat_adlp (branch:ccg_plat_adlp) - kernel drivers for the IPU and sensors
 * https://github.com/intel/ipu6-camera-bins/tree/ccg_plat_adlp (branch:ccg_plat_adlp) - IPU firmware and proprietary image processing libraries
@@ -17,7 +17,7 @@ two ways are available:
 - building out of kernel source tree
 
 ### Build with kernel source tree
-* Tested with kernel 5.19
+* Tested with kernel 6.0
 * Check out kernel
 * Copy repo content (exclude Makefile,drivers/media/i2c/Makefile) to kernel source
 * Modify drivers/media/pci/Kconfig

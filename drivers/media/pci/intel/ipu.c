@@ -26,7 +26,7 @@
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
 #if defined(CONFIG_IPU_ISYS_BRIDGE)
-#include "ipu-isys-bridge.h"
+#include "cio2-bridge.h"
 #endif
 
 #define IPU_PCI_BAR		0
@@ -61,8 +61,8 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 {
 	struct ipu_bus_device *isys;
 	struct ipu_isys_pdata *pdata;
-#if defined(CONFIG_IPU_ISYS_BRIDGE)
 	int ret;
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
 	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 
 	ret = ipu_isys_check_fwnode_graph(fwnode);
@@ -70,12 +70,15 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 		if (fwnode && !IS_ERR_OR_NULL(fwnode->secondary)) {
 			dev_err(&pdev->dev,
 				"fwnode graph has no endpoints connection\n");
-			return ERR_PTR(-ENOMEM);
+			return ERR_PTR(-EINVAL);
 		}
 
-		ret = ipu_isys_bridge_init(pdev);
-		if (ret)
-			return ERR_PTR(-ENOMEM);
+		ret = cio2_bridge_init(pdev);
+		if (ret) {
+			dev_err_probe(&pdev->dev, ret,
+				      "ipu_isys_bridge_init() failed\n");
+			return ERR_PTR(ret);
+		}
 	}
 #endif
 
@@ -90,17 +93,26 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	if (ipu_ver == IPU_VER_6SE)
 		ctrl->ratio = IPU6SE_IS_FREQ_CTL_DEFAULT_RATIO;
 
-	isys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
-				  IPU_ISYS_NAME, nr);
-	if (IS_ERR(isys))
-		return ERR_PTR(-ENOMEM);
-
+	isys = ipu_bus_initialize_device(pdev, parent, pdata, ctrl,
+					 IPU_ISYS_NAME, nr);
+	if (IS_ERR(isys)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(isys),
+			      "ipu_bus_add_device(isys) failed\n");
+		return ERR_CAST(isys);
+	}
 	isys->mmu = ipu_mmu_init(&pdev->dev, base, ISYS_MMID,
 				 &ipdata->hw_variant);
-	if (IS_ERR(isys->mmu))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(isys->mmu)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(isys),
+			      "ipu_mmu_init(isys->mmu) failed\n");
+		return ERR_CAST(isys->mmu);
+	}
 
 	isys->mmu->dev = &isys->dev;
+
+	ret = ipu_bus_add_device(isys);
+	if (ret)
+		return ERR_PTR(ret);
 
 	return isys;
 }
@@ -114,6 +126,7 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 {
 	struct ipu_bus_device *psys;
 	struct ipu_psys_pdata *pdata;
+	int ret;
 
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -122,17 +135,27 @@ static struct ipu_bus_device *ipu_psys_init(struct pci_dev *pdev,
 	pdata->base = base;
 	pdata->ipdata = ipdata;
 
-	psys = ipu_bus_add_device(pdev, parent, pdata, ctrl,
-				  IPU_PSYS_NAME, nr);
-	if (IS_ERR(psys))
-		return ERR_PTR(-ENOMEM);
+	psys = ipu_bus_initialize_device(pdev, parent, pdata, ctrl,
+					 IPU_PSYS_NAME, nr);
+	if (IS_ERR(psys)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(psys),
+			      "ipu_bus_add_device(psys) failed\n");
+		return ERR_CAST(psys);
+	}
 
 	psys->mmu = ipu_mmu_init(&pdev->dev, base, PSYS_MMID,
 				 &ipdata->hw_variant);
-	if (IS_ERR(psys->mmu))
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(psys->mmu)) {
+		dev_err_probe(&pdev->dev, PTR_ERR(psys),
+			      "ipu_mmu_init(psys->mmu) failed\n");
+		return ERR_CAST(psys->mmu);
+	}
 
 	psys->mmu->dev = &psys->dev;
+
+	ret = ipu_bus_add_device(psys);
+	if (ret)
+		return ERR_PTR(ret);
 
 	return psys;
 }
@@ -327,7 +350,9 @@ static int ipu_pci_config_setup(struct pci_dev *dev)
 	pci_read_config_word(dev, PCI_COMMAND, &pci_command);
 	pci_command |= PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER;
 	pci_write_config_word(dev, PCI_COMMAND, pci_command);
-	if (ipu_ver == IPU_VER_6EP) {
+
+	/* no msi pci capability for IPU6EP */
+	if (ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL) {
 		/* likely do nothing as msi not enabled by default */
 		pci_disable_msi(dev);
 		return 0;
@@ -404,6 +429,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 	u32 is_es;
 	int rval;
+	u32 val;
 
 	if (!fwnode || fwnode_property_read_u32(fwnode, "is_es", &is_es))
 		is_es = 0;
@@ -465,6 +491,10 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		ipu_ver = IPU_VER_6EP;
 		isp->cpd_fw_name = is_es ? IPU6EPES_FIRMWARE_NAME : IPU6EP_FIRMWARE_NAME;
 		break;
+	case IPU6EP_MTL_PCI_ID:
+		ipu_ver = IPU_VER_6EP_MTL;
+		isp->cpd_fw_name = IPU6EPMTL_FIRMWARE_NAME;
+		break;
 	default:
 		WARN(1, "Unsupported IPU device");
 		return -ENODEV;
@@ -521,9 +551,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	rval = ipu_trace_add(isp);
 	if (rval)
 		dev_err(&pdev->dev, "Trace support not available\n");
-
-	pm_runtime_put_noidle(&pdev->dev);
-	pm_runtime_allow(&pdev->dev);
 
 	/*
 	 * NOTE Device hierarchy below is important to ensure proper
@@ -619,24 +646,32 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	/* Configure the arbitration mechanisms for VC requests */
 	ipu_configure_vc_mechanism(isp);
 
-	dev_info(&pdev->dev, "IPU driver version %d.%d\n", IPU_MAJOR_VERSION,
+	val = readl(isp->base + BUTTRESS_REG_SKU);
+	dev_info(&pdev->dev, "IPU%u-v%u driver version %d.%d\n",
+		 val & 0xf, (val >> 4) & 0x7,
+		 IPU_MAJOR_VERSION,
 		 IPU_MINOR_VERSION);
+
+	pm_runtime_put_noidle(&pdev->dev);
+	pm_runtime_allow(&pdev->dev);
 
 	return 0;
 
 out_ipu_bus_del_devices:
 	if (isp->pkg_dir) {
-		ipu_cpd_free_pkg_dir(isp->psys, isp->pkg_dir,
-				     isp->pkg_dir_dma_addr,
-				     isp->pkg_dir_size);
-		ipu_buttress_unmap_fw_image(isp->psys, &isp->fw_sgt);
+		if (isp->psys) {
+			ipu_cpd_free_pkg_dir(isp->psys, isp->pkg_dir,
+					     isp->pkg_dir_dma_addr,
+					     isp->pkg_dir_size);
+			ipu_buttress_unmap_fw_image(isp->psys, &isp->fw_sgt);
+		}
 		isp->pkg_dir = NULL;
 	}
-	if (isp->psys && isp->psys->mmu)
+	if (!IS_ERR_OR_NULL(isp->psys) && !IS_ERR_OR_NULL(isp->psys->mmu))
 		ipu_mmu_cleanup(isp->psys->mmu);
-	if (isp->isys && isp->isys->mmu)
+	if (!IS_ERR_OR_NULL(isp->isys) && !IS_ERR_OR_NULL(isp->isys->mmu))
 		ipu_mmu_cleanup(isp->isys->mmu);
-	if (isp->psys)
+	if (!IS_ERR_OR_NULL(isp->psys))
 		pm_runtime_put(&isp->psys->dev);
 	ipu_bus_del_devices(pdev);
 	ipu_buttress_exit(isp);
@@ -796,6 +831,7 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_MTL_PCI_ID)},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);

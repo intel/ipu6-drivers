@@ -866,7 +866,7 @@ error:
 
 int ipu_trace_add(struct ipu_device *isp)
 {
-	if (ipu_trace_enable)
+	if (!ipu_trace_enable)
 		return 0;
 
 	isp->trace = devm_kzalloc(&isp->pdev->dev,
