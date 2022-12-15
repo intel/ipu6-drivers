@@ -88,4 +88,9 @@ obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
 ```
 
 ### 3. Build with dkms
-- TBD
+- Register, build and auto install:
+        ```sh
+        Install kernel header src.
+        sudo dkms add .
+        sudo dkms build -m ipu6-drivers -v 0.0.1
+        sudo dkms autoinstall ipu6-drivers/0.0.1
