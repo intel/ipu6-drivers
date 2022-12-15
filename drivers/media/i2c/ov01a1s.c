@@ -970,7 +970,7 @@ static int ov01a1s_parse_dt(struct ov01a1s *ov01a1s)
 		return dev_err_probe(dev, PTR_ERR(ov01a1s->clk), "getting clk\n");
 #endif
 
-	ov01a1s->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
+	ov01a1s->pled_gpio = devm_gpiod_get_optional(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov01a1s->pled_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting pled gpio: %d\n", ret);

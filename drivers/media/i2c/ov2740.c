@@ -594,8 +594,6 @@ static u64 to_pixels_per_line(u32 hts, u32 f_index)
 
 static void ov2740_set_power(struct ov2740 *ov2740, int on)
 {
-	if (!(ov2740->reset_gpio && ov2740->pled_gpio))
-		return;
 	gpiod_set_value_cansleep(ov2740->reset_gpio, !on);
 	gpiod_set_value_cansleep(ov2740->pled_gpio, on);
 	msleep(20);
@@ -633,7 +631,7 @@ static int ov2740_parse_dt(struct ov2740 *ov2740)
 		return ret;
 	}
 
-	ov2740->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
+	ov2740->pled_gpio = devm_gpiod_get_optional(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov2740->pled_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting pled gpio: %d\n", ret);

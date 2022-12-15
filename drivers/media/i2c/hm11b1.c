@@ -1118,7 +1118,7 @@ static int hm11b1_parse_dt(struct hm11b1 *hm11b1)
 		return dev_err_probe(dev, PTR_ERR(hm11b1->clk), "getting clk\n");
 #endif
 
-	hm11b1->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
+	hm11b1->pled_gpio = devm_gpiod_get_optional(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(hm11b1->pled_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting pled gpio: %d\n", ret);
