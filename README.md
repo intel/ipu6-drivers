@@ -189,6 +189,8 @@ Three ways are available:
 
 - Register, build and auto install:
 	```sh
+	Install kernel header src.
 	sudo dkms add .
-	sudo dkms autoinstall ipu6-drivers/0.0.0
+	sudo dkms build -m ipu6-drivers -v 0.0.1
+	sudo dkms autoinstall ipu6-drivers/0.0.1
 	```
