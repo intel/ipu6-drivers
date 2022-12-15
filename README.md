@@ -190,5 +190,5 @@ Three ways are available:
 - Register, build and auto install:
 	```sh
 	sudo dkms add .
-	sudo dkms autoinstall ipu6-drivers/0.0.1
+	sudo dkms autoinstall ipu6-drivers/0.0.0
 	```
