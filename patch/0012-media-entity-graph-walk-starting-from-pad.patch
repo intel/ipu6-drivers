@@ -1,0 +1,210 @@
+From 11bfe249bb6e5cc0356b98066a46de1c3a2a9656 Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Tue, 22 Oct 2019 13:00:17 +0800
+Subject: [PATCH 12/81] media entity graph walk starting from pad
+
+Add new parameter in media_entity_graph_walk_start()
+Start walking the media graph at a given entity and pad
+
+This function initializes the graph traversal structure to walk
+the entities graph starting at the given entity and pad.
+As some entity may be on the cross node on pipeline, so add one
+parameter to start the graph traverse.
+
+Change-Id: I85c68172334817282d07a71d18659c9140a8f2c3
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+Signed-off-by: lijuncax <lijunx.cai@intel.com>
+---
+ drivers/media/mc/mc-entity.c                  | 14 +++++++-------
+ drivers/media/platform/exynos4-is/media-dev.c |  4 ++--
+ drivers/media/platform/omap3isp/ispvideo.c    |  2 +-
+ drivers/media/platform/vsp1/vsp1_video.c      |  2 +-
+ drivers/media/platform/xilinx/xilinx-dma.c    |  2 +-
+ drivers/media/v4l2-core/v4l2-mc.c             |  6 +++---
+ drivers/staging/media/omap4iss/iss_video.c    |  4 ++--
+ include/media/media-entity.h                  |  2 +-
+ 8 files changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/media/mc/mc-entity.c b/drivers/media/mc/mc-entity.c
+index 71ca22d7d4ed..0d43035b6618 100644
+--- a/drivers/media/mc/mc-entity.c
++++ b/drivers/media/mc/mc-entity.c
+@@ -316,16 +316,16 @@ void media_graph_walk_cleanup(struct media_graph *graph)
+ EXPORT_SYMBOL_GPL(media_graph_walk_cleanup);
+ 
+ void media_graph_walk_start(struct media_graph *graph,
+-			    struct media_entity *entity)
++			    struct media_pad *pad)
+ {
+ 	media_entity_enum_zero(&graph->ent_enum);
+-	media_entity_enum_set(&graph->ent_enum, entity);
++	media_entity_enum_set(&graph->ent_enum, pad->entity);
+ 
+ 	graph->top = 0;
+ 	graph->stack[graph->top].entity = NULL;
+ 	stack_push(graph, pad->entity, pad->index, -1);
+-	dev_dbg(entity->graph_obj.mdev->dev,
+-		"begin graph walk at '%s'\n", entity->name);
++	dev_dbg(pad->entity->graph_obj.mdev->dev,
++		"begin graph walk at '%s'\n", pad->entity->name);
+ }
+ EXPORT_SYMBOL_GPL(media_graph_walk_start);
+ 
+@@ -470,7 +470,7 @@ __must_check int __media_pipeline_start(struct media_entity *entity,
+ 			goto error_graph_walk_start;
+ 	}
+ 
+-	media_graph_walk_start(&pipe->graph, entity);
++	media_graph_walk_start(graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(graph))) {
+ 		DECLARE_BITMAP(active, MEDIA_ENTITY_MAX_PADS);
+@@ -542,7 +542,7 @@ error:
+ 	 * Link validation on graph failed. We revert what we did and
+ 	 * return the error.
+ 	 */
+-	media_graph_walk_start(graph, entity_err);
++	media_graph_walk_start(graph, &entity_err->pads[0]);
+ 
+ 	while ((entity_err = media_graph_walk_next(graph))) {
+ 		/* Sanity check for negative stream_count */
+@@ -593,7 +593,7 @@ void __media_pipeline_stop(struct media_entity *entity)
+ 	if (WARN_ON(!pipe))
+ 		return;
+ 
+-	media_graph_walk_start(graph, entity);
++	media_graph_walk_start(graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(graph))) {
+ 		/* Sanity check for negative stream_count */
+diff --git a/drivers/media/platform/exynos4-is/media-dev.c b/drivers/media/platform/exynos4-is/media-dev.c
+index e636c33e847b..c691a3d29fb1 100644
+--- a/drivers/media/platform/exynos4-is/media-dev.c
++++ b/drivers/media/platform/exynos4-is/media-dev.c
+@@ -1171,7 +1171,7 @@ static int __fimc_md_modify_pipelines(struct media_entity *entity, bool enable,
+ 	 * through active links. This is needed as we cannot power on/off the
+ 	 * subdevs in random order.
+ 	 */
+-	media_graph_walk_start(graph, entity);
++	media_graph_walk_start(graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(graph))) {
+ 		if (!is_media_entity_v4l2_video_device(entity))
+@@ -1186,7 +1186,7 @@ static int __fimc_md_modify_pipelines(struct media_entity *entity, bool enable,
+ 	return 0;
+ 
+ err:
+-	media_graph_walk_start(graph, entity_err);
++	media_graph_walk_start(graph, &entity_err->pads[0]);
+ 
+ 	while ((entity_err = media_graph_walk_next(graph))) {
+ 		if (!is_media_entity_v4l2_video_device(entity_err))
+diff --git a/drivers/media/platform/omap3isp/ispvideo.c b/drivers/media/platform/omap3isp/ispvideo.c
+index 8811d6dd4ee7..0302ad6f07a9 100644
+--- a/drivers/media/platform/omap3isp/ispvideo.c
++++ b/drivers/media/platform/omap3isp/ispvideo.c
+@@ -234,7 +234,7 @@ static int isp_video_get_graph_data(struct isp_video *video,
+ 		return ret;
+ 	}
+ 
+-	media_graph_walk_start(&graph, entity);
++	media_graph_walk_start(&graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(&graph))) {
+ 		struct isp_video *__video;
+diff --git a/drivers/media/platform/vsp1/vsp1_video.c b/drivers/media/platform/vsp1/vsp1_video.c
+index 044eb5778820..809d0be27610 100644
+--- a/drivers/media/platform/vsp1/vsp1_video.c
++++ b/drivers/media/platform/vsp1/vsp1_video.c
+@@ -569,7 +569,7 @@ static int vsp1_video_pipeline_build(struct vsp1_pipeline *pipe,
+ 	if (ret)
+ 		return ret;
+ 
+-	media_graph_walk_start(&graph, entity);
++	media_graph_walk_start(&graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(&graph))) {
+ 		struct v4l2_subdev *subdev;
+diff --git a/drivers/media/platform/xilinx/xilinx-dma.c b/drivers/media/platform/xilinx/xilinx-dma.c
+index 2a56201cb853..b6f74c036f4a 100644
+--- a/drivers/media/platform/xilinx/xilinx-dma.c
++++ b/drivers/media/platform/xilinx/xilinx-dma.c
+@@ -190,7 +190,7 @@ static int xvip_pipeline_validate(struct xvip_pipeline *pipe,
+ 		return ret;
+ 	}
+ 
+-	media_graph_walk_start(&graph, entity);
++	media_graph_walk_start(&graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(&graph))) {
+ 		struct xvip_dma *dma;
+diff --git a/drivers/media/v4l2-core/v4l2-mc.c b/drivers/media/v4l2-core/v4l2-mc.c
+index ba2f2b8dcc8c..d345d3ad5113 100644
+--- a/drivers/media/v4l2-core/v4l2-mc.c
++++ b/drivers/media/v4l2-core/v4l2-mc.c
+@@ -436,7 +436,7 @@ static int pipeline_pm_use_count(struct media_entity *entity,
+ {
+ 	int use = 0;
+ 
+-	media_graph_walk_start(graph, entity);
++	media_graph_walk_start(graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(graph))) {
+ 		if (is_media_entity_v4l2_video_device(entity))
+@@ -499,7 +499,7 @@ static int pipeline_pm_power(struct media_entity *entity, int change,
+ 	if (!change)
+ 		return 0;
+ 
+-	media_graph_walk_start(graph, entity);
++	media_graph_walk_start(graph, &entity->pads[0]);
+ 
+ 	while (!ret && (entity = media_graph_walk_next(graph)))
+ 		if (is_media_entity_v4l2_subdev(entity))
+@@ -508,7 +508,7 @@ static int pipeline_pm_power(struct media_entity *entity, int change,
+ 	if (!ret)
+ 		return ret;
+ 
+-	media_graph_walk_start(graph, first);
++	media_graph_walk_start(graph, &first->pads[0]);
+ 
+ 	while ((first = media_graph_walk_next(graph))
+ 	       && first != entity)
+diff --git a/drivers/staging/media/omap4iss/iss_video.c b/drivers/staging/media/omap4iss/iss_video.c
+index 66975a37dc85..cb04a7cd297b 100644
+--- a/drivers/staging/media/omap4iss/iss_video.c
++++ b/drivers/staging/media/omap4iss/iss_video.c
+@@ -217,7 +217,7 @@ iss_video_far_end(struct iss_video *video)
+ 		return NULL;
+ 	}
+ 
+-	media_graph_walk_start(&graph, entity);
++	media_graph_walk_start(&graph, &entity->pads[0]);
+ 
+ 	while ((entity = media_graph_walk_next(&graph))) {
+ 		if (entity == &video->video.entity)
+@@ -890,7 +890,7 @@ iss_video_streamon(struct file *file, void *fh, enum v4l2_buf_type type)
+ 	if (ret < 0)
+ 		goto err_media_pipeline_start;
+ 
+-	media_graph_walk_start(&graph, entity);
++	media_graph_walk_start(&graph, &entity->pads[0]);
+ 	while ((entity = media_graph_walk_next(&graph)))
+ 		media_entity_enum_set(&pipe->ent_enum, entity);
+ 
+diff --git a/include/media/media-entity.h b/include/media/media-entity.h
+index 45c68b11a529..0e53c586d770 100644
+--- a/include/media/media-entity.h
++++ b/include/media/media-entity.h
+@@ -933,7 +933,7 @@ bool media_entity_has_route(struct media_entity *entity, unsigned int sink,
+  * using media_graph_walk_cleanup().
+  */
+ void media_graph_walk_start(struct media_graph *graph,
+-			    struct media_entity *entity);
++			    struct media_pad *pad);
+ 
+ /**
+  * media_graph_walk_next - Get the next entity in the graph
+-- 
+2.17.1
+

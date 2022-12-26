@@ -1,0 +1,35 @@
+From 7ddb0f34260b91033f0fe37dad83224d5e608981 Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Tue, 22 Oct 2019 10:12:45 +0800
+Subject: [PATCH 04/81] v4l2-ctrl: Add platform specific v4l2 control
+
+Add v4l2 control to support camera iris
+Add WDR mode v4l2 control
+
+Change-Id: Iacf117abf753f268fef25d1cd07cf5b538f8d661
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+Signed-off-by: lijuncax <lijunx.cai@intel.com>
+---
+ include/uapi/linux/v4l2-controls.h | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/include/uapi/linux/v4l2-controls.h b/include/uapi/linux/v4l2-controls.h
+index a184c4939438..f4bf515e6b7a 100644
+--- a/include/uapi/linux/v4l2-controls.h
++++ b/include/uapi/linux/v4l2-controls.h
+@@ -1079,6 +1079,11 @@ enum v4l2_jpeg_chroma_subsampling {
+ #define V4L2_CID_TEST_PATTERN_GREENB		(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 7)
+ #define V4L2_CID_UNIT_CELL_SIZE			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 8)
+ 
++#define V4L2_CID_MIPI_LANES			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 64)
++#define V4L2_CID_WDR_MODE			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 65)
++#define V4L2_CID_PWM_DUTY			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 66)
++#define V4L2_CID_IRIS_MODE			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 67)
++#define V4L2_CID_IRIS_STEP			(V4L2_CID_IMAGE_SOURCE_CLASS_BASE + 68)
+ 
+ /* Image processing controls */
+ 
+-- 
+2.17.1
+

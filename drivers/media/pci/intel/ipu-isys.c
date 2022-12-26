@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2021 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -14,16 +14,8 @@
 #include <linux/version.h>
 
 #include <media/ipu-isys.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #include <media/v4l2-mc.h>
-#endif
 #include <media/v4l2-subdev.h>
-#include <media/v4l2-fwnode.h>
-#include <media/v4l2-ctrls.h>
-#include <media/v4l2-device.h>
-#include <media/v4l2-event.h>
-#include <media/v4l2-ioctl.h>
-#include <media/v4l2-async.h>
 #include "ipu.h"
 #include "ipu-bus.h"
 #include "ipu-cpd.h"
@@ -31,6 +23,9 @@
 #include "ipu-dma.h"
 #include "ipu-isys.h"
 #include "ipu-isys-csi2.h"
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+#include "ipu-isys-tpg.h"
+#endif
 #include "ipu-isys-video.h"
 #include "ipu-platform-regs.h"
 #include "ipu-buttress.h"
@@ -38,7 +33,15 @@
 #include "ipu-platform-buttress-regs.h"
 
 #define ISYS_PM_QOS_VALUE	300
+/*
+ * The param was passed from module to indicate if port
+ * could be optimized.
+ */
+static bool csi2_port_optimized = true;
+module_param(csi2_port_optimized, bool, 0660);
+MODULE_PARM_DESC(csi2_port_optimized, "IPU CSI2 port optimization");
 
+#if defined(IPU_IWAKE_ENABLE)
 #define IPU_BUTTRESS_FABIC_CONTROL	    0x68
 #define GDA_ENABLE_IWAKE_INDEX		    2
 #define GDA_IWAKE_THRESHOLD_INDEX           1
@@ -91,226 +94,47 @@ enum ltr_did_type {
 	LTR_ISYS_OFF,
 	LTR_TYPE_MAX
 };
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-/*
- * BEGIN adapted code from drivers/media/platform/omap3isp/isp.c.
- * FIXME: This (in terms of functionality if not code) should be most
- * likely generalised in the framework, and use made optional for
- * drivers.
- */
-/*
- * ipu_pipeline_pm_use_count - Count the number of users of a pipeline
- * @entity: The entity
- *
- * Return the total number of users of all video device nodes in the pipeline.
- */
-static int ipu_pipeline_pm_use_count(struct media_pad *pad)
-{
-	struct media_entity_graph graph;
-	struct media_entity *entity = pad->entity;
-	int use = 0;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-	media_graph_walk_init(&graph, entity->graph_obj.mdev);
 #endif
-	media_graph_walk_start(&graph, pad);
 
-	while ((entity = media_graph_walk_next(&graph))) {
-		if (is_media_entity_v4l2_io(entity))
-			use += entity->use_count;
-	}
+struct isys_i2c_test {
+	u8 bus_nr;
+	u16 addr;
+	struct i2c_client *client;
+};
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-	media_graph_walk_cleanup(&graph);
-#endif
-	return use;
-}
-
-/*
- * ipu_pipeline_pm_power_one - Apply power change to an entity
- * @entity: The entity
- * @change: Use count change
- *
- * Change the entity use count by @change. If the entity is a subdev update its
- * power state by calling the core::s_power operation when the use count goes
- * from 0 to != 0 or from != 0 to 0.
- *
- * Return 0 on success or a negative error code on failure.
- */
-static int ipu_pipeline_pm_power_one(struct media_entity *entity, int change)
+static int isys_i2c_test(struct device *dev, void *priv)
 {
-	struct v4l2_subdev *subdev;
-	int ret;
+	struct i2c_client *client = i2c_verify_client(dev);
+	struct isys_i2c_test *test = priv;
 
-	subdev = is_media_entity_v4l2_subdev(entity)
-	    ? media_entity_to_v4l2_subdev(entity) : NULL;
+	if (!client)
+		return 0;
 
-	if (entity->use_count == 0 && change > 0 && subdev) {
-		ret = v4l2_subdev_call(subdev, core, s_power, 1);
-		if (ret < 0 && ret != -ENOIOCTLCMD)
-			return ret;
-	}
+	if (i2c_adapter_id(client->adapter) != test->bus_nr ||
+	    client->addr != test->addr)
+		return 0;
 
-	entity->use_count += change;
-	WARN_ON(entity->use_count < 0);
-
-	if (entity->use_count == 0 && change < 0 && subdev)
-		v4l2_subdev_call(subdev, core, s_power, 0);
+	test->client = client;
 
 	return 0;
 }
 
-/*
- * ipu_pipeline_pm_power - Apply power change to all entities
- * in a pipeline
- * @entity: The entity
- * @change: Use count change
- * @from_pad: Starting pad
- *
- * Walk the pipeline to update the use count and the power state of
- * all non-node
- * entities.
- *
- * Return 0 on success or a negative error code on failure.
- */
-static int ipu_pipeline_pm_power(struct media_entity *entity,
-				 int change, int from_pad)
+static struct
+i2c_client *isys_find_i2c_subdev(struct i2c_adapter *adapter,
+				 struct ipu_isys_subdev_info *sd_info)
 {
-	struct media_entity_graph graph;
-	struct media_entity *first = entity;
-	int ret = 0;
+	struct i2c_board_info *info = &sd_info->i2c.board_info;
+	struct isys_i2c_test test = {
+		.bus_nr = i2c_adapter_id(adapter),
+		.addr = info->addr,
+	};
+	int rval;
 
-	if (!change)
-		return 0;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-	media_graph_walk_init(&graph, entity->graph_obj.mdev);
-#endif
-	media_graph_walk_start(&graph, &entity->pads[from_pad]);
-
-	while (!ret && (entity = media_graph_walk_next(&graph)))
-		if (!is_media_entity_v4l2_io(entity))
-			ret = ipu_pipeline_pm_power_one(entity, change);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-	media_graph_walk_cleanup(&graph);
-#endif
-	if (!ret)
-		return 0;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-	media_graph_walk_init(&graph, entity->graph_obj.mdev);
-#endif
-	media_graph_walk_start(&graph, &first->pads[from_pad]);
-
-	while ((first = media_graph_walk_next(&graph)) &&
-	       first != entity)
-		if (!is_media_entity_v4l2_io(first))
-			ipu_pipeline_pm_power_one(first, -change);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-	media_graph_walk_cleanup(&graph);
-#endif
-	return ret;
+	rval = i2c_for_each_dev(&test, isys_i2c_test);
+	if (rval || !test.client)
+		return NULL;
+	return test.client;
 }
-
-/*
- * ipu_pipeline_pm_use - Update the use count of an entity
- * @entity: The entity
- * @use: Use (1) or stop using (0) the entity
- *
- * Update the use count of all entities in the pipeline and power entities
- * on or off accordingly.
- *
- * Return 0 on success or a negative error code on failure. Powering entities
- * off is assumed to never fail. No failure can occur when the use parameter is
- * set to 0.
- */
-int ipu_pipeline_pm_use(struct media_entity *entity, int use)
-{
-	int change = use ? 1 : -1;
-	int ret;
-
-	mutex_lock(&entity->
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-		   parent
-#else
-		   graph_obj.mdev
-#endif
-		   ->graph_mutex);
-
-	/* Apply use count to node. */
-	entity->use_count += change;
-	WARN_ON(entity->use_count < 0);
-
-	/* Apply power change to connected non-nodes. */
-	ret = ipu_pipeline_pm_power(entity, change, 0);
-	if (ret < 0)
-		entity->use_count -= change;
-
-	mutex_unlock(&entity->
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-		     parent
-#else
-		     graph_obj.mdev
-#endif
-		     ->graph_mutex);
-
-	return ret;
-}
-
-/*
- * ipu_pipeline_link_notify - Link management notification callback
- * @link: The link
- * @flags: New link flags that will be applied
- * @notification: The link's state change notification type
- * (MEDIA_DEV_NOTIFY_*)
- *
- * React to link management on powered pipelines by updating the use count of
- * all entities in the source and sink sides of the link. Entities are powered
- * on or off accordingly.
- *
- * Return 0 on success or a negative error code on failure. Powering entities
- * off is assumed to never fail. This function will not fail for disconnection
- * events.
- */
-static int ipu_pipeline_link_notify(struct media_link *link, u32 flags,
-				    unsigned int notification)
-{
-	struct media_entity *source = link->source->entity;
-	struct media_entity *sink = link->sink->entity;
-	int source_use = ipu_pipeline_pm_use_count(link->source);
-	int sink_use = ipu_pipeline_pm_use_count(link->sink);
-	int ret;
-
-	if (notification == MEDIA_DEV_NOTIFY_POST_LINK_CH &&
-	    !(flags & MEDIA_LNK_FL_ENABLED)) {
-		/* Powering off entities is assumed to never fail. */
-		ipu_pipeline_pm_power(source, -sink_use, 0);
-		ipu_pipeline_pm_power(sink, -source_use, 0);
-		return 0;
-	}
-
-	if (notification == MEDIA_DEV_NOTIFY_PRE_LINK_CH &&
-	    (flags & MEDIA_LNK_FL_ENABLED)) {
-		ret = ipu_pipeline_pm_power(source, sink_use, 0);
-		if (ret < 0)
-			return ret;
-
-		ret = ipu_pipeline_pm_power(sink, source_use, 0);
-		if (ret < 0)
-			ipu_pipeline_pm_power(source, -sink_use, 0);
-
-		return ret;
-	}
-
-	return 0;
-}
-
-/* END adapted code from drivers/media/platform/omap3isp/isp.c */
-#endif /* < v4.6 */
-
 static int
 isys_complete_ext_device_registration(struct ipu_isys *isys,
 				      struct v4l2_subdev *sd,
@@ -349,14 +173,109 @@ skip_unregister_subdev:
 	return rval;
 }
 
+static int isys_register_ext_subdev(struct ipu_isys *isys,
+				    struct ipu_isys_subdev_info *sd_info)
+{
+	struct i2c_adapter *adapter;
+	struct v4l2_subdev *sd;
+	struct i2c_client *client;
+	int rval;
+	int bus;
+
+	bus = ipu_get_i2c_bus_id(sd_info->i2c.i2c_adapter_id,
+			sd_info->i2c.i2c_adapter_bdf,
+			sizeof(sd_info->i2c.i2c_adapter_bdf));
+
+	dev_info(&isys->adev->dev,
+		 "get i2c bus id for %d (bdf %s)",
+		 sd_info->i2c.i2c_adapter_id, sd_info->i2c.i2c_adapter_bdf);
+
+	if (bus < 0) {
+		dev_err(&isys->adev->dev, "Failed to find adapter %d, for bdf %s !",
+			sd_info->i2c.i2c_adapter_id, sd_info->i2c.i2c_adapter_bdf);
+		return -ENOENT;
+	}
+	adapter = i2c_get_adapter(bus);
+	if (!adapter) {
+		dev_warn(&isys->adev->dev, "can't find adapter\n");
+		return -ENOENT;
+	}
+
+	dev_info(&isys->adev->dev,
+		 "creating new i2c subdev for %s (address %2.2x, bus %d)",
+		 sd_info->i2c.board_info.type, sd_info->i2c.board_info.addr,
+		 bus);
+
+	if (sd_info->csi2) {
+		dev_info(&isys->adev->dev, "sensor device on CSI port: %d\n",
+			 sd_info->csi2->port);
+		if (sd_info->csi2->port >= isys->pdata->ipdata->csi2.nports ||
+		    !isys->csi2[sd_info->csi2->port].isys) {
+			dev_warn(&isys->adev->dev, "invalid csi2 port %u\n",
+				 sd_info->csi2->port);
+			rval = -EINVAL;
+			goto skip_put_adapter;
+		}
+	} else {
+		dev_info(&isys->adev->dev, "non camera subdevice\n");
+	}
+
+	client = isys_find_i2c_subdev(adapter, sd_info);
+	if (client) {
+		dev_dbg(&isys->adev->dev, "Device exists\n");
+		rval = 0;
+		goto skip_put_adapter;
+	}
+
+	sd = v4l2_i2c_new_subdev_board(&isys->v4l2_dev, adapter,
+				       &sd_info->i2c.board_info, NULL);
+	if (!sd) {
+		dev_warn(&isys->adev->dev, "can't create new i2c subdev\n");
+		rval = -EINVAL;
+		goto skip_put_adapter;
+	}
+
+	if (!sd_info->csi2)
+		return 0;
+
+	return isys_complete_ext_device_registration(isys, sd, sd_info->csi2);
+
+skip_put_adapter:
+	i2c_put_adapter(adapter);
+
+	return rval;
+}
+
+static void isys_register_ext_subdevs(struct ipu_isys *isys)
+{
+	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
+	struct ipu_isys_subdev_info **sd_info;
+
+	if (!spdata) {
+		dev_info(&isys->adev->dev, "no subdevice info provided\n");
+		return;
+	}
+	for (sd_info = spdata->subdevs; *sd_info; sd_info++)
+		isys_register_ext_subdev(isys, *sd_info);
+}
+
 static void isys_unregister_subdevices(struct ipu_isys *isys)
 {
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	const struct ipu_isys_internal_tpg_pdata *tpg =
+	    &isys->pdata->ipdata->tpg;
+#endif
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
 	unsigned int i;
 
-	for (i = 0; i < NR_OF_CSI2_BE_SOC_DEV; i++)
-		ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc[i]);
+	ipu_isys_csi2_be_cleanup(&isys->csi2_be);
+	ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc);
+
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	for (i = 0; i < tpg->ntpgs; i++)
+		ipu_isys_tpg_cleanup(&isys->tpg[i]);
+#endif
 
 	for (i = 0; i < csi2->nports; i++)
 		ipu_isys_csi2_cleanup(&isys->csi2[i]);
@@ -364,12 +283,40 @@ static void isys_unregister_subdevices(struct ipu_isys *isys)
 
 static int isys_register_subdevices(struct ipu_isys *isys)
 {
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	const struct ipu_isys_internal_tpg_pdata *tpg =
+	    &isys->pdata->ipdata->tpg;
+#endif
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
 	struct ipu_isys_csi2_be_soc *csi2_be_soc;
-	unsigned int i, k;
+	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
+	struct ipu_isys_subdev_info **sd_info;
+	DECLARE_BITMAP(csi2_enable, 32);
+	unsigned int i, j, k;
 	int rval;
 
+	/*
+	 * Here is somewhat a workaround, let each platform decide
+	 * if csi2 port can be optimized, which means only registered
+	 * port from pdata would be enabled.
+	 */
+	if (csi2_port_optimized && spdata) {
+		bitmap_zero(csi2_enable, 32);
+		for (sd_info = spdata->subdevs; *sd_info; sd_info++) {
+			if ((*sd_info)->csi2) {
+				i = (*sd_info)->csi2->port;
+				if (i >= csi2->nports) {
+					dev_warn(&isys->adev->dev,
+						 "invalid csi2 port %u\n", i);
+					continue;
+				}
+				bitmap_set(csi2_enable, i, 1);
+			}
+		}
+	} else {
+		bitmap_fill(csi2_enable, 32);
+	}
 	isys->csi2 = devm_kcalloc(&isys->adev->dev, csi2->nports,
 				  sizeof(*isys->csi2), GFP_KERNEL);
 	if (!isys->csi2) {
@@ -378,6 +325,8 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	}
 
 	for (i = 0; i < csi2->nports; i++) {
+		if (!test_bit(i, csi2_enable))
+			continue;
 		rval = ipu_isys_csi2_init(&isys->csi2[i], isys,
 					  isys->pdata->base +
 					  csi2->offsets[i], i);
@@ -387,31 +336,100 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 		isys->isr_csi2_bits |= IPU_ISYS_UNISPART_IRQ_CSI2(i);
 	}
 
-	for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
-		rval = ipu_isys_csi2_be_soc_init(&isys->csi2_be_soc[k],
-						 isys, k);
-		if (rval) {
-			dev_info(&isys->adev->dev,
-				 "can't register csi2 soc be device %d\n", k);
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	isys->tpg = devm_kcalloc(&isys->adev->dev, tpg->ntpgs,
+				 sizeof(*isys->tpg), GFP_KERNEL);
+	if (!isys->tpg) {
+		rval = -ENOMEM;
+		goto fail;
+	}
+
+	for (i = 0; i < tpg->ntpgs; i++) {
+		rval = ipu_isys_tpg_init(&isys->tpg[i], isys,
+					 isys->pdata->base +
+					 tpg->offsets[i],
+					 tpg->sels ? (isys->pdata->base +
+						      tpg->sels[i]) : NULL, i);
+		if (rval)
 			goto fail;
-		}
+	}
+#endif
+
+	rval = ipu_isys_csi2_be_soc_init(&isys->csi2_be_soc, isys);
+	if (rval) {
+		dev_info(&isys->adev->dev,
+			 "can't register csi2 soc be device\n");
+		goto fail;
+	}
+
+	rval = ipu_isys_csi2_be_init(&isys->csi2_be, isys);
+	if (rval) {
+		dev_info(&isys->adev->dev,
+			 "can't register raw csi2 be device\n");
+		goto fail;
 	}
 
 	for (i = 0; i < csi2->nports; i++) {
-		for (k = 0; k < NR_OF_CSI2_BE_SOC_DEV; k++) {
-			csi2_be_soc = &isys->csi2_be_soc[k];
+		if (!test_bit(i, csi2_enable))
+			continue;
+		for (j = CSI2_PAD_SOURCE(0);
+		     j < (NR_OF_CSI2_SOURCE_PADS + CSI2_PAD_SOURCE(0)); j++) {
 			rval =
 			    media_create_pad_link(&isys->csi2[i].asd.sd.entity,
-						  CSI2_PAD_SOURCE,
-						  &csi2_be_soc->asd.sd.entity,
-						  CSI2_BE_SOC_PAD_SINK, 0);
+						  j,
+						  &isys->csi2_be.asd.sd.entity,
+						  CSI2_BE_PAD_SINK, 0);
 			if (rval) {
 				dev_info(&isys->adev->dev,
-					 "can't create link csi2->be_soc\n");
+					 "can't create link csi2 <=> csi2_be\n");
+				goto fail;
+			}
+
+			for (k = CSI2_BE_SOC_PAD_SINK(0);
+			     k < NR_OF_CSI2_BE_SOC_SINK_PADS; k++) {
+				rval =
+				    media_create_pad_link(&isys->csi2[i].asd.sd.
+							  entity, j,
+							  &isys->csi2_be_soc.
+							  asd.sd.entity, k,
+							  MEDIA_LNK_FL_DYNAMIC);
+				if (rval) {
+					dev_info(&isys->adev->dev,
+						 "can't create link csi2->be_soc\n");
+					goto fail;
+				}
+			}
+		}
+	}
+
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+	for (i = 0; i < tpg->ntpgs; i++) {
+		rval = media_create_pad_link(&isys->tpg[i].asd.sd.entity,
+					     TPG_PAD_SOURCE,
+					     &isys->csi2_be.asd.sd.entity,
+					     CSI2_BE_PAD_SINK, 0);
+		if (rval) {
+			dev_info(&isys->adev->dev,
+				 "can't create link between tpg and csi2_be\n");
+			goto fail;
+		}
+
+		for (k = CSI2_BE_SOC_PAD_SINK(0);
+		     k < NR_OF_CSI2_BE_SOC_SINK_PADS; k++) {
+			rval =
+			    media_create_pad_link(&isys->tpg[i].asd.sd.entity,
+						  TPG_PAD_SOURCE,
+						  &isys->csi2_be_soc.asd.sd.
+						  entity, k,
+						  MEDIA_LNK_FL_DYNAMIC);
+			if (rval) {
+				dev_info(&isys->adev->dev,
+					 "can't create link tpg->be_soc\n");
 				goto fail;
 			}
 		}
 	}
+#endif
 
 	return 0;
 
@@ -420,6 +438,7 @@ fail:
 	return rval;
 }
 
+#if defined(IPU_IWAKE_ENABLE)
 /* read ltrdid threshold values from BIOS or system configuration */
 static void get_lut_ltrdid(struct ipu_isys *isys, struct ltr_did *pltr_did)
 {
@@ -540,12 +559,10 @@ void update_watermark_setting(struct ipu_isys *isys)
 	u64 threshold_bytes;
 	u64 isys_pb_datarate_mbs = 0;
 	u16 sram_granulrity_shift =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
-		 ipu_ver == IPU_VER_6EP_MTL) ?
+		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
 		IPU6_SRAM_GRANULRITY_SHIFT : IPU6SE_SRAM_GRANULRITY_SHIFT;
 	int max_sram_size =
-		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
-		 ipu_ver == IPU_VER_6EP_MTL) ?
+		(ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) ?
 		IPU6_MAX_SRAM_SIZE : IPU6SE_MAX_SRAM_SIZE;
 
 	mutex_lock(&iwake_watermark->mutex);
@@ -595,6 +612,15 @@ void update_watermark_setting(struct ipu_isys *isys)
 			ltr = ltrdid.lut_ltr.bits.val3;
 
 		did = calc_fill_time_us - ltr;
+#ifdef IPU_IWAKE_TUNING
+		if (iwake_watermark->ltrdid_setting) {
+			ltr = min_t(u16, LTR_DID_VAL_MAX,
+				    iwake_watermark->ltrdid_setting & 0xFFFF);
+			did = min_t(u16, LTR_DID_VAL_MAX,
+				    iwake_watermark->ltrdid_setting >> 16 &
+				    0xFFFF);
+		}
+#endif
 
 		threshold_bytes = did * isys_pb_datarate_mbs;
 		/* calculate iwake threshold with 2KB granularity pages */
@@ -663,151 +689,10 @@ static int isys_iwake_watermark_cleanup(struct ipu_isys *isys)
 	isys->iwake_watermark = NULL;
 	return 0;
 }
-
-/* The .bound() notifier callback when a match is found */
-static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
-			       struct v4l2_subdev *sd,
-			       struct v4l2_async_subdev *asd)
-{
-	struct ipu_isys *isys = container_of(notifier,
-					struct ipu_isys, notifier);
-	struct sensor_async_subdev *s_asd = container_of(asd,
-					struct sensor_async_subdev, asd);
-
-	dev_info(&isys->adev->dev, "bind %s nlanes is %d port is %d\n",
-		 sd->name, s_asd->csi2.nlanes, s_asd->csi2.port);
-	isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
-
-	return v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
-}
-
-static void isys_notifier_unbind(struct v4l2_async_notifier *notifier,
-				 struct v4l2_subdev *sd,
-				 struct v4l2_async_subdev *asd)
-{
-	struct ipu_isys *isys = container_of(notifier,
-					struct ipu_isys, notifier);
-
-	dev_info(&isys->adev->dev, "unbind %s\n", sd->name);
-}
-
-static int isys_notifier_complete(struct v4l2_async_notifier *notifier)
-{
-	struct ipu_isys *isys = container_of(notifier,
-					struct ipu_isys, notifier);
-
-	dev_info(&isys->adev->dev, "All sensor registration completed.\n");
-
-	return v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
-}
-
-static const struct v4l2_async_notifier_operations isys_async_ops = {
-	.bound = isys_notifier_bound,
-	.unbind = isys_notifier_unbind,
-	.complete = isys_notifier_complete,
-};
-
-static int isys_fwnode_parse(struct device *dev,
-			     struct v4l2_fwnode_endpoint *vep,
-			     struct v4l2_async_subdev *asd)
-{
-	struct sensor_async_subdev *s_asd =
-			container_of(asd, struct sensor_async_subdev, asd);
-
-	s_asd->csi2.port = vep->base.port;
-	s_asd->csi2.nlanes = vep->bus.mipi_csi2.num_data_lanes;
-
-	return 0;
-}
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
-static int isys_notifier_init(struct ipu_isys *isys)
-{
-	struct ipu_device *isp = isys->adev->isp;
-	size_t asd_struct_size = sizeof(struct sensor_async_subdev);
-	int ret;
-
-	v4l2_async_notifier_init(&isys->notifier);
-	ret = v4l2_async_notifier_parse_fwnode_endpoints(&isp->pdev->dev,
-							 &isys->notifier,
-							 asd_struct_size,
-							 isys_fwnode_parse);
-
-	if (ret < 0) {
-		dev_err(&isys->adev->dev,
-			"v4l2 parse_fwnode_endpoints() failed: %d\n", ret);
-		return ret;
-	}
-
-	if (list_empty(&isys->notifier.asd_list)) {
-		/* isys probe could continue with async subdevs missing */
-		dev_warn(&isys->adev->dev, "no subdev found in graph\n");
-		return 0;
-	}
-
-	isys->notifier.ops = &isys_async_ops;
-	ret = v4l2_async_notifier_register(&isys->v4l2_dev, &isys->notifier);
-	if (ret) {
-		dev_err(&isys->adev->dev,
-			"failed to register async notifier : %d\n", ret);
-		v4l2_async_notifier_cleanup(&isys->notifier);
-	}
-
-	return ret;
-}
-
-static void isys_notifier_cleanup(struct ipu_isys *isys)
-{
-	v4l2_async_notifier_unregister(&isys->notifier);
-	v4l2_async_notifier_cleanup(&isys->notifier);
-}
-#else
-static int isys_notifier_init(struct ipu_isys *isys)
-{
-	struct ipu_device *isp = isys->adev->isp;
-	size_t asd_struct_size = sizeof(struct sensor_async_subdev);
-	int ret;
-
-	v4l2_async_nf_init(&isys->notifier);
-	ret = v4l2_async_nf_parse_fwnode_endpoints(&isp->pdev->dev,
-						   &isys->notifier,
-						   asd_struct_size,
-						   isys_fwnode_parse);
-	if (ret < 0) {
-		dev_err(&isys->adev->dev,
-			"v4l2 parse_fwnode_endpoints() failed: %d\n", ret);
-		return ret;
-	}
-	if (list_empty(&isys->notifier.asd_list)) {
-		/* isys probe could continue with async subdevs missing */
-		dev_warn(&isys->adev->dev, "no subdev found in graph\n");
-		return 0;
-	}
-
-	isys->notifier.ops = &isys_async_ops;
-	ret = v4l2_async_nf_register(&isys->v4l2_dev, &isys->notifier);
-	if (ret) {
-		dev_err(&isys->adev->dev,
-			"failed to register async notifier : %d\n", ret);
-		v4l2_async_nf_cleanup(&isys->notifier);
-	}
-
-	return ret;
-}
-
-static void isys_notifier_cleanup(struct ipu_isys *isys)
-{
-	v4l2_async_nf_unregister(&isys->notifier);
-	v4l2_async_nf_cleanup(&isys->notifier);
-}
 #endif
 
 static struct media_device_ops isys_mdev_ops = {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-	.link_notify = ipu_pipeline_link_notify,
-#else
 	.link_notify = v4l2_pipeline_link_notify,
-#endif
 };
 
 static int isys_register_devices(struct ipu_isys *isys)
@@ -815,26 +700,15 @@ static int isys_register_devices(struct ipu_isys *isys)
 	int rval;
 
 	isys->media_dev.dev = &isys->adev->dev;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 12)
 	isys->media_dev.ops = &isys_mdev_ops;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-	isys->media_dev.link_notify = ipu_pipeline_link_notify;
-#else
-	isys->media_dev.link_notify = v4l2_pipeline_link_notify;
-#endif
 	strlcpy(isys->media_dev.model,
 		IPU_MEDIA_DEV_MODEL_NAME, sizeof(isys->media_dev.model));
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	isys->media_dev.driver_version = LINUX_VERSION_CODE;
-#endif
 	snprintf(isys->media_dev.bus_info, sizeof(isys->media_dev.bus_info),
 		 "pci:%s", dev_name(isys->adev->dev.parent->parent));
 	strlcpy(isys->v4l2_dev.name, isys->media_dev.model,
 		sizeof(isys->v4l2_dev.name));
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_device_init(&isys->media_dev);
-#endif
 
 	rval = media_device_register(&isys->media_dev);
 	if (rval < 0) {
@@ -854,9 +728,7 @@ static int isys_register_devices(struct ipu_isys *isys)
 	if (rval)
 		goto out_v4l2_device_unregister;
 
-	rval = isys_notifier_init(isys);
-	if (rval)
-		goto out_isys_unregister_subdevices;
+	isys_register_ext_subdevs(isys);
 
 	rval = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
 	if (rval)
@@ -865,9 +737,7 @@ static int isys_register_devices(struct ipu_isys *isys)
 	return 0;
 
 out_isys_notifier_cleanup:
-	isys_notifier_cleanup(isys);
 
-out_isys_unregister_subdevices:
 	isys_unregister_subdevices(isys);
 
 out_v4l2_device_unregister:
@@ -875,9 +745,7 @@ out_v4l2_device_unregister:
 
 out_media_device_unregister:
 	media_device_unregister(&isys->media_dev);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_device_cleanup(&isys->media_dev);
-#endif
 
 	return rval;
 }
@@ -887,9 +755,7 @@ static void isys_unregister_devices(struct ipu_isys *isys)
 	isys_unregister_subdevices(isys);
 	v4l2_device_unregister(&isys->v4l2_dev);
 	media_device_unregister(&isys->media_dev);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	media_device_cleanup(&isys->media_dev);
-#endif
 }
 
 #ifdef CONFIG_PM
@@ -910,11 +776,7 @@ static int isys_runtime_pm_resume(struct device *dev)
 
 	ipu_trace_restore(dev);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_update_request(&isys->pm_qos, ISYS_PM_QOS_VALUE);
-#else
-	pm_qos_update_request(&isys->pm_qos, ISYS_PM_QOS_VALUE);
-#endif
 
 	ret = ipu_buttress_start_tsc_sync(isp);
 	if (ret)
@@ -931,7 +793,9 @@ static int isys_runtime_pm_resume(struct device *dev)
 	}
 	isys_setup_hw(isys);
 
+#if defined(IPU_IWAKE_ENABLE)
 	set_iwake_ltrdid(isys, 0, 0, LTR_ISYS_ON);
+#endif
 	return 0;
 }
 
@@ -953,16 +817,13 @@ static int isys_runtime_pm_suspend(struct device *dev)
 	isys->reset_needed = false;
 	mutex_unlock(&isys->mutex);
 
-	isys->phy_termcal_val = 0;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
-#else
-	pm_qos_update_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
-#endif
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
+#if defined(IPU_IWAKE_ENABLE)
 	set_iwake_ltrdid(isys, 0, 0, LTR_ISYS_OFF);
+#endif
 	return 0;
 }
 
@@ -1010,35 +871,24 @@ static void isys_remove(struct ipu_bus_device *adev)
 	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist, head) {
 		dma_free_attrs(&adev->dev, sizeof(struct isys_fw_msgs),
 			       fwmsg, fwmsg->dma_addr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-			       NULL);
-#else
 			       0);
-#endif
 	}
 
 	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist_fw, head) {
 		dma_free_attrs(&adev->dev, sizeof(struct isys_fw_msgs),
 			       fwmsg, fwmsg->dma_addr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-			       NULL
-#else
 			       0
-#endif
 		    );
 	}
 
+#if defined(IPU_IWAKE_ENABLE)
 	isys_iwake_watermark_cleanup(isys);
+#endif
 
 	ipu_trace_uninit(&adev->dev);
-	isys_notifier_cleanup(isys);
 	isys_unregister_devices(isys);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_remove_request(&isys->pm_qos);
-#else
-	pm_qos_remove_request(&isys->pm_qos);
-#endif
 
 	if (!isp->secure_mode) {
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
@@ -1053,28 +903,10 @@ static void isys_remove(struct ipu_bus_device *adev)
 
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT) {
 		u32 trace_size = IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 
 		dma_free_coherent(&adev->dev, trace_size,
 				  isys->short_packet_trace_buffer,
 				  isys->short_packet_trace_buffer_dma_addr);
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-		struct dma_attrs attrs;
-
-		init_dma_attrs(&attrs);
-		dma_set_attr(DMA_ATTR_NON_CONSISTENT, &attrs);
-		dma_free_attrs(&adev->dev, trace_size,
-			       isys->short_packet_trace_buffer,
-			       isys->short_packet_trace_buffer_dma_addr,
-			       &attrs);
-#else
-		unsigned long attrs;
-
-		attrs = DMA_ATTR_NON_CONSISTENT;
-		dma_free_attrs(&adev->dev, trace_size,
-			       isys->short_packet_trace_buffer,
-			       isys->short_packet_trace_buffer_dma_addr, attrs);
-#endif
 	}
 }
 
@@ -1099,6 +931,7 @@ static int ipu_isys_icache_prefetch_set(void *data, u64 val)
 	return 0;
 }
 
+#if defined(IPU_IWAKE_ENABLE)
 static int isys_iwake_control_get(void *data, u64 *val)
 {
 	struct ipu_isys *isys = data;
@@ -1128,13 +961,50 @@ static int isys_iwake_control_set(void *data, u64 val)
 	return 0;
 }
 
+#ifdef IPU_IWAKE_TUNING
+static int ipu_iwake_ltrdid_get(void *data, u64 *val)
+{
+	struct ipu_isys *isys = data;
+
+	*val = isys->iwake_watermark->ltrdid_setting;
+
+	return 0;
+}
+
+static int ipu_iwake_ltrdid_set(void *data, u64 val)
+{
+	struct ipu_isys *isys = data;
+	struct isys_iwake_watermark *iwake_watermark;
+
+	/* If stream is open, refuse to set iwake ltr did */
+	if (isys->stream_opened)
+		return -EBUSY;
+
+	iwake_watermark = isys->iwake_watermark;
+	mutex_lock(&iwake_watermark->mutex);
+	isys->iwake_watermark->ltrdid_setting = val & 0xFFFFFFFF;
+	mutex_unlock(&iwake_watermark->mutex);
+
+	return 0;
+}
+#endif
+#endif
+
 DEFINE_SIMPLE_ATTRIBUTE(isys_icache_prefetch_fops,
 			ipu_isys_icache_prefetch_get,
 			ipu_isys_icache_prefetch_set, "%llu\n");
 
+#if defined(IPU_IWAKE_ENABLE)
 DEFINE_SIMPLE_ATTRIBUTE(isys_iwake_control_fops,
 			isys_iwake_control_get,
 			isys_iwake_control_set, "%llu\n");
+
+#ifdef IPU_IWAKE_TUNING
+DEFINE_SIMPLE_ATTRIBUTE(isys_iwake_ltrdid_fops,
+			ipu_iwake_ltrdid_get,
+			ipu_iwake_ltrdid_set, "%llu\n");
+#endif
+#endif
 
 static int ipu_isys_init_debugfs(struct ipu_isys *isys)
 {
@@ -1153,10 +1023,18 @@ static int ipu_isys_init_debugfs(struct ipu_isys *isys)
 	if (IS_ERR(file))
 		goto err;
 
+#if defined(IPU_IWAKE_ENABLE)
 	file = debugfs_create_file("iwake_disable", 0600,
 				   dir, isys, &isys_iwake_control_fops);
 	if (IS_ERR(file))
 		goto err;
+#ifdef IPU_IWAKE_TUNING
+	file = debugfs_create_file("iwake_ltrdid", 0600,
+				   dir, isys, &isys_iwake_ltrdid_fops);
+	if (IS_ERR(file))
+		goto err;
+#endif
+#endif
 
 	isys->debugfsdir = dir;
 
@@ -1184,11 +1062,7 @@ static int alloc_fw_msg_bufs(struct ipu_isys *isys, int amount)
 		addr = dma_alloc_attrs(&isys->adev->dev,
 				       sizeof(struct isys_fw_msgs),
 				       &dma_addr, GFP_KERNEL,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-				       NULL);
-#else
 				       0);
-#endif
 		if (!addr)
 			break;
 		addr->dma_addr = dma_addr;
@@ -1208,11 +1082,7 @@ static int alloc_fw_msg_bufs(struct ipu_isys *isys, int amount)
 		dma_free_attrs(&isys->adev->dev,
 			       sizeof(struct isys_fw_msgs),
 			       addr, addr->dma_addr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-			       NULL);
-#else
 			       0);
-#endif
 		spin_lock_irqsave(&isys->listlock, flags);
 	}
 	spin_unlock_irqrestore(&isys->listlock, flags);
@@ -1284,6 +1154,10 @@ static int isys_probe(struct ipu_bus_device *adev)
 	const struct firmware *fw;
 	int rval = 0;
 
+#ifdef IPU_TRACE_EVENT
+	trace_printk("B|%d|TMWK\n", current->pid);
+#endif
+
 	isys = devm_kzalloc(&adev->dev, sizeof(*isys), GFP_KERNEL);
 	if (!isys)
 		return -ENOMEM;
@@ -1298,8 +1172,7 @@ static int isys_probe(struct ipu_bus_device *adev)
 	isys->pdata = adev->pdata;
 
 	/* initial streamID for different sensor types */
-	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
-	    ipu_ver == IPU_VER_6EP_MTL) {
+	if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP) {
 		isys->sensor_info.vc1_data_start =
 			IPU6_FW_ISYS_VC1_SENSOR_DATA_START;
 		isys->sensor_info.vc1_data_end =
@@ -1350,7 +1223,6 @@ static int isys_probe(struct ipu_bus_device *adev)
 	spin_lock_init(&isys->lock);
 	spin_lock_init(&isys->power_lock);
 	isys->power = 0;
-	isys->phy_termcal_val = 0;
 
 	mutex_init(&isys->mutex);
 	mutex_init(&isys->stream_mutex);
@@ -1395,28 +1267,30 @@ static int isys_probe(struct ipu_bus_device *adev)
 	ipu_trace_init(adev->isp, isys->pdata->base, &adev->dev,
 		       isys_trace_blocks);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_add_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
-#else
-	pm_qos_add_request(&isys->pm_qos, PM_QOS_CPU_DMA_LATENCY,
-			   PM_QOS_DEFAULT_VALUE);
-#endif
 	alloc_fw_msg_bufs(isys, 20);
 
 	rval = isys_register_devices(isys);
 	if (rval)
 		goto out_remove_pkg_dir_shared_buffer;
+#if defined(IPU_IWAKE_ENABLE)
 	rval = isys_iwake_watermark_init(isys);
 	if (rval)
 		goto out_unregister_devices;
+#endif
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
+#ifdef IPU_TRACE_EVENT
+	trace_printk("E|%d|TMWK\n", rval);
+#endif
 	return 0;
 
+#if defined(IPU_IWAKE_ENABLE)
 out_unregister_devices:
 	isys_iwake_watermark_cleanup(isys);
 	isys_unregister_devices(isys);
+#endif
 out_remove_pkg_dir_shared_buffer:
 	if (!isp->secure_mode)
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
@@ -1429,6 +1303,10 @@ release_firmware:
 	if (!isp->secure_mode)
 		release_firmware(isys->fw);
 	ipu_trace_uninit(&adev->dev);
+
+#ifdef IPU_TRACE_EVENT
+	trace_printk("E|%d|TMWK\n", rval);
+#endif
 
 	mutex_destroy(&isys->mutex);
 	mutex_destroy(&isys->stream_mutex);
@@ -1606,11 +1484,7 @@ int isys_isr_one(struct ipu_bus_device *adev)
 				struct vb2_buffer *vb;
 
 				vb = ipu_isys_buffer_to_vb2_buffer(ib);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
-				vb->v4l2_buf.field = pipe->cur_field;
-#else
 				to_vb2_v4l2_buffer(vb)->field = pipe->cur_field;
-#endif
 				list_del(&ib->head);
 
 				ipu_isys_queue_buf_done(ib);
@@ -1623,8 +1497,14 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_SOF:
 		if (pipe->csi2)
-			ipu_isys_csi2_sof_event(pipe->csi2);
+			ipu_isys_csi2_sof_event(pipe->csi2, pipe->vc);
 
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+#ifdef IPU_TPG_FRAME_SYNC
+		if (pipe->tpg)
+			ipu_isys_tpg_sof_event(pipe->tpg);
+#endif
+#endif
 		pipe->seq[pipe->seq_index].sequence =
 		    atomic_read(&pipe->sequence) - 1;
 		pipe->seq[pipe->seq_index].timestamp = ts;
@@ -1637,7 +1517,14 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		break;
 	case IPU_FW_ISYS_RESP_TYPE_FRAME_EOF:
 		if (pipe->csi2)
-			ipu_isys_csi2_eof_event(pipe->csi2);
+			ipu_isys_csi2_eof_event(pipe->csi2, pipe->vc);
+
+#ifdef CONFIG_VIDEO_INTEL_IPU_TPG
+#ifdef IPU_TPG_FRAME_SYNC
+		if (pipe->tpg)
+			ipu_isys_tpg_eof_event(pipe->tpg);
+#endif
+#endif
 
 		dev_dbg(&adev->dev,
 			"eof: handle %d: (index %u), timestamp 0x%16.16llx\n",
@@ -1657,6 +1544,35 @@ leave:
 	return 0;
 }
 
+#ifdef IPU_IRQ_POLL
+static void isys_isr_poll(struct ipu_bus_device *adev)
+{
+	struct ipu_isys *isys = ipu_bus_get_drvdata(adev);
+
+	if (!isys->fwcom) {
+		dev_dbg(&isys->adev->dev,
+			"got interrupt but device not configured yet\n");
+		return;
+	}
+
+	mutex_lock(&isys->mutex);
+	isys_isr(adev);
+	mutex_unlock(&isys->mutex);
+}
+
+int ipu_isys_isr_run(void *ptr)
+{
+	struct ipu_isys *isys = ptr;
+
+	while (!kthread_should_stop()) {
+		usleep_range(500, 1000);
+		if (isys->stream_opened)
+			isys_isr_poll(isys->adev);
+	}
+
+	return 0;
+}
+#endif
 static struct ipu_bus_driver isys_driver = {
 	.probe = isys_probe,
 	.remove = isys_remove,
@@ -1674,10 +1590,7 @@ module_ipu_bus_driver(isys_driver);
 static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6SE_PCI_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_P_PCI_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_ADL_N_PCI_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_RPL_P_PCI_ID)},
-	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_MTL_PCI_ID)},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6EP_PCI_ID)},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);

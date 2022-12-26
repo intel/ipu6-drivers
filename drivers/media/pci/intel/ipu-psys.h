@@ -10,6 +10,9 @@
 #include "ipu.h"
 #include "ipu-pdata.h"
 #include "ipu-fw-psys.h"
+#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+#include "ipu-psys-virt.h"
+#endif
 #include "ipu-platform-psys.h"
 
 #define IPU_PSYS_PG_POOL_SIZE 16
@@ -19,6 +22,7 @@
 #define IPU_PSYS_EVENT_FRAGMENT_COMPLETE IPU_FW_PSYS_EVENT_TYPE_SUCCESS
 #define IPU_PSYS_CLOSE_TIMEOUT_US   50
 #define IPU_PSYS_CLOSE_TIMEOUT (100000 / IPU_PSYS_CLOSE_TIMEOUT_US)
+#define IPU_PSYS_WORK_QUEUE		system_power_efficient_wq
 #define IPU_MAX_RESOURCES 128
 
 /* Opaque structure. Do not access fields. */
@@ -95,6 +99,9 @@ struct ipu_psys {
 	struct ia_css_syscom_context *dev_ctx;
 	struct ia_css_syscom_config *syscom_config;
 	struct ia_css_psys_server_init *server_init;
+#ifdef IPU_IRQ_POLL
+	struct task_struct *isr_thread;
+#endif
 	struct task_struct *sched_cmd_thread;
 	wait_queue_head_t sched_cmd_wq;
 	atomic_t wakeup_count;  /* Psys schedule thread wakeup count */
@@ -119,6 +126,9 @@ struct ipu_psys {
 };
 
 struct ipu_psys_fh {
+#if defined(CONFIG_VIDEO_INTEL_IPU_ACRN) && defined(CONFIG_VIDEO_INTEL_IPU_VIRTIO_BE)
+	const struct psys_fops_virt *vfops;
+#endif
 	struct ipu_psys *psys;
 	struct mutex mutex;	/* Protects bufmap & kcmds fields */
 	struct list_head list;

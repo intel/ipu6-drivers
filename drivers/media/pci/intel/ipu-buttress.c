@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2020 Intel Corporation
 
 #include <linux/clk.h>
 #include <linux/clkdev.h>
@@ -23,6 +23,11 @@
 #include "ipu-buttress.h"
 #include "ipu-platform-buttress-regs.h"
 #include "ipu-cpd.h"
+#ifdef IPU_TRACE_EVENT
+#define CREATE_TRACE_POINTS
+#define IPU_PERF_REG_TRACE
+#include "ipu-trace-event.h"
+#endif
 
 #define BOOTLOADER_STATUS_OFFSET       0x15c
 
@@ -376,6 +381,12 @@ irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr)
 		return IRQ_HANDLED;
 	}
 
+#ifdef IPU_TRACE_EVENT
+	trace_ipu_perf_reg(BUTTRESS_REG_IS_FREQ_CTL,
+			   readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL));
+	trace_ipu_perf_reg(BUTTRESS_REG_PS_FREQ_CTL,
+			   readl(isp->base + BUTTRESS_REG_PS_FREQ_CTL));
+#endif
 	irq_status = readl(isp->base + reg_irq_sts);
 	if (!irq_status) {
 		pm_runtime_put(&isp->pdev->dev);
@@ -439,15 +450,6 @@ irqreturn_t ipu_buttress_isr(int irq, void *isp_ptr)
 				"BUTTRESS_ISR_SAI_VIOLATION\n");
 			WARN_ON(1);
 		}
-
-		if (irq_status & (BUTTRESS_ISR_IS_FATAL_MEM_ERR |
-				  BUTTRESS_ISR_PS_FATAL_MEM_ERR)) {
-			dev_err(&isp->pdev->dev,
-				"BUTTRESS_ISR_FATAL_MEM_ERR\n");
-		}
-
-		if (irq_status & BUTTRESS_ISR_UFI_ERROR)
-			dev_err(&isp->pdev->dev, "BUTTRESS_ISR_UFI_ERROR\n");
 
 		irq_status = readl(isp->base + reg_irq_sts);
 	} while (irq_status && !isp->flr_done);
@@ -521,6 +523,12 @@ int ipu_buttress_power(struct device *dev,
 
 	ctrl->started = !ret && on;
 
+#ifdef IPU_TRACE_EVENT
+	trace_ipu_perf_reg(BUTTRESS_REG_IS_FREQ_CTL,
+			   readl(isp->base + BUTTRESS_REG_IS_FREQ_CTL));
+	trace_ipu_perf_reg(BUTTRESS_REG_PS_FREQ_CTL,
+			   readl(isp->base + BUTTRESS_REG_PS_FREQ_CTL));
+#endif
 	mutex_unlock(&isp->buttress.power_mutex);
 
 	return ret;
@@ -734,11 +742,8 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 {
 	struct page **pages;
 	const void *addr;
-	unsigned long n_pages;
-	int rval, i;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-	int nents;
-#endif
+	unsigned long n_pages, i;
+	int rval;
 
 	n_pages = PAGE_ALIGN(fw->size) >> PAGE_SHIFT;
 
@@ -765,26 +770,14 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 		goto out;
 	}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-	nents = dma_map_sg(&sys->dev, sgt->sgl, sgt->orig_nents, DMA_TO_DEVICE);
-	if (!nents) {
-		rval = -ENOMEM;
-		sg_free_table(sgt);
-		goto out;
-	}
-	sgt->nents = nents;
-	dma_sync_sg_for_device(&sys->dev, sgt->sgl, sgt->orig_nents,
-			       DMA_TO_DEVICE);
-#else
-	rval = dma_map_sgtable(&sys->dev, sgt, DMA_TO_DEVICE, 0);
-	if (rval < 0) {
+	n_pages = dma_map_sg(&sys->dev, sgt->sgl, sgt->nents, DMA_TO_DEVICE);
+	if (n_pages != sgt->nents) {
 		rval = -ENOMEM;
 		sg_free_table(sgt);
 		goto out;
 	}
 
-	dma_sync_sgtable_for_device(&sys->dev, sgt, DMA_TO_DEVICE);
-#endif
+	dma_sync_sg_for_device(&sys->dev, sgt->sgl, sgt->nents, DMA_TO_DEVICE);
 
 out:
 	kfree(pages);
@@ -983,6 +976,46 @@ struct clk_ipu_sensor {
 };
 
 #define to_clk_ipu_sensor(_hw) container_of(_hw, struct clk_ipu_sensor, hw)
+/*
+ * The dev_id was hard code in platform data, as i2c bus number
+ * may change dynamiclly, we need to update this bus id
+ * accordingly.
+ *
+ * @adapter_id: hardware i2c adapter id, this was fixed in platform data
+ * return: i2c bus id registered in system
+ */
+int ipu_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len)
+{
+	struct i2c_adapter *adapter;
+	char name[32];
+	int i = 0;
+
+	if (adapter_bdf) {
+		while ((adapter = i2c_get_adapter(i)) != NULL) {
+			struct device *parent = adapter->dev.parent;
+			struct device *pp = parent->parent;
+
+			if (pp && !strncmp(adapter_bdf, dev_name(pp), bdf_len))
+				return i;
+			i++;
+		}
+	}
+
+	i = 0;
+	snprintf(name, sizeof(name), "i2c_designware.%d", adapter_id);
+	while ((adapter = i2c_get_adapter(i)) != NULL) {
+		struct device *parent = adapter->dev.parent;
+
+		if (parent && !strncmp(name, dev_name(parent), sizeof(name)))
+			return i;
+		i++;
+	}
+
+	/* Not found, should never happen! */
+	WARN_ON_ONCE(1);
+	return -1;
+}
+EXPORT_SYMBOL_GPL(ipu_get_i2c_bus_id);
 
 int ipu_buttress_tsc_read(struct ipu_device *isp, u64 *val)
 {
@@ -1007,32 +1040,6 @@ int ipu_buttress_tsc_read(struct ipu_device *isp, u64 *val)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(ipu_buttress_tsc_read);
-
-int ipu_buttress_isys_freq_set(void *data, u64 val)
-{
-	struct ipu_device *isp = data;
-	int rval;
-
-	if (val < BUTTRESS_MIN_FORCE_IS_FREQ ||
-	    val > BUTTRESS_MAX_FORCE_IS_FREQ)
-		return -EINVAL;
-
-	rval = pm_runtime_get_sync(&isp->isys->dev);
-	if (rval < 0) {
-		pm_runtime_put(&isp->isys->dev);
-		dev_err(&isp->pdev->dev, "Runtime PM failed (%d)\n", rval);
-		return rval;
-	}
-
-	do_div(val, BUTTRESS_IS_FREQ_STEP);
-	if (val)
-		ipu_buttress_set_isys_ratio(isp, val);
-
-	pm_runtime_put(&isp->isys->dev);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(ipu_buttress_isys_freq_set);
 
 #ifdef CONFIG_DEBUG_FS
 
@@ -1159,6 +1166,31 @@ static int ipu_buttress_isys_freq_get(void *data, u64 *val)
 	return 0;
 }
 
+static int ipu_buttress_isys_freq_set(void *data, u64 val)
+{
+	struct ipu_device *isp = data;
+	int rval;
+
+	if (val < BUTTRESS_MIN_FORCE_IS_FREQ ||
+	    val > BUTTRESS_MAX_FORCE_IS_FREQ)
+		return -EINVAL;
+
+	rval = pm_runtime_get_sync(&isp->isys->dev);
+	if (rval < 0) {
+		pm_runtime_put(&isp->isys->dev);
+		dev_err(&isp->pdev->dev, "Runtime PM failed (%d)\n", rval);
+		return rval;
+	}
+
+	do_div(val, BUTTRESS_IS_FREQ_STEP);
+	if (val)
+		ipu_buttress_set_isys_ratio(isp, val);
+
+	pm_runtime_put(&isp->isys->dev);
+
+	return 0;
+}
+
 DEFINE_SIMPLE_ATTRIBUTE(ipu_buttress_psys_force_freq_fops,
 			ipu_buttress_psys_force_freq_get,
 			ipu_buttress_psys_force_freq_set, "%llu\n");
@@ -1228,16 +1260,31 @@ err:
 
 u64 ipu_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu_device *isp)
 {
+	u32 ref_clk, val;
 	u64 ns = ticks * 10000;
 
-	/*
-	 * converting TSC tick count to ns is calculated by:
-	 * Example (TSC clock frequency is 19.2MHz):
-	 * ns = ticks * 1000 000 000 / 19.2Mhz
-	 *    = ticks * 1000 000 000 / 19200000Hz
-	 *    = ticks * 10000 / 192 ns
-	 */
-	do_div(ns, isp->buttress.ref_clk);
+	val = readl(isp->base + BUTTRESS_REG_BTRS_CTRL);
+	val &= BUTTRESS_REG_BTRS_CTRL_REF_CLK_IND;
+	val >>= 8;
+
+	switch (val) {
+	case 0x0:
+		ref_clk = 240;
+		break;
+	case 0x1:
+		ref_clk = 192;
+		break;
+	case 0x2:
+		ref_clk = 384;
+		break;
+	default:
+		dev_warn(&isp->pdev->dev,
+			 "Unsupported ref clock, use 19.2Mhz by default.\n");
+		ref_clk = 192;
+		break;
+	}
+
+	do_div(ns, ref_clk);
 
 	return ns;
 }
@@ -1293,7 +1340,6 @@ int ipu_buttress_restore(struct ipu_device *isp)
 int ipu_buttress_init(struct ipu_device *isp)
 {
 	struct ipu_buttress *b = &isp->buttress;
-	u32 val;
 	int rval, ipc_reset_retry = BUTTRESS_CSE_IPC_RESET_RETRY;
 
 	mutex_init(&b->power_mutex);
@@ -1326,37 +1372,9 @@ int ipu_buttress_init(struct ipu_device *isp)
 	dev_info(&isp->pdev->dev, "IPU in %s mode\n",
 		 isp->secure_mode ? "secure" : "non-secure");
 
-	dev_info(&isp->pdev->dev, "IPU secure touch = 0x%x\n",
-		 readl(isp->base + BUTTRESS_REG_SECURITY_TOUCH));
-
-	dev_info(&isp->pdev->dev, "IPU camera mask = 0x%x\n",
-		 readl(isp->base + BUTTRESS_REG_CAMERA_MASK));
-
 	b->wdt_cached_value = readl(isp->base + BUTTRESS_REG_WDT);
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_CLEAR);
 	writel(BUTTRESS_IRQS, isp->base + BUTTRESS_REG_ISR_ENABLE);
-
-	/* get ref_clk frequency by reading the indication in btrs control */
-	val = readl(isp->base + BUTTRESS_REG_BTRS_CTRL);
-	val &= BUTTRESS_REG_BTRS_CTRL_REF_CLK_IND;
-	val >>= 8;
-
-	switch (val) {
-	case 0x0:
-		b->ref_clk = 240;
-		break;
-	case 0x1:
-		b->ref_clk = 192;
-		break;
-	case 0x2:
-		b->ref_clk = 384;
-		break;
-	default:
-		dev_warn(&isp->pdev->dev,
-			 "Unsupported ref clock, use 19.2Mhz by default.\n");
-		b->ref_clk = 192;
-		break;
-	}
 
 	rval = device_create_file(&isp->pdev->dev,
 				  &dev_attr_psys_fused_min_freq);

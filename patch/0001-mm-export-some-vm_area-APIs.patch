@@ -1,0 +1,40 @@
+From ab5d4b5539cbd1845937a52a3cb73b1626e3b0d0 Mon Sep 17 00:00:00 2001
+From: Wanhui Sun <wanhui.sun@intel.com>
+Date: Fri, 12 Oct 2018 15:52:46 +0800
+Subject: [PATCH 01/81] mm:export some vm_area APIs
+
+These APIs are needed in DMA mapping API implementation
+as a module. Device specific IOMMUs with associated DMA
+mapping implementations should be buildable as modules.
+
+Change-Id: Ida2ae677bf3aff52d8509cace34b9ee3e72ed716
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: Meng Wei <wei.meng@intel.com>
+Signed-off-by: lijuncax <lijunx.cai@intel.com>
+---
+ mm/vmalloc.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/mm/vmalloc.c b/mm/vmalloc.c
+index fff03a331314..02bf0d47e1c7 100644
+--- a/mm/vmalloc.c
++++ b/mm/vmalloc.c
+@@ -2122,6 +2122,7 @@ struct vm_struct *get_vm_area_caller(unsigned long size, unsigned long flags,
+ 	return __get_vm_area_node(size, 1, flags, VMALLOC_START, VMALLOC_END,
+ 				  NUMA_NO_NODE, GFP_KERNEL, caller);
+ }
++EXPORT_SYMBOL_GPL(get_vm_area_caller);
+ 
+ /**
+  * find_vm_area - find a continuous kernel virtual area
+@@ -2143,6 +2144,7 @@ struct vm_struct *find_vm_area(const void *addr)
+ 
+ 	return va->vm;
+ }
++EXPORT_SYMBOL_GPL(find_vm_area);
+ 
+ /**
+  * remove_vm_area - find and remove a continuous kernel virtual area
+-- 
+2.17.1
+

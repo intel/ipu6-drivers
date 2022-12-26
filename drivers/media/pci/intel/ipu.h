@@ -16,17 +16,13 @@
 
 #define IPU6_PCI_ID	0x9a19
 #define IPU6SE_PCI_ID	0x4e19
-#define IPU6EP_ADL_P_PCI_ID	0x465d
-#define IPU6EP_ADL_N_PCI_ID	0x462e
-#define IPU6EP_RPL_P_PCI_ID	0xa75d
-#define IPU6EP_MTL_PCI_ID	0x7d19
+#define IPU6EP_PCI_ID	0x465d
 
 enum ipu_version {
 	IPU_VER_INVALID = 0,
 	IPU_VER_6,
 	IPU_VER_6SE,
 	IPU_VER_6EP,
-	IPU_VER_6EP_MTL,
 };
 
 /*
@@ -81,6 +77,7 @@ struct ipu_device {
 	unsigned int pkg_dir_size;
 	struct sg_table fw_sgt;
 
+	const struct firmware *spdata_fw;
 	void __iomem *base;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *ipu_dir;
@@ -95,6 +92,7 @@ struct ipu_device {
 
 #define IPU_DMA_MASK	39
 #define IPU_LIB_CALL_TIMEOUT_MS		2000
+#define IPU_LIB_CALL_STOP_CLOSE_TIMEOUT_MS		200
 #define IPU_PSYS_CMD_TIMEOUT_MS	2000
 #define IPU_PSYS_OPEN_TIMEOUT_US	   50
 #define IPU_PSYS_OPEN_RETRY (10000 / IPU_PSYS_OPEN_TIMEOUT_US)
