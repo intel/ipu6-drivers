@@ -44,8 +44,9 @@
 #define GDA_MEMOPEN_THRESHOLD_INDEX		3
 
 #define DEFAULT_DID_RATIO			90
-#define DEFAULT_LTR_VALUE			200
-#define MINIMUM_MEM_OPEN_THRESHOLD		4
+#define DEFAULT_LTR_VALUE			1023
+#define DEFAULT_IWAKE_THRESHOLD			0x42
+#define MINIMUM_MEM_OPEN_THRESHOLD		0xc
 #define DEFAULT_MEM_OPEN_TIME			10
 #define ONE_THOUSAND_MICROSECOND		1000
 /* One page is 2KB, 8 x 16 x 16 = 2048B = 2KB */
@@ -418,8 +419,12 @@ void update_watermark_setting(struct ipu_isys *isys)
 
 	set_iwake_ltrdid(isys, ltr, did, ltr_did_type);
 	mutex_lock(&iwake_watermark->mutex);
-	set_iwake_register(isys, GDA_IWAKE_THRESHOLD_INDEX,
-			   iwake_threshold);
+	if (ipu_ver == IPU_VER_6EP_MTL)
+		set_iwake_register(isys, GDA_IWAKE_THRESHOLD_INDEX,
+				   DEFAULT_IWAKE_THRESHOLD);
+	else
+		set_iwake_register(isys, GDA_IWAKE_THRESHOLD_INDEX,
+				   iwake_threshold);
 
 	if (ipu_ver == IPU_VER_6EP_MTL) {
 		/* Calculate number of pages that will be filled in 10 usec */
@@ -430,6 +435,8 @@ void update_watermark_setting(struct ipu_isys *isys)
 		mem_open_threshold = max_t(u32, MINIMUM_MEM_OPEN_THRESHOLD,
 					   page_num);
 
+		dev_dbg(&isys->adev->dev, "%s mem_open_threshold: %u\n",
+			__func__, mem_open_threshold);
 		set_iwake_register(isys, GDA_MEMOPEN_THRESHOLD_INDEX,
 				   mem_open_threshold);
 	}
@@ -440,7 +447,7 @@ void update_watermark_setting(struct ipu_isys *isys)
 	iwake_critical_threshold = iwake_threshold +
 		(IS_PIXEL_BUFFER_PAGES - iwake_threshold) / 2;
 
-	dev_dbg(&isys->adev->dev, "%s threshold: %u  critical: %u",
+	dev_dbg(&isys->adev->dev, "%s threshold: %u  critical: %u\n",
 		__func__, iwake_threshold, iwake_critical_threshold);
 
 	set_iwake_register(isys, GDA_IRQ_CRITICAL_THRESHOLD_INDEX,
