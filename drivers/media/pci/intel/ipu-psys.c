@@ -622,7 +622,11 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 		struct iosys_map dmap;
 
 		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+		dma_buf_vunmap_unlocked(kbuf->dbuf, &dmap);
+#else
 		dma_buf_vunmap(kbuf->dbuf, &dmap);
+#endif
 	}
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 	if (kbuf->kaddr) {
@@ -635,10 +639,17 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 	if (kbuf->kaddr)
 		dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
 #endif
-	if (kbuf->sgt)
+	if (kbuf->sgt) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+		dma_buf_unmap_attachment_unlocked(kbuf->db_attach,
+						  kbuf->sgt,
+						  DMA_BIDIRECTIONAL);
+#else
 		dma_buf_unmap_attachment(kbuf->db_attach,
 					 kbuf->sgt,
 					 DMA_BIDIRECTIONAL);
+#endif
+	}
 	if (kbuf->db_attach)
 		dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
 	dma_buf_put(kbuf->dbuf);
@@ -828,7 +839,11 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 		goto kbuf_map_fail;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+	kbuf->sgt = dma_buf_map_attachment_unlocked(kbuf->db_attach, DMA_BIDIRECTIONAL);
+#else
 	kbuf->sgt = dma_buf_map_attachment(kbuf->db_attach, DMA_BIDIRECTIONAL);
+#endif
 	if (IS_ERR_OR_NULL(kbuf->sgt)) {
 		ret = -EINVAL;
 		kbuf->sgt = NULL;
@@ -839,7 +854,11 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+	ret = dma_buf_vmap_unlocked(kbuf->dbuf, &dmap);
+#else
 	ret = dma_buf_vmap(kbuf->dbuf, &dmap);
+#endif
 	if (ret) {
 		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
 		goto kbuf_map_fail;
