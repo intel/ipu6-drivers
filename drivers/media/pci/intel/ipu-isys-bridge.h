@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2022 Intel Corporation */
+/* Author: Dan Scally <djrscally@gmail.com> */
 
 #ifndef __IPU_BRIDGE_H
 #define __IPU_BRIDGE_H
