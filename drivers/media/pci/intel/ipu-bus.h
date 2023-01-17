@@ -12,6 +12,8 @@
 
 #define IPU_BUS_NAME	IPU_NAME "-bus"
 
+extern bool ipu_bus_ready_to_probe;
+
 struct ipu_buttress_ctrl;
 struct ipu_subsystem_trace_config;
 
