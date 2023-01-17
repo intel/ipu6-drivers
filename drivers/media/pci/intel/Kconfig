@@ -31,7 +31,7 @@ config VIDEO_INTEL_IPU_TPG
 
 config IPU_ISYS_BRIDGE
 	bool "Intel IPU driver bridge"
-	default n
+	default y
 	depends on VIDEO_INTEL_IPU6
 	help
 	  If selected, IPU isys bridge would be enabled.

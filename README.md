@@ -19,6 +19,7 @@ two ways are available:
 ### Build with kernel source tree
 * Tested with kernel 6.0
 * Check out kernel
+* Apply `patch.diff` to kernel source code
 * Copy repo content (exclude Makefile,drivers/media/i2c/Makefile) to kernel source
 * Modify drivers/media/pci/Kconfig
 
@@ -33,7 +34,8 @@ source "drivers/media/pci/intel/Kconfig"
 
 ```
 CONFIG_VIDEO_INTEL_IPU6=m
-CONFIG_IPU_ISYS_BRIDGE=n
+CONFIG_IPU_ISYS_BRIDGE=y
+CONFIG_INTEL_SKL_INT3472=m
 ```
 
 ### Build outside kernel source tree
