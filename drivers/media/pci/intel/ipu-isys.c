@@ -617,7 +617,7 @@ static int isys_fwnode_parse(struct device *dev,
 	return 0;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 15, 71)
 static int isys_notifier_init(struct ipu_isys *isys)
 {
 	struct ipu_device *isp = isys->adev->isp;

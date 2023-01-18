@@ -40,6 +40,10 @@
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW16},
+	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
+	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_UYVY, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_YUYV, 16, 16, 0, MEDIA_BUS_FMT_YUYV8_1X16,
@@ -75,6 +79,8 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_SRGGB8, 8, 8, 0, MEDIA_BUS_FMT_SRGGB8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
+	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
+	 IPU_FW_ISYS_MIPI_DATA_TYPE_RAW_8},
 	{}
 };
 
@@ -85,6 +91,10 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	{V4L2_PIX_FMT_Y210, 20, 20, 0, MEDIA_BUS_FMT_YUYV10_1X20,
 	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
 #endif
+	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
+	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_UYVY, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_YUYV, 16, 16, 0, MEDIA_BUS_FMT_YUYV8_1X16,
@@ -120,6 +130,8 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
 	{V4L2_PIX_FMT_SRGGB10P, 10, 10, 0, MEDIA_BUS_FMT_SRGGB10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
+	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
+	 IPU_FW_ISYS_MIPI_DATA_TYPE_RAW_8},
 	{V4L2_PIX_FMT_SBGGR8, 8, 8, 0, MEDIA_BUS_FMT_SBGGR8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_SGBRG8, 8, 8, 0, MEDIA_BUS_FMT_SGBRG8_1X8,
@@ -1462,13 +1474,12 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 	}
 
 	/* Get the sub stream info and set the current pipe's vc id */
-	for (i = CSI2_BE_SOC_PAD_SOURCE(0);
-	     i < NR_OF_CSI2_BE_SOC_SOURCE_PADS; i++) {
+	for (i = 0; i < CSI2_BE_SOC_SOURCE_PADS_NUM; i++) {
 		/*
 		 * index is sub stream id. sub stream id is
 		 * equalto BE SOC source pad id - sink pad count
 		 */
-		qm.index = i - NR_OF_CSI2_BE_SOC_SINK_PADS;
+		qm.index = i;
 		ret = v4l2_querymenu(sd->ctrl_handler, &qm);
 		if (ret)
 			continue;
@@ -1576,11 +1587,10 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 				continue;
 			}
 			pad_id = source_pad->index;
-			for (i = CSI2_BE_SOC_PAD_SOURCE(0);
-			     i < NR_OF_CSI2_BE_SOC_SOURCE_PADS; i++) {
-				if (ip->asv[i - 1].substream ==
+			for (i = 0; i < CSI2_BE_SOC_SOURCE_PADS_NUM; i++) {
+				if (ip->asv[i].substream ==
 				(pad_id - NR_OF_CSI2_BE_SOC_SINK_PADS)) {
-					entity_vc = ip->asv[i - 1].vc;
+					entity_vc = ip->asv[i].vc;
 					break;
 				}
 			}
@@ -1748,12 +1758,14 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->interlaced = false;
 
 	rval = media_entity_enum_init(&ip->entity_enum, mdev);
-	if (rval)
+	if (rval) {
+		dev_err(dev, "entity enum init failed\n");
 		return rval;
+	}
 
 	rval = media_pipeline_start_by_vc(av, &ip->pipe);
 	if (rval < 0) {
-		dev_dbg(dev, "pipeline start failed\n");
+		dev_err(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
 	}
 
@@ -1764,8 +1776,10 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	rval = media_graph_walk_init(&graph, mdev);
-	if (rval)
+	if (rval) {
+		dev_err(dev, "graph walk init failed\n");
 		goto out_pipeline_stop;
+	}
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
