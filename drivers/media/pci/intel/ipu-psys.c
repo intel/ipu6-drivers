@@ -296,6 +296,7 @@ static int ipu_dma_buf_attach(struct dma_buf *dbuf, struct device *dev,
 {
 	struct ipu_psys_kbuffer *kbuf = dbuf->priv;
 	struct ipu_dma_buf_attach *ipu_attach;
+	int ret;
 
 	ipu_attach = kzalloc(sizeof(*ipu_attach), GFP_KERNEL);
 	if (!ipu_attach)
@@ -307,6 +308,12 @@ static int ipu_dma_buf_attach(struct dma_buf *dbuf, struct device *dev,
 	ipu_attach->len = kbuf->len;
 	ipu_attach->userptr = kbuf->userptr;
 
+	ret = ipu_psys_get_userpages(ipu_attach);
+	if (ret) {
+		kfree(ipu_attach);
+		return ret;
+	}
+
 	attach->priv = ipu_attach;
 	return 0;
 }
@@ -316,6 +323,7 @@ static void ipu_dma_buf_detach(struct dma_buf *dbuf,
 {
 	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
 
+	ipu_psys_put_userpages(ipu_attach);
 	kfree(ipu_attach);
 	attach->priv = NULL;
 }
@@ -331,16 +339,11 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 #endif
 	int ret;
 
-	ret = ipu_psys_get_userpages(ipu_attach);
-	if (ret)
-		return NULL;
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
 	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
 			       ipu_attach->sgt->orig_nents, dir, &attrs);
 	if (!ret) {
-		ipu_psys_put_userpages(ipu_attach);
 		dev_dbg(attach->dev, "buf map failed\n");
 
 		return ERR_PTR(-EIO);
@@ -351,7 +354,6 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
 			       ipu_attach->sgt->orig_nents, dir, attrs);
 	if (!ret) {
-		ipu_psys_put_userpages(ipu_attach);
 		dev_dbg(attach->dev, "buf map failed\n");
 
 		return ERR_PTR(-EIO);
@@ -361,7 +363,6 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 	attrs = DMA_ATTR_SKIP_CPU_SYNC;
 	ret = dma_map_sgtable(attach->dev, ipu_attach->sgt, dir, attrs);
 	if (ret < 0) {
-		ipu_psys_put_userpages(ipu_attach);
 		dev_dbg(attach->dev, "buf map failed\n");
 
 		return ERR_PTR(-EIO);
@@ -381,14 +382,11 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
 			      struct sg_table *sgt, enum dma_data_direction dir)
 {
-	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 	dma_unmap_sg(attach->dev, sgt->sgl, sgt->orig_nents, dir);
 #else
 	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
 #endif
-	ipu_psys_put_userpages(ipu_attach);
 }
 
 static int ipu_dma_buf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
