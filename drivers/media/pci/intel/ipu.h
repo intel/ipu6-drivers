@@ -89,6 +89,7 @@ struct ipu_device {
 	bool flr_done;
 	bool ipc_reinit;
 	bool secure_mode;
+	bool ipu_bus_ready_to_probe;
 
 	int (*cpd_fw_reload)(struct ipu_device *isp);
 };
@@ -108,13 +109,16 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 		   struct device *device);
 extern enum ipu_version ipu_ver;
 void ipu_internal_pdata_init(void);
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
+int cio2_bridge_init(struct pci_dev *cio2);
+#endif
 
 /* Helpers for building against various kernel versions */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 #include <media/media-entity.h>
 static inline struct media_pipeline *media_entity_pipeline(struct media_entity *entity)
 {
-       return entity->pipe;
+	return entity->pipe;
 }
 #endif
 

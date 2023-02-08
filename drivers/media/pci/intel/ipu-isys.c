@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2021 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -39,10 +39,20 @@
 
 #define ISYS_PM_QOS_VALUE	300
 
-#define IPU_BUTTRESS_FABIC_CONTROL	    0x68
-#define GDA_ENABLE_IWAKE_INDEX		    2
-#define GDA_IWAKE_THRESHOLD_INDEX           1
-#define GDA_IRQ_CRITICAL_THRESHOLD_INDEX    0
+#define IPU_BUTTRESS_FABIC_CONTROL		0x68
+#define GDA_ENABLE_IWAKE_INDEX			2
+#define GDA_IWAKE_THRESHOLD_INDEX		1
+#define GDA_IRQ_CRITICAL_THRESHOLD_INDEX	0
+#define GDA_MEMOPEN_THRESHOLD_INDEX		3
+
+#define DEFAULT_DID_RATIO			90
+#define DEFAULT_LTR_VALUE			1023
+#define DEFAULT_IWAKE_THRESHOLD			0x42
+#define MINIMUM_MEM_OPEN_THRESHOLD		0xc
+#define DEFAULT_MEM_OPEN_TIME			10
+#define ONE_THOUSAND_MICROSECOND		1000
+/* One page is 2KB, 8 x 16 x 16 = 2048B = 2KB */
+#define ISF_DMA_TOP_GDA_PROFERTY_PAGE_SIZE	0x800
 
 /* LTR & DID value are 10 bit at most */
 #define LTR_DID_VAL_MAX		1023
@@ -52,6 +62,8 @@
 #define LTR_DID_PKGC_8		100
 #define LTR_SCALE_DEFAULT	5
 #define LTR_SCALE_1024NS	2
+#define DID_SCALE_1US		2
+#define DID_SCALE_32US		3
 #define REG_PKGC_PMON_CFG	0xB00
 
 #define VAL_PKGC_PMON_CFG_RESET 0x38
@@ -89,6 +101,7 @@ enum ltr_did_type {
 	LTR_IWAKE_OFF,
 	LTR_ISYS_ON,
 	LTR_ISYS_OFF,
+	LTR_ENHANNCE_IWAKE,
 	LTR_TYPE_MAX
 };
 
@@ -469,8 +482,8 @@ static void set_iwake_ltrdid(struct ipu_isys *isys,
 			     u16 did,
 			     enum ltr_did_type use)
 {
-	/* did_scale will set to 2= 1us */
-	u16 ltr_val, ltr_scale, did_val;
+	u16 ltr_val, ltr_scale = LTR_SCALE_1024NS;
+	u16 did_val, did_scale = DID_SCALE_1US;
 	union fabric_ctrl fc;
 	struct ipu_device *isp = isys->adev->isp;
 
@@ -486,12 +499,26 @@ static void set_iwake_ltrdid(struct ipu_isys *isys,
 	case LTR_IWAKE_OFF:
 		ltr_val = LTR_DID_PKGC_2R;
 		did_val = LTR_DID_PKGC_2R;
-		ltr_scale = LTR_SCALE_1024NS;
 		break;
 	case LTR_ISYS_OFF:
 		ltr_val   = LTR_DID_VAL_MAX;
 		did_val   = LTR_DID_VAL_MAX;
 		ltr_scale = LTR_SCALE_DEFAULT;
+		break;
+	case LTR_ENHANNCE_IWAKE:
+		if (ltr == LTR_DID_VAL_MAX && did == LTR_DID_VAL_MAX) {
+			ltr_val = LTR_DID_VAL_MAX;
+			did_val = LTR_DID_VAL_MAX;
+			ltr_scale = LTR_SCALE_DEFAULT;
+		} else if (did < ONE_THOUSAND_MICROSECOND) {
+			ltr_val = ltr;
+			did_val = did;
+		} else {
+			ltr_val = ltr;
+			/* div 90% value by 32 to account for scale change */
+			did_val = did / 32;
+			did_scale = DID_SCALE_32US;
+		}
 		break;
 	default:
 		return;
@@ -501,7 +528,7 @@ static void set_iwake_ltrdid(struct ipu_isys *isys,
 	fc.bits.ltr_val = ltr_val;
 	fc.bits.ltr_scale = ltr_scale;
 	fc.bits.did_val = did_val;
-	fc.bits.did_scale = 2;
+	fc.bits.did_scale = did_scale;
 	dev_dbg(&isys->adev->dev,
 		"%s ltr: %d  did: %d", __func__, ltr_val, did_val);
 	writel(fc.value, isp->base + IPU_BUTTRESS_FABIC_CONTROL);
@@ -533,10 +560,10 @@ void update_watermark_setting(struct ipu_isys *isys)
 	struct list_head *stream_node;
 	struct video_stream_watermark *p_watermark;
 	struct ltr_did ltrdid;
-	u16 calc_fill_time_us = 0;
-	u16 ltr = 0;
-	u16 did = 0;
-	u32 iwake_threshold, iwake_critical_threshold;
+	u16 calc_fill_time_us = 0, ltr = 0, did = 0;
+	enum ltr_did_type ltr_did_type;
+	u32 iwake_threshold, iwake_critical_threshold, page_num;
+	u32 mem_open_threshold = 0;
 	u64 threshold_bytes;
 	u64 isys_pb_datarate_mbs = 0;
 	u16 sram_granulrity_shift =
@@ -577,10 +604,17 @@ void update_watermark_setting(struct ipu_isys *isys)
 		set_iwake_register(isys, GDA_IRQ_CRITICAL_THRESHOLD_INDEX,
 				   CRITICAL_THRESHOLD_IWAKE_DISABLE);
 		mutex_unlock(&iwake_watermark->mutex);
+		return;
+	}
+	/* should enable iwake by default according to FW */
+	enable_iwake(isys, true);
+	calc_fill_time_us = (u16)(max_sram_size / isys_pb_datarate_mbs);
+
+	if (ipu_ver == IPU_VER_6EP_MTL) {
+		ltr = DEFAULT_LTR_VALUE;
+		did = calc_fill_time_us * DEFAULT_DID_RATIO / 100;
+		ltr_did_type = LTR_ENHANNCE_IWAKE;
 	} else {
-		/* should enable iwake by default according to FW */
-		enable_iwake(isys, true);
-		calc_fill_time_us = (u16)(max_sram_size / isys_pb_datarate_mbs);
 		get_lut_ltrdid(isys, &ltrdid);
 
 		if (calc_fill_time_us <= ltrdid.lut_fill_time.bits.th0)
@@ -595,37 +629,56 @@ void update_watermark_setting(struct ipu_isys *isys)
 			ltr = ltrdid.lut_ltr.bits.val3;
 
 		did = calc_fill_time_us - ltr;
-
-		threshold_bytes = did * isys_pb_datarate_mbs;
-		/* calculate iwake threshold with 2KB granularity pages */
-		iwake_threshold =
-			max_t(u32, 1, threshold_bytes >> sram_granulrity_shift);
-
-		iwake_threshold = min_t(u32, iwake_threshold, max_sram_size);
-
-		/* set the critical threshold to halfway between
-		 * iwake threshold and the full buffer.
-		 */
-		iwake_critical_threshold = iwake_threshold +
-			(IS_PIXEL_BUFFER_PAGES - iwake_threshold) / 2;
-
-		dev_dbg(&isys->adev->dev, "%s threshold: %u  critical: %u",
-			__func__, iwake_threshold, iwake_critical_threshold);
-		set_iwake_ltrdid(isys, ltr, did, LTR_IWAKE_ON);
-		mutex_lock(&iwake_watermark->mutex);
-		set_iwake_register(isys,
-				   GDA_IWAKE_THRESHOLD_INDEX, iwake_threshold);
-
-		set_iwake_register(isys,
-				   GDA_IRQ_CRITICAL_THRESHOLD_INDEX,
-				   iwake_critical_threshold);
-		mutex_unlock(&iwake_watermark->mutex);
-
-		writel(VAL_PKGC_PMON_CFG_RESET,
-		       isys->adev->isp->base + REG_PKGC_PMON_CFG);
-		writel(VAL_PKGC_PMON_CFG_START,
-		       isys->adev->isp->base + REG_PKGC_PMON_CFG);
+		ltr_did_type = LTR_IWAKE_ON;
 	}
+	threshold_bytes = did * isys_pb_datarate_mbs;
+	/* calculate iwake threshold with 2KB granularity pages */
+	iwake_threshold =
+		max_t(u32, 1, threshold_bytes >> sram_granulrity_shift);
+
+	iwake_threshold = min_t(u32, iwake_threshold, max_sram_size);
+
+	set_iwake_ltrdid(isys, ltr, did, ltr_did_type);
+	mutex_lock(&iwake_watermark->mutex);
+	if (ipu_ver == IPU_VER_6EP_MTL)
+		set_iwake_register(isys, GDA_IWAKE_THRESHOLD_INDEX,
+				   DEFAULT_IWAKE_THRESHOLD);
+	else
+		set_iwake_register(isys, GDA_IWAKE_THRESHOLD_INDEX,
+				   iwake_threshold);
+
+	if (ipu_ver == IPU_VER_6EP_MTL) {
+		/* Calculate number of pages that will be filled in 10 usec */
+		page_num = (DEFAULT_MEM_OPEN_TIME * isys_pb_datarate_mbs) /
+			    ISF_DMA_TOP_GDA_PROFERTY_PAGE_SIZE;
+		page_num += ((DEFAULT_MEM_OPEN_TIME * isys_pb_datarate_mbs) %
+			     ISF_DMA_TOP_GDA_PROFERTY_PAGE_SIZE) ? 1 : 0;
+		mem_open_threshold = max_t(u32, MINIMUM_MEM_OPEN_THRESHOLD,
+					   page_num);
+
+		dev_dbg(&isys->adev->dev, "%s mem_open_threshold: %u\n",
+			__func__, mem_open_threshold);
+		set_iwake_register(isys, GDA_MEMOPEN_THRESHOLD_INDEX,
+				   mem_open_threshold);
+	}
+
+	/* set the critical threshold to halfway between
+	 * iwake threshold and the full buffer.
+	 */
+	iwake_critical_threshold = iwake_threshold +
+		(IS_PIXEL_BUFFER_PAGES - iwake_threshold) / 2;
+
+	dev_dbg(&isys->adev->dev, "%s threshold: %u  critical: %u\n",
+		__func__, iwake_threshold, iwake_critical_threshold);
+
+	set_iwake_register(isys, GDA_IRQ_CRITICAL_THRESHOLD_INDEX,
+			   iwake_critical_threshold);
+	mutex_unlock(&iwake_watermark->mutex);
+
+	writel(VAL_PKGC_PMON_CFG_RESET,
+	       isys->adev->isp->base + REG_PKGC_PMON_CFG);
+	writel(VAL_PKGC_PMON_CFG_START,
+	       isys->adev->isp->base + REG_PKGC_PMON_CFG);
 }
 
 static int isys_iwake_watermark_init(struct ipu_isys *isys)
@@ -720,7 +773,7 @@ static int isys_fwnode_parse(struct device *dev,
 	return 0;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 15, 71)
 static int isys_notifier_init(struct ipu_isys *isys)
 {
 	struct ipu_device *isp = isys->adev->isp;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -425,7 +425,8 @@ static int ipu_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
 	return -ENOTTY;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 70)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
+	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct iosys_map *map)
 {
 	struct dma_buf_attachment *attach;
@@ -496,7 +497,8 @@ static void *ipu_dma_buf_vmap(struct dma_buf *dmabuf)
 }
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 70)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
+	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
 {
 	struct dma_buf_attachment *attach;
@@ -615,7 +617,8 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 		return;
 
 	kbuf->valid = false;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 70)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
+	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 	if (kbuf->kaddr) {
 		struct iosys_map dmap;
 
@@ -771,7 +774,8 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 {
 	struct ipu_psys *psys = fh->psys;
 	struct dma_buf *dbuf;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 70)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
+	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 	struct iosys_map dmap;
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 	struct dma_buf_map dmap;
@@ -1511,6 +1515,10 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	unsigned int minor;
 	int i, rval = -E2BIG;
 
+	/* firmware is not ready, so defer the probe */
+	if (!isp->pkg_dir)
+		return -EPROBE_DEFER;
+
 	rval = ipu_mmu_hw_init(adev->mmu);
 	if (rval)
 		return rval;
@@ -1834,6 +1842,6 @@ MODULE_AUTHOR("Zaikuo Wang <zaikuo.wang@intel.com>");
 MODULE_AUTHOR("Yunliang Ding <yunliang.ding@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel ipu processing system driver");
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 MODULE_IMPORT_NS(DMA_BUF);
 #endif

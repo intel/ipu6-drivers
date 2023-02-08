@@ -906,7 +906,11 @@ static int hm2170_identify_module(struct hm2170 *hm2170)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int hm2170_remove(struct i2c_client *client)
+#else
 static void hm2170_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct hm2170 *hm2170 = to_hm2170(sd);
@@ -916,15 +920,11 @@ static void hm2170_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&hm2170->mutex);
-}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-static int hm2170_remove_bp(struct i2c_client *client)
-{
-	hm2170_remove(client);
 	return 0;
-}
 #endif
+}
 
 static int hm2170_probe(struct i2c_client *client)
 {
@@ -1032,11 +1032,7 @@ static struct i2c_driver hm2170_i2c_driver = {
 		.acpi_match_table = hm2170_acpi_ids,
 	},
 	.probe_new = hm2170_probe,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	.remove = hm2170_remove_bp,
-#else
 	.remove = hm2170_remove,
-#endif
 };
 
 module_i2c_driver(hm2170_i2c_driver);

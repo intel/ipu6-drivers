@@ -2014,7 +2014,11 @@ error_handler_free:
 	return ret;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int ov13858_remove(struct i2c_client *client)
+#else
 static void ov13858_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov13858 *ov13858 = to_ov13858(sd);
@@ -2024,15 +2028,11 @@ static void ov13858_remove(struct i2c_client *client)
 	ov13858_free_controls(ov13858);
 
 	pm_runtime_disable(&client->dev);
-}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-static int ov13858_remove_bp(struct i2c_client *client)
-{
-	ov13858_remove(client);
 	return 0;
-}
 #endif
+}
 
 static const struct i2c_device_id ov13858_id_table[] = {
 	{"ov13858", 0},
@@ -2061,11 +2061,7 @@ static struct i2c_driver ov13858_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(ov13858_acpi_ids),
 	},
 	.probe = ov13858_probe,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	.remove = ov13858_remove_bp,
-#else
 	.remove = ov13858_remove,
-#endif
 	.id_table = ov13858_id_table,
 };
 
