@@ -76,11 +76,9 @@ static struct v4l2_subdev_internal_ops csi2_sd_internal_ops = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 {
-	struct media_pipeline *media_pipe =
-		media_entity_pipeline(&csi2->asd.sd.entity);
-	struct ipu_isys_pipeline *pipe = container_of(media_pipe,
-						      struct ipu_isys_pipeline,
-						      pipe);
+	struct ipu_isys_pipeline *pipe =
+		container_of(media_entity_pipeline(&csi2->asd.sd.entity),
+			     struct ipu_isys_pipeline, pipe);
 	struct v4l2_subdev *ext_sd =
 		media_entity_to_v4l2_subdev(pipe->external->entity);
 	struct device *dev = &csi2->isys->adev->dev;
@@ -258,11 +256,10 @@ ipu_isys_csi2_calc_timing(struct ipu_isys_csi2 *csi2,
 
 static int set_stream(struct v4l2_subdev *sd, int enable)
 {
-	struct media_pipeline *media_pipe = media_entity_pipeline(&sd->entity);
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
-	struct ipu_isys_pipeline *ip = container_of(media_pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		container_of(media_entity_pipeline(&sd->entity),
+			     struct ipu_isys_pipeline, pipe);
 	struct ipu_isys_csi2_config *cfg;
 	struct v4l2_subdev *ext_sd;
 	struct ipu_isys_csi2_timing timing = {0};
@@ -401,10 +398,9 @@ static int __subdev_link_validate(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_format *source_fmt,
 				  struct v4l2_subdev_format *sink_fmt)
 {
-	struct media_pipeline *media_pipe = media_entity_pipeline(&sd->entity);
-	struct ipu_isys_pipeline *ip = container_of(media_pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		container_of(media_entity_pipeline(&sd->entity),
+			     struct ipu_isys_pipeline, pipe);
 
 	if (source_fmt->format.field == V4L2_FIELD_ALTERNATE)
 		ip->interlaced = true;

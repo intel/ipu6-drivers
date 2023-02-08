@@ -1372,7 +1372,11 @@ check_hwcfg_error:
 	return ret;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int ov2740_remove(struct i2c_client *client)
+#else
 static void ov2740_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov2740 *ov2740 = to_ov2740(sd);
@@ -1382,15 +1386,11 @@ static void ov2740_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov2740->mutex);
-}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-static int ov2740_remove_bp(struct i2c_client *client)
-{
-	ov2740_remove(client);
 	return 0;
-}
 #endif
+}
 
 static int ov2740_nvmem_read(void *priv, unsigned int off, void *val,
 			     size_t count)
@@ -1586,11 +1586,7 @@ static struct i2c_driver ov2740_i2c_driver = {
 		.acpi_match_table = ov2740_acpi_ids,
 	},
 	.probe_new = ov2740_probe,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	.remove = ov2740_remove_bp,
-#else
 	.remove = ov2740_remove,
-#endif
 };
 
 module_i2c_driver(ov2740_i2c_driver);

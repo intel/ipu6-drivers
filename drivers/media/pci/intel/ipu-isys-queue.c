@@ -169,7 +169,7 @@ static void buf_cleanup(struct vb2_buffer *vb)
 		__func__);
 
 	if (aq->buf_cleanup)
-		return aq->buf_cleanup(vb);
+		aq->buf_cleanup(vb);
 }
 
 /*
@@ -567,8 +567,8 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 		return;
 
 	if (!pipe_av || !media_pipe || !vb->vb2_queue->streaming) {
-		dev_dbg(&av->isys->adev->dev,
-			"not pipe_av set, adding to incoming\n");
+		dev_info(&av->isys->adev->dev,
+			"no pipe or streaming, adding to incoming\n");
 		return;
 	}
 
@@ -576,7 +576,7 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	mutex_lock(&pipe_av->mutex);
 
 	if (!force && ip->nr_streaming != ip->nr_queues) {
-		dev_dbg(&av->isys->adev->dev,
+		dev_info(&av->isys->adev->dev,
 			"not streaming yet, adding to incoming\n");
 		goto out;
 	}
@@ -590,10 +590,10 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	if (rval < 0) {
 		if (rval == -EINVAL) {
 			dev_err(&av->isys->adev->dev,
-				"error: should not happen\n");
+				"error: buffer list get failed\n");
 			WARN_ON(1);
 		} else {
-			dev_dbg(&av->isys->adev->dev,
+			dev_info(&av->isys->adev->dev,
 				"not enough buffers available\n");
 		}
 		goto out;
@@ -602,6 +602,8 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	msg = ipu_get_fw_msg_buf(ip);
 	if (!msg) {
 		rval = -ENOMEM;
+		dev_err(&av->isys->adev->dev,
+			"failed to get fw msg buf\n");
 		goto out;
 	}
 	buf = to_frame_msg_buf(msg);
@@ -612,7 +614,7 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 					ip->nr_output_pins);
 
 	if (!ip->streaming) {
-		dev_dbg(&av->isys->adev->dev,
+		dev_info(&av->isys->adev->dev,
 			"got a buffer to start streaming!\n");
 		rval = ipu_isys_stream_start(ip, &bl, true);
 		if (rval)
@@ -864,9 +866,8 @@ static void stop_streaming(struct vb2_queue *q)
 {
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(q);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
-	struct media_pipeline *media_pipe =
-		media_entity_pipeline(&av->vdev.entity);
-	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	struct ipu_isys_video *pipe_av =
 	    container_of(ip, struct ipu_isys_video, ip);
 
@@ -958,9 +959,8 @@ ipu_isys_buf_calc_sequence_time(struct ipu_isys_buffer *ib,
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(vb->vb2_queue);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
 	struct device *dev = &av->isys->adev->dev;
-	struct media_pipeline *media_pipe =
-		media_entity_pipeline(&av->vdev.entity);
-	struct ipu_isys_pipeline *ip = to_ipu_isys_pipeline(media_pipe);
+	struct ipu_isys_pipeline *ip =
+		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	u64 ns;
 	u32 sequence;
 

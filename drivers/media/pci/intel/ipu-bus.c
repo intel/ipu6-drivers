@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2022 Intel Corporation
 
 #include <linux/delay.h>
 #include <linux/device.h>
@@ -14,9 +14,6 @@
 #include "ipu.h"
 #include "ipu-platform.h"
 #include "ipu-dma.h"
-
-bool ipu_bus_ready_to_probe;
-EXPORT_SYMBOL(ipu_bus_ready_to_probe);
 
 #ifdef CONFIG_PM
 static struct bus_type ipu_bus;
@@ -94,7 +91,7 @@ static int ipu_bus_probe(struct device *dev)
 	struct ipu_bus_driver *adrv = to_ipu_bus_driver(dev->driver);
 	int rval;
 
-	if (!ipu_bus_ready_to_probe)
+	if (!adev->isp->ipu_bus_ready_to_probe)
 		return -EPROBE_DEFER;
 
 	dev_dbg(dev, "bus probe dev %s\n", dev_name(dev));
@@ -161,7 +158,8 @@ static void ipu_bus_release(struct device *dev)
 }
 
 struct ipu_bus_device *ipu_bus_initialize_device(struct pci_dev *pdev,
-						 struct device *parent, void *pdata,
+						 struct device *parent,
+						 void *pdata,
 						 struct ipu_buttress_ctrl *ctrl,
 						 char *name, unsigned int nr)
 {
