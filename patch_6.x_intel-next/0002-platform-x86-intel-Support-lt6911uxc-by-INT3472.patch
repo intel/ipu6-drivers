@@ -1,0 +1,37 @@
+From 3de2afc73ef98666727649dac9d1baf4453a7d08 Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Tue, 23 Aug 2022 13:33:47 +0800
+Subject: [PATCH 2/4] platform: x86: intel: Support lt6911uxc by INT3472
+
+Change Description:
+Message for Open Source:
+Support lt6911uxc by INT3472.
+
+Message for Internal:
+Support lt6911uxc by INT3472.
+
+Test Platform:
+RPL-P RVP
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: khaiwenn <khai.wen.ng@intel.com>
+---
+ drivers/platform/x86/intel/int3472/discrete.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/platform/x86/intel/int3472/discrete.c b/drivers/platform/x86/intel/int3472/discrete.c
+index ed4c9d760757..46a3ca39e85d 100644
+--- a/drivers/platform/x86/intel/int3472/discrete.c
++++ b/drivers/platform/x86/intel/int3472/discrete.c
+@@ -346,7 +346,7 @@ static int skl_int3472_discrete_probe(struct platform_device *pdev)
+ 		return ret;
+ 	}
+ 
+-	if (cldb.control_logic_type != 1) {
++	if (cldb.control_logic_type != 1 && cldb.control_logic_type != 5) {
+ 		dev_err(&pdev->dev, "Unsupported control logic type %u\n",
+ 			cldb.control_logic_type);
+ 		return -EINVAL;
+-- 
+2.17.1
+
