@@ -28,7 +28,6 @@
 #include "ipu-bus.h"
 #include "ipu-cpd.h"
 #include "ipu-isys.h"
-#include "ipu-buttress.h"
 #include "ipu-isys-video.h"
 #include "ipu-platform.h"
 #include "ipu-platform-regs.h"
@@ -80,7 +79,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_SRGGB8, 8, 8, 0, MEDIA_BUS_FMT_SRGGB8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
-	 IPU_FW_ISYS_MIPI_DATA_TYPE_RAW_8},
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{}
 };
 
@@ -131,7 +130,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	{V4L2_PIX_FMT_SRGGB10P, 10, 10, 0, MEDIA_BUS_FMT_SRGGB10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
 	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
-	 IPU_FW_ISYS_MIPI_DATA_TYPE_RAW_8},
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_SBGGR8, 8, 8, 0, MEDIA_BUS_FMT_SBGGR8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_SGBRG8, 8, 8, 0, MEDIA_BUS_FMT_SGBRG8_1X8,

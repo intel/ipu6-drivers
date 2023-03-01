@@ -304,7 +304,7 @@ static int ipu_init_debugfs(struct ipu_device *isp)
 	struct dentry *file;
 	struct dentry *dir;
 
-	dir = debugfs_create_dir(pci_name(isp->pdev), NULL);
+	dir = debugfs_create_dir(IPU_NAME, NULL);
 	if (!dir)
 		return -ENOMEM;
 
@@ -496,7 +496,6 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!isp)
 		return -ENOMEM;
 
-	dev_set_name(&pdev->dev, "intel-ipu");
 	isp->pdev = pdev;
 	INIT_LIST_HEAD(&isp->devices);
 
@@ -732,6 +731,8 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	pm_runtime_put_noidle(&pdev->dev);
 	pm_runtime_allow(&pdev->dev);
+
+	isp->ipu_bus_ready_to_probe = true;
 
 	return 0;
 
