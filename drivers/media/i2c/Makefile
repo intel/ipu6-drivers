@@ -9,3 +9,4 @@ obj-$(CONFIG_VIDEO_OV2740) += ov2740.o
 obj-$(CONFIG_VIDEO_HM2170) += hm2170.o
 obj-$(CONFIG_VIDEO_HI556) += hi556.o
 obj-$(CONFIG_POWER_CTRL_LOGIC) += power_ctrl_logic.o
+obj-$(CONFIG_VIDEO_OV13858_INTEL) += ov13858_intel.o
