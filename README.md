@@ -36,6 +36,7 @@ source "drivers/media/pci/intel/Kconfig"
 ```
 CONFIG_VIDEO_INTEL_IPU6=m
 CONFIG_IPU_ISYS_BRIDGE=y
+CONFIG_IPU_SINGLE_BE_SOC_DEVICE=n
 CONFIG_INTEL_SKL_INT3472=m
 ```
 
