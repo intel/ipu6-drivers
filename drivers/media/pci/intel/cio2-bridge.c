@@ -6,6 +6,7 @@
 #include <linux/i2c.h>
 #include <linux/pci.h>
 #include <linux/property.h>
+#include <linux/version.h>
 #include <media/v4l2-fwnode.h>
 
 #include "cio2-bridge.h"

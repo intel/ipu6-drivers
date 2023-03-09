@@ -39,4 +39,13 @@ config IPU_ISYS_BRIDGE
 	  If you want supported sensors can be registered as IPU subdevices,
 	  select y here.
 
+config IPU_SINGLE_BE_SOC_DEVICE
+	bool "Intel IPU uses only one BE SOC device"
+	default n
+	depends on VIDEO_INTEL_IPU6
+	help
+	  If selected, IPU exports only one BE SOC device.
+
+	  If you don't need multiple camera streaming, select y here.
+
 source "drivers/media/pci/intel/ipu3/Kconfig"
