@@ -473,6 +473,12 @@ index ed4c9d760757..8b39d6656502 100644
 +	{ "CJFLE23", { 0 }, NULL, true },
 +	/* OV13B10 */
 +	{ "09B13", { 0 }, NULL, true },
++       /* HIMX1092 */
++       { "KPFB297", { 0 }, NULL, true },
++       /* GC5035 */
++       { "CJAK519", { 0 }, NULL, true },
++       /* S5K3L6 */
++       { "KBAG296", { 0 }, NULL, true },
  };
  
  static const struct int3472_sensor_config *

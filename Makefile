@@ -11,6 +11,12 @@ obj-y += drivers/media/pci/intel/
 export CONFIG_VIDEO_OV8856 = m
 obj-y += drivers/media/i2c/
 
+export CONFIG_VIDEO_GC5035 = m
+obj-y += drivers/media/i2c/
+
+export CONFIG_VIDEO_S5K3L6 = m
+obj-y += drivers/media/i2c/
+
 KERNELRELEASE ?= $(shell uname -r)
 KERNEL_SRC ?= /lib/modules/$(KERNELRELEASE)/build
 MODSRC := $(shell pwd)

@@ -49,6 +49,10 @@ static const struct cio2_sensor_config cio2_supported_sensors[] = {
 	/* Omnivision ov13b10 */
 	CIO2_SENSOR_CONFIG("OVTIDB10", 0, 0),
 	CIO2_SENSOR_CONFIG("OVTI13B1", 0, 0),
+        /* samsung s5k3l6 */
+        CIO2_SENSOR_CONFIG("S5K3L6", 0, 0),
+        /* galaxycore gc5035 */
+        CIO2_SENSOR_CONFIG("GCTI5035", 0, 0),
 };
 
 static const struct cio2_property_names prop_names = {
@@ -71,6 +75,36 @@ static const char * const cio2_vcm_types[] = {
 	"wv517s",
 	"lc898122xa",
 	"lc898212axb",
+};
+
+static const char * const cio2_nvm_types[] = {
+	"24c00",
+	"24c01",
+	"24cs01",
+	"24c02",
+	"24cs02",
+	"24mac402",
+	"24mac602",
+	"spd",
+	"24c64",
+	"24c02-vaio",
+	"24c04",
+	"24cs04",
+	"24c08",
+	"24cs08",
+	"24c16",
+	"24cs16",
+	"24c32",
+	"24cs32",
+	"24c64",
+	"24cs64",
+	"24c128",
+	"24c256",
+	"24c512",
+	"24c1024",
+	"24c1025",
+	"24c2048",
+	"at24",
 };
 
 static int cio2_bridge_read_acpi_buffer(struct acpi_device *adev, char *id,
@@ -181,6 +215,12 @@ cio2_bridge_create_fwnode_properties(struct cio2_sensor *sensor,
 		sensor->dev_properties[3] =
 			PROPERTY_ENTRY_REF_ARRAY("lens-focus", sensor->vcm_ref);
 	}
+	if (sensor->ssdb.romtype) {
+		sensor->nvm_ref[0] =
+			SOFTWARE_NODE_REFERENCE(&sensor->swnodes[SWNODE_NVM]);
+		sensor->dev_properties[4] =
+			PROPERTY_ENTRY_REF_ARRAY("eeprom", sensor->nvm_ref);
+	}
 
 	sensor->ep_properties[0] =
 		PROPERTY_ENTRY_U32(prop_name->bus_type,
@@ -227,6 +267,7 @@ static void cio2_bridge_create_connection_swnodes(struct cio2_bridge *bridge,
 	struct software_node *nodes = sensor->swnodes;
 	char sensor_node_name[ACPI_ID_LEN + 2];
 	char vcm_node_name[ACPI_ID_LEN + 2];
+	char nvm_node_name[ACPI_ID_LEN + 2];
 
 	cio2_bridge_init_swnode_names(sensor);
 
@@ -253,6 +294,13 @@ static void cio2_bridge_create_connection_swnodes(struct cio2_bridge *bridge,
 			 "%s-%u", cio2_vcm_types[sensor->ssdb.vcmtype - 1],
 			 sensor->ssdb.link);
 		nodes[SWNODE_VCM] = NODE_VCM(vcm_node_name);
+	}
+	if (sensor->ssdb.romtype &&
+	    sensor->ssdb.romtype <= ARRAY_SIZE(cio2_nvm_types)) {
+		snprintf(nvm_node_name, sizeof(nvm_node_name),
+			 "%s-%u", cio2_nvm_types[sensor->ssdb.romtype - 1],
+			 sensor->ssdb.link);
+		nodes[SWNODE_NVM] = NODE_VCM(nvm_node_name);
 	}
 }
 
@@ -282,6 +330,44 @@ static void cio2_bridge_instantiate_vcm_i2c_client(struct cio2_sensor *sensor)
 	}
 }
 
+static void cio2_bridge_instantiate_nvm_i2c_client(struct cio2_sensor *sensor, struct pci_dev *cio2)
+{
+	struct device *dev = &cio2->dev;
+	struct i2c_board_info board_info = { };
+	char name[16];
+	int retval = -EINVAL;
+
+	if (!sensor->ssdb.romtype ||
+	    sensor->ssdb.romtype > ARRAY_SIZE(cio2_nvm_types))
+		return;
+
+	snprintf(name, sizeof(name), "%s-NVM", acpi_dev_name(sensor->adev));
+	board_info.dev_name = name;
+	strscpy(board_info.type, cio2_nvm_types[sensor->ssdb.romtype - 1],
+		ARRAY_SIZE(board_info.type));
+	board_info.swnode = &sensor->swnodes[SWNODE_NVM];
+
+        printk("liang: %s:board_info name %s, board_info.type = %s \n", __func__, board_info.dev_name, board_info.type);
+	sensor->nvm_i2c_client =
+		i2c_acpi_new_device_by_fwnode(acpi_fwnode_handle(sensor->adev),
+					     2, &board_info);
+	if (IS_ERR(sensor->nvm_i2c_client)) {
+		dev_warn(&sensor->adev->dev,
+			 "Error instantiation NVM i2c-client: %ld\n",
+			 PTR_ERR(sensor->nvm_i2c_client));
+		sensor->nvm_i2c_client = NULL;
+	}
+
+/**	printk("liang: %s: create firmware_node\n", __func__);
+	printk("liang: %s:physical node  = %s\n", __func__, (acpi_get_first_physical_node(sensor->adev))->type->name);
+	retval = sysfs_create_link(&dev->kobj, &sensor->adev->dev.kobj,
+				   "firmware_node");
+	if (retval)
+		dev_err(dev, "Failed to create link firmware_node (%d)\n",
+			retval);
+*/
+}
+
 static void cio2_bridge_unregister_sensors(struct cio2_bridge *bridge)
 {
 	struct cio2_sensor *sensor;
@@ -293,6 +379,7 @@ static void cio2_bridge_unregister_sensors(struct cio2_bridge *bridge)
 		ACPI_FREE(sensor->pld);
 		acpi_dev_put(sensor->adev);
 		i2c_unregister_device(sensor->vcm_i2c_client);
+		i2c_unregister_device(sensor->nvm_i2c_client);
 	}
 }
 
@@ -331,6 +418,14 @@ static int cio2_bridge_connect_sensor(const struct cio2_sensor_config *cfg,
 			sensor->ssdb.vcmtype = 0;
 		}
 
+		printk("liang: %s:sensor->ssdb.romtype = %d\n", __func__, sensor->ssdb.romtype);
+		if (sensor->ssdb.romtype > ARRAY_SIZE(cio2_nvm_types)) {
+			dev_warn(&adev->dev, "Unknown NVM type %d\n",
+				 sensor->ssdb.romtype);
+			sensor->ssdb.romtype = 0;
+		}
+
+	        printk("liang: %s: %d \n", __func__, __LINE__);
 		status = acpi_get_physical_device_location(adev->handle,
 							   &sensor->pld);
 		if (ACPI_FAILURE(status)) {
@@ -365,6 +460,7 @@ static int cio2_bridge_connect_sensor(const struct cio2_sensor_config *cfg,
 		current_fwnode->secondary = fwnode;
 
 		cio2_bridge_instantiate_vcm_i2c_client(sensor);
+		cio2_bridge_instantiate_nvm_i2c_client(sensor, cio2);
 
 		dev_info(&cio2->dev, "Found supported sensor %s\n",
 			 acpi_dev_name(adev));
