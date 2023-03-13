@@ -4665,16 +4665,20 @@ static ssize_t ds5_dfu_device_read(struct file *flip,
 		char __user *buffer, size_t len, loff_t *offset)
 {
 	struct ds5 *state = flip->private_data;
-	u16 fw_ver;
-	char msg[20];
+	u16 fw_ver, fw_build;
+	char msg[32];
 	int ret = 0;
 
 	if (mutex_lock_interruptible(&state->lock))
 		return -ERESTARTSYS;
-	ret = ds5_read(state, DS5_FW_VERSION, &fw_ver);
+	ret |= ds5_read(state, DS5_FW_VERSION, &fw_ver);
+	ret |= ds5_read(state, DS5_FW_BUILD, &fw_build);
 	if (ret < 0)
 		goto e_dfu_read_failed;
-	snprintf(msg, sizeof(msg), "DFU info: \tver: (0x%x)\n", fw_ver);
+	snprintf(msg, sizeof(msg) ,"DFU info: \tver:  %d.%d.%d.%d\n",
+			(fw_ver >> 8) & 0xff, fw_ver & 0xff,
+			(fw_build >> 8) & 0xff, fw_build & 0xff);
+
 	if (copy_to_user(buffer, msg, strlen(msg)))
 		ret = -EFAULT;
 	else {
@@ -4704,7 +4708,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 					__func__, ret);
 			goto dfu_write_error;
 		}
-	/*no break - proceed to recovery*/
+	/*fallthrough - procceed to recovery*/
+	__attribute__((__fallthrough__));
 	case DS5_DFU_RECOVERY:
 		ret = ds5_dfu_detach(state);
 		if (ret < 0) {
@@ -4714,8 +4719,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 		}
 		state->dfu_dev.dfu_state_flag = DS5_DFU_IN_PROGRESS;
 		state->dfu_dev.init_v4l_f = 1;
-
-	/*no break - proceed to download*/
+	/*fallthrough - procceed to download*/
+	__attribute__((__fallthrough__));
 	case DS5_DFU_IN_PROGRESS: {
 		unsigned int dfu_full_blocks = len / DFU_BLOCK_SIZE;
 		unsigned int dfu_part_blocks = len % DFU_BLOCK_SIZE;
@@ -4766,8 +4771,11 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 	return len;
 
 dfu_write_error:
-	//TODO: Reset device here
 	state->dfu_dev.dfu_state_flag = DS5_DFU_ERROR;
+	// Reset DFU device to IDLE states
+	ret = ds5_write(state, 0x5010, 0x0);
+	if (!ret)
+		state->dfu_dev.dfu_state_flag = DS5_DFU_IDLE;
 	mutex_unlock(&state->lock);
 	return ret;
 };
@@ -4776,8 +4784,6 @@ static int ds5_dfu_device_open(struct inode *inode, struct file *file)
 {
 	struct ds5 *state = container_of(inode->i_cdev, struct ds5,
 			dfu_dev.ds5_cdev);
-	struct i2c_adapter *parent = i2c_parent_is_i2c_adapter(
-			state->client->adapter);
 
 	if (state->dfu_dev.device_open_count)
 		return -EBUSY;
@@ -4877,12 +4883,14 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 {
 	struct cdev *ds5_cdev = &state->dfu_dev.ds5_cdev;
 	struct class **ds5_class = &state->dfu_dev.ds5_class;
+	struct d4xx_pdata *pdata = c->dev.platform_data;
+
 	struct device *chr_dev;
-	char dev_name[sizeof(DS5_DRIVER_NAME_DFU) + 5];
+	char dev_name[sizeof(DS5_DRIVER_NAME_DFU) + 8];
 	dev_t *dev_num = &c->dev.devt;
 	int ret;
 
-	dev_info(&c->dev, "%s()\n", __func__);
+	dev_dbg(&c->dev, "%s()\n", __func__);
 	/* Request the kernel for N_MINOR devices */
 	ret = alloc_chrdev_region(dev_num, 0, 1, DS5_DRIVER_NAME_DFU);
 	if (ret < 0)
@@ -4907,8 +4915,8 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 	/* Build up the current device number. To be used further */
 	*dev_num = MKDEV(MAJOR(*dev_num), MINOR(*dev_num));
 	/* Create a device node for this device. */
-	snprintf(dev_name, sizeof(dev_name), "%s%d",
-			DS5_DRIVER_NAME_DFU, MAJOR(*dev_num));
+	snprintf(dev_name, sizeof(dev_name), "%s-%c",
+			DS5_DRIVER_NAME_DFU, pdata->suffix);
 	chr_dev = device_create(*ds5_class, NULL, *dev_num, NULL, dev_name);
 	if (IS_ERR(chr_dev)) {
 		ret = PTR_ERR(chr_dev);
@@ -4925,7 +4933,9 @@ static int ds5_chrdev_remove(struct ds5 *state)
 {
 	struct class **ds5_class = &state->dfu_dev.ds5_class;
 	dev_t *dev_num = &state->client->dev.devt;
-
+	if (!ds5_class) {
+		return 0;
+	}
 	dev_dbg(&state->client->dev, "%s()\n", __func__);
 	unregister_chrdev_region(*dev_num, 1);
 	device_destroy(*ds5_class, *dev_num);
@@ -5268,14 +5278,47 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		}
 	}
 
-	ret = ds5_chrdev_init(c, state);
-	if (ret < 0)
-		goto e_regulator;
-
-	retry = 100;
+	// Verify communication
+	retry = 10;
 	do {
 	ret = ds5_read(state, 0x5020, &rec_state);
 	} while (retry-- && ret < 0);
+	if (ret < 0) {
+		dev_err(&c->dev,
+			"%s(): cannot communicate with D4XX: %d on addr: 0x%x\n",
+			__func__, ret, c->addr);
+		goto e_regulator;
+	}
+
+	state->is_depth = 0;
+	state->is_y8 = 0;
+	state->is_rgb = 0;
+	state->is_imu = 0;
+#ifdef CONFIG_OF
+	ret = of_property_read_string(c->dev.of_node, "cam-type", &str);
+	if (!ret && !strncmp(str, "Depth", strlen("Depth"))) {
+		state->is_depth = 1;
+	}
+	if (!ret && !strncmp(str, "Y8", strlen("Y8"))) {
+		state->is_y8 = 1;
+	}
+	if (!ret && !strncmp(str, "RGB", strlen("RGB"))) {
+		state->is_rgb = 1;
+	}
+	if (!ret && !strncmp(str, "IMU", strlen("IMU"))) {
+		state->is_imu = 1;
+	}
+#else
+	state->is_depth = 1;
+#endif
+	/* create DFU chardev once */
+	if (state->is_depth) {
+		ret = ds5_chrdev_init(c, state);
+		if (ret < 0)
+			goto e_regulator;
+	}
+
+	ret = ds5_read(state, 0x5020, &rec_state);
 	if (ret < 0) {
 		dev_err(&c->dev, "%s(): cannot communicate with D4XX: %d\n",
 				__func__, ret);
@@ -5287,22 +5330,6 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		state->dfu_dev.dfu_state_flag = DS5_DFU_RECOVERY;
 		return 0;
 	}
-
-	state->is_depth = 0;
-	state->is_y8 = 0;
-	state->is_rgb = 0;
-	state->is_imu = 0;
-
-	err = of_property_read_string(c->dev.of_node, "cam-type",
-			&str);
-	if (!err && !strncmp(str, "Depth", strlen("Depth")))
-		state->is_depth = 1;
-	if (!err && !strncmp(str, "Y8", strlen("Y8")))
-		state->is_y8 = 1;
-	if (!err && !strncmp(str, "RGB", strlen("RGB")))
-		state->is_rgb = 1;
-	if (!err && !strncmp(str, "IMU", strlen("IMU")))
-		state->is_imu = 1;
 
 	ds5_read_with_check(state, DS5_FW_VERSION, &state->fw_version);
 	ds5_read_with_check(state, DS5_FW_BUILD, &state->fw_build);
@@ -5335,7 +5362,8 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 	return 0;
 
 e_chardev:
-	ds5_chrdev_remove(state);
+	if(state->dfu_dev.ds5_class)
+		ds5_chrdev_remove(state);
 e_regulator:
 	if (state->vcc)
 		regulator_disable(state->vcc);
@@ -5351,7 +5379,10 @@ static int ds5_remove(struct i2c_client *c)
 	if (state->vcc)
 		regulator_disable(state->vcc);
 //	gpio_free(state->pwdn_gpio);
-	ds5_chrdev_remove(state);
+	if (state->is_depth) {
+		ds5_chrdev_remove(state);
+	}
+
 	if (state->dfu_dev.dfu_state_flag != DS5_DFU_RECOVERY) {
 #ifdef CONFIG_SYSFS
 		sysfs_remove_group(&c->dev.kobj, &ds5_attr_group);
