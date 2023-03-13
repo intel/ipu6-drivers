@@ -328,6 +328,7 @@ struct ds5_ctrls {
 	struct v4l2_ctrl_handler handler_depth;
 	struct v4l2_ctrl_handler handler_rgb;
 	struct v4l2_ctrl_handler handler_y8;
+	struct v4l2_ctrl_handler handler_imu;
 	struct {
 		struct v4l2_ctrl *log;
 		struct v4l2_ctrl *fw_version;
@@ -2194,6 +2195,13 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 			state->is_y8 = 1;
 			state->is_imu = 0;
 		break;
+		case DS5_MUX_PAD_IMU_A:
+			state = container_of(ctrl->handler, struct ds5, ctrls.handler_imu);
+			state->is_rgb = 0;
+			state->is_depth = 0;
+			state->is_y8 = 0;
+			state->is_imu = 1;
+		break;
 		default:
 			state->is_rgb = 0;
 			state->is_depth = 0;
@@ -2206,8 +2214,6 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	if (state->is_rgb)
 		base = DS5_RGB_CONTROL_BASE;
-	else if (state->is_imu)
-		return ret;
 
 	v4l2_dbg(3, 1, sd, "ctrl: %s, value: %d\n", ctrl->name, ctrl->val);
 	dev_dbg(&state->client->dev, "%s(): %s - ctrl: %s, value: %d\n",
@@ -2597,6 +2603,13 @@ static int ds5_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 			state->is_depth = 0;
 			state->is_y8 = 1;
 			state->is_imu = 0;
+		break;
+		case DS5_MUX_PAD_IMU_A:
+			state = container_of(ctrl->handler, struct ds5, ctrls.handler_imu);
+			state->is_rgb = 0;
+			state->is_depth = 0;
+			state->is_y8 = 0;
+			state->is_imu = 1;
 		break;
 		default:
 			state->is_rgb = 0;
@@ -3092,6 +3105,10 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 		hdl = &ctrls->handler_y8;
 		sensor = &state->motion_t.sensor;
 		break;
+	case 3:
+		hdl = &ctrls->handler_imu;
+		sensor = &state->imu.sensor;
+		break;
 	default:
 		hdl = &ctrls->handler;
 		sensor = NULL;
@@ -3130,21 +3147,21 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 		ctrls->gain->flags =
 				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
 	}
-if (sid >= 0) {
+	if (sid >= 0 && sid < 3) {
 
-	ctrls->auto_exp = v4l2_ctrl_new_std_menu(hdl, ops,
-			V4L2_CID_EXPOSURE_AUTO,
-			V4L2_EXPOSURE_APERTURE_PRIORITY,
-			~((1 << V4L2_EXPOSURE_MANUAL) |
-					(1 << V4L2_EXPOSURE_APERTURE_PRIORITY)),
-					V4L2_EXPOSURE_APERTURE_PRIORITY);
+		ctrls->auto_exp = v4l2_ctrl_new_std_menu(hdl, ops,
+				V4L2_CID_EXPOSURE_AUTO,
+				V4L2_EXPOSURE_APERTURE_PRIORITY,
+				~((1 << V4L2_EXPOSURE_MANUAL) |
+						(1 << V4L2_EXPOSURE_APERTURE_PRIORITY)),
+						V4L2_EXPOSURE_APERTURE_PRIORITY);
 
-	if (ctrls->auto_exp) {
-		ctrls->auto_exp->flags |=
-				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
-		ctrls->auto_exp->priv = sensor;
+		if (ctrls->auto_exp) {
+			ctrls->auto_exp->flags |=
+					V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
+			ctrls->auto_exp->priv = sensor;
+		}
 	}
-}
 	/* Exposure time: V4L2_CID_EXPOSURE_ABSOLUTE default unit: 100 us. */
 	if (sid == 0 || sid == 2) {
 		ctrls->exposure = v4l2_ctrl_new_std(hdl, ops,
@@ -3191,31 +3208,35 @@ if (sid >= 0) {
 	// }
 
 	// Add these after v4l2_ctrl_handler_setup so they won't be set up
-if (sid >= 0) {
-	ctrls->log = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_log, sensor);
-	ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
-	ctrls->gvd = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_gvd, sensor);
-	ctrls->get_depth_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_depth_calib, sensor);
-	ctrls->set_depth_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_depth_calib, sensor);
-	ctrls->get_coeff_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_coeff_calib, sensor);
-	ctrls->set_coeff_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_coeff_calib, sensor);
-	ctrls->ae_roi_get = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_get, sensor);
-	ctrls->ae_roi_set = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_set, sensor);
-	ctrls->ae_setpoint_get =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_get, sensor);
-	ctrls->ae_setpoint_set =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_set, sensor);
-	ctrls->erb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_erb, sensor);
-	ctrls->ewb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ewb, sensor);
-	ctrls->hwmc = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc, sensor);
-	v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc_rw, sensor);
-}
+	if (sid >= 0 && sid < 3) {
+		ctrls->log = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_log, sensor);
+		ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
+		ctrls->gvd = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_gvd, sensor);
+		ctrls->get_depth_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_depth_calib, sensor);
+		ctrls->set_depth_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_depth_calib, sensor);
+		ctrls->get_coeff_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_coeff_calib, sensor);
+		ctrls->set_coeff_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_coeff_calib, sensor);
+		ctrls->ae_roi_get = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_get, sensor);
+		ctrls->ae_roi_set = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_set, sensor);
+		ctrls->ae_setpoint_get =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_get, sensor);
+		ctrls->ae_setpoint_set =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_set, sensor);
+		ctrls->erb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_erb, sensor);
+		ctrls->ewb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ewb, sensor);
+		ctrls->hwmc = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc, sensor);
+		v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc_rw, sensor);
+	}
+	// DEPTH custom
 	if (sid == 0)
 		v4l2_ctrl_new_custom(hdl, &ds5_ctrl_pwm, sensor);
+	// IMU custom
+	if (sid == 3)
+		ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
 
 	switch (sid) {
 	case 0:
@@ -3235,6 +3256,12 @@ if (sid >= 0) {
 		dev_info(state->motion_t.sensor.sd.dev,
 			"%s():%d set ctrl_handler pad:%d\n",
 			__func__, __LINE__, state->motion_t.sensor.mux_pad);
+		break;
+	case 3:
+		state->imu.sensor.sd.ctrl_handler = hdl;
+		dev_info(state->imu.sensor.sd.dev,
+			"%s():%d set ctrl_handler pad:%d\n",
+			__func__, __LINE__, state->imu.sensor.mux_pad);
 		break;
 	default:
 		state->mux.sd.subdev.ctrl_handler = hdl;
@@ -4304,6 +4331,10 @@ static int ds5_mux_init(struct i2c_client *c, struct ds5 *state)
 		return ret;
 	/*set for y8*/
 	ret = ds5_ctrl_init(state, 2);
+	if (ret < 0)
+		return ret;
+	/*set for imu*/
+	ret = ds5_ctrl_init(state, 3);
 	if (ret < 0)
 		return ret;
 
