@@ -669,7 +669,7 @@ int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 
 		/* use ascii */
 		if (!strcmp(sensor_name, D457_NAME) && port >= 0)
-			pdata->suffix = serdes_info.deser_num + SUFFIX_BASE + 1;
+			pdata->suffix = port + SUFFIX_BASE + 1;
 		else if (port > 0)
 			pdata->suffix = port + SUFFIX_BASE;
 		else

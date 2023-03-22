@@ -1049,6 +1049,135 @@ static void isys_remove(struct ipu_bus_device *adev)
 }
 
 #ifdef CONFIG_DEBUG_FS
+#if defined(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#include <media/ipu-acpi-pdata.h>
+/* use as such:
+echo "0 2 d4xx 1 0x16 0x60 0x48" | sudo tee /sys/kernel/debug/intel-ipu6/isys/new_device
+<csi port> <lanes> <device name> <i2c adapter> <sensor i2c> <ser i2c> <des i2c>
+*/
+static ssize_t ipu_isys_new_device_set(struct file *flip,
+		const char __user *buffer, size_t len, loff_t *offset)
+{
+	struct ipu_isys *isys = flip->f_inode->i_private;
+
+	int res = 0;
+	int port = 0, lanes = 0, adapter = 0;
+	int sens = 0, ser = 0, des = 0;
+	char name[I2C_NAME_SIZE], end = 0;
+	char buf[128];
+	struct serdes_subdev_info *serdes_sdinfo = NULL;
+	struct serdes_platform_data *pdata = NULL;
+	struct ipu_isys_subdev_info *sd_info = NULL;
+	struct ipu_isys_csi2_config *csi2_config = NULL;
+
+	(void)offset;
+
+	if (!(isys && isys->adev && &isys->adev->dev))
+		return -EINVAL;
+	if (copy_from_user(buf, buffer, len)) {
+		pr_err("copy_from_user failed\n");
+		return 0;
+	}
+
+	buf[len] = 0;
+	dev_info(&isys->adev->dev, "isys_new_device_set function running val:%s\n", buf);
+	res = sscanf(buf, "%d %d %s %d 0x%02x 0x%02x 0x%02x%c", &port, &lanes, name, &adapter, &sens, &ser, &des, &end);
+	if (res != 8 && end != '\n') {
+		dev_err(NULL, "%s: Incorrect parameters\n", "new_device");
+		return -EINVAL;
+	}
+	dev_info(&isys->adev->dev, "res:%d, port:%d, lanes:%d, name:%s, adapter:%d, sens:0x%02x, ser:0x%02x, des:0x%02x\n",
+		res,port, lanes, name, adapter, sens, ser, des);
+
+	csi2_config = kzalloc(sizeof(*csi2_config), GFP_KERNEL);
+	if (!csi2_config) {
+		res = -ENOMEM;
+		goto error;
+	}
+	sd_info = kzalloc(sizeof(*sd_info), GFP_KERNEL);
+	if (!sd_info) {
+		res = -ENOMEM;
+		goto error;
+	}
+	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		res = -ENOMEM;
+		goto error;
+	}
+	serdes_sdinfo = kzalloc(sizeof(*serdes_sdinfo), GFP_KERNEL);
+	if (!serdes_sdinfo) {
+		res = -ENOMEM;
+		goto error;
+	}
+	pdata->suffix = port + 'a';
+
+	serdes_sdinfo->ser_alias = ser;
+	serdes_sdinfo->board_info.addr = des;
+	strlcpy(serdes_sdinfo->board_info.type, name, I2C_NAME_SIZE);
+
+
+	pdata->subdev_num = 1;
+	pdata->subdev_info = serdes_sdinfo;
+
+	sd_info->i2c.i2c_adapter_id = adapter;
+	csi2_config->nlanes = lanes;
+	csi2_config->port = port;
+	sd_info->csi2 = csi2_config;
+	strlcpy(sd_info->i2c.board_info.type, name, I2C_NAME_SIZE);
+
+	sd_info->i2c.board_info.addr = sens;
+	sd_info->i2c.board_info.platform_data = pdata;
+
+	res = isys_register_ext_subdev(isys, sd_info);
+	if (res) {
+		goto error;
+	}
+	res = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
+	if (res) {
+		isys_unregister_ext_subdev(isys, sd_info);
+		goto error;
+	}
+	return len;
+
+error:
+	if (csi2_config)
+		kfree(csi2_config);
+	if (sd_info)
+		kfree(sd_info);
+	if (pdata)
+		kfree(pdata);
+	if (serdes_sdinfo)
+		kfree(serdes_sdinfo);
+	return res;
+}
+
+static ssize_t ipu_isys_new_device_get(struct file *flip,
+		char __user *buffer, size_t len, loff_t *offset)
+{
+	struct ipu_isys *isys = flip->f_inode->i_private;
+	char msg[256] = {0};
+	static int once = 0;
+	int ret;
+
+	ret = snprintf(msg, sizeof(msg), "IPU CSI2 new device binding\n"
+		"<csi port> <lanes> <device name> <i2c-designware adapter> <sensor i2c> <ser i2c> <des i2c>\n");
+	if (copy_to_user(buffer, msg, strlen(msg))) {
+		dev_err(&isys->adev->dev, "copy_to_user failed\n");
+		ret = -EFAULT;
+	} else {
+		dev_info(&isys->adev->dev, "\n%s\n", msg);
+		once = ~once;
+		ret = strlen(msg) & once;
+	}
+	return ret;
+}
+
+static const struct file_operations isys_new_device_fops = {
+	.read = &ipu_isys_new_device_get,
+	.write = &ipu_isys_new_device_set,
+};
+#endif
+
 static int ipu_isys_icache_prefetch_get(void *data, u64 *val)
 {
 	struct ipu_isys *isys = data;
@@ -1089,7 +1218,12 @@ static int ipu_isys_init_debugfs(struct ipu_isys *isys)
 				   dir, isys, &isys_icache_prefetch_fops);
 	if (IS_ERR(file))
 		goto err;
-
+#if defined(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+	file = debugfs_create_file("new_device", 0600,
+		dir, isys, &isys_new_device_fops);
+	if (IS_ERR(file))
+		goto err;
+#endif
 	isys->debugfsdir = dir;
 
 #ifdef IPU_ISYS_GPC
