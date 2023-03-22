@@ -146,6 +146,7 @@ struct ipu_isys_video {
 	unsigned int ts_offsets[VIDEO_MAX_PLANES];
 	unsigned int line_header_length;	/* bits */
 	unsigned int line_footer_length;	/* bits */
+	unsigned int enum_link_state; /* state for link enumeration by vc */
 
 	const struct ipu_isys_pixelformat *
 		(*try_fmt_vid_mplane)(struct ipu_isys_video *av,

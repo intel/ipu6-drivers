@@ -333,6 +333,8 @@ static int csi2_link_validate(struct media_link *link)
 	struct ipu_isys_pipeline *ip;
 	struct v4l2_subdev *source_sd;
 	struct v4l2_subdev *sink_sd;
+	struct v4l2_subdev_format fmt = { 0 };
+	int rval = 0;
 
 	if (!link->sink->entity || !link->source->entity)
 		return -EINVAL;
@@ -348,8 +350,20 @@ static int csi2_link_validate(struct media_link *link)
 	ipu_isys_video_add_capture_done(ip, csi2_capture_done);
 	source_sd = media_entity_to_v4l2_subdev(link->source->entity);
 	sink_sd = media_entity_to_v4l2_subdev(link->sink->entity);
+
 	if (!source_sd)
 		return -ENODEV;
+	/* source is external entity, get it's format */
+	fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+	fmt.pad = CSI2_PAD_SINK;
+	rval = v4l2_subdev_call(source_sd, pad, get_fmt, NULL, &fmt);
+
+	/* set csi2 format for the same as external entity */
+	rval = v4l2_subdev_call(sink_sd, pad, set_fmt, NULL, &fmt);
+
+	rval = v4l2_subdev_link_validate(link);
+	if (rval)
+		return rval;
 
 	if (strncmp(source_sd->name, IPU_ISYS_ENTITY_PREFIX,
 		    strlen(IPU_ISYS_ENTITY_PREFIX)) != 0) {
