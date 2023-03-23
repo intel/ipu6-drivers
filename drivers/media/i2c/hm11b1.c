@@ -1053,7 +1053,11 @@ static int hm11b1_identify_module(struct hm11b1 *hm11b1)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int hm11b1_remove(struct i2c_client *client)
+#else
+static void hm11b1_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct hm11b1 *hm11b1 = to_hm11b1(sd);
@@ -1064,7 +1068,9 @@ static int hm11b1_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&hm11b1->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	return 0;
+#endif
 }
 
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)

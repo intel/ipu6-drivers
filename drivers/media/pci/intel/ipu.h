@@ -115,4 +115,13 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 extern enum ipu_version ipu_ver;
 void ipu_internal_pdata_init(void);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+#include <media/media-entity.h>
+/* Helpers for building against various kernel versions */
+static inline struct media_pipeline *media_entity_pipeline(struct media_entity *entity)
+{
+	return entity->pipe;
+}
+#endif
+
 #endif /* IPU_H */

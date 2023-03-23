@@ -1221,7 +1221,11 @@ static int ov02c10_identify_module(struct ov02c10 *ov02c10)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int ov02c10_remove(struct i2c_client *client)
+#else
+static void ov02c10_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov02c10 *ov02c10 = to_ov02c10(sd);
@@ -1232,7 +1236,9 @@ static int ov02c10_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov02c10->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	return 0;
+#endif
 }
 
 static int ov02c10_probe(struct i2c_client *client)

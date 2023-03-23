@@ -5,6 +5,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/version.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
@@ -2013,7 +2014,11 @@ error_handler_free:
 	return ret;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int ov13858_remove(struct i2c_client *client)
+#else
+static void ov13858_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov13858 *ov13858 = to_ov13858(sd);
@@ -2024,7 +2029,9 @@ static int ov13858_remove(struct i2c_client *client)
 
 	pm_runtime_disable(&client->dev);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	return 0;
+#endif
 }
 
 static const struct i2c_device_id ov13858_id_table[] = {

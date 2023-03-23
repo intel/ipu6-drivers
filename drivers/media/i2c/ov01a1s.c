@@ -881,7 +881,11 @@ static int ov01a1s_identify_module(struct ov01a1s *ov01a1s)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int ov01a1s_remove(struct i2c_client *client)
+#else
+static void ov01a1s_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
@@ -892,7 +896,9 @@ static int ov01a1s_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov01a1s->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	return 0;
+#endif
 }
 
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)

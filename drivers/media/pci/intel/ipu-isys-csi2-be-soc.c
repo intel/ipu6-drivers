@@ -25,7 +25,6 @@ static const u32 csi2_be_soc_supported_codes_pad[] = {
 	MEDIA_BUS_FMT_RGB888_1X24,
 	MEDIA_BUS_FMT_UYVY8_1X16,
 	MEDIA_BUS_FMT_YUYV8_1X16,
-	MEDIA_BUS_FMT_VYUY8_1X16,
 	MEDIA_BUS_FMT_SBGGR12_1X12,
 	MEDIA_BUS_FMT_SGBRG12_1X12,
 	MEDIA_BUS_FMT_SGRBG12_1X12,
@@ -109,9 +108,9 @@ __subdev_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 		       struct v4l2_subdev_format *source_fmt,
 		       struct v4l2_subdev_format *sink_fmt)
 {
-	struct ipu_isys_pipeline *ip = container_of(sd->entity.pipe,
-						    struct ipu_isys_pipeline,
-						    pipe);
+	struct ipu_isys_pipeline *ip =
+		container_of(media_entity_pipeline(&sd->entity),
+			     struct ipu_isys_pipeline, pipe);
 
 	ip->csi2_be_soc = to_ipu_isys_csi2_be_soc(sd);
 	return ipu_isys_subdev_link_validate(sd, link, source_fmt, sink_fmt);

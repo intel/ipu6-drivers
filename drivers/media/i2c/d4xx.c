@@ -328,7 +328,6 @@ struct ds5_ctrls {
 	struct v4l2_ctrl_handler handler_depth;
 	struct v4l2_ctrl_handler handler_rgb;
 	struct v4l2_ctrl_handler handler_y8;
-	struct v4l2_ctrl_handler handler_imu;
 	struct {
 		struct v4l2_ctrl *log;
 		struct v4l2_ctrl *fw_version;
@@ -674,6 +673,8 @@ static int get_sub_stream_vc_id(int index)
 static u8 d4xx_set_sub_stream[] = {
 	0, 0, 0, 0, 0, 0
 };
+
+static int ds5_mux_s_stream_vc(struct ds5 *state, u16 vc_id, u16 on);
 
 /* Pad ops */
 
@@ -1137,6 +1138,9 @@ static int ds5_sensor_enum_frame_interval(struct v4l2_subdev *sd,
 	const struct ds5_resolution *res;
 	unsigned int i;
 
+	//if (fie->pad)
+	//	return -EINVAL;
+
 	for (i = 0, fmt = sensor->formats; i < sensor->n_formats; i++, fmt++)
 		if (fie->code == fmt->mbus_code)
 			break;
@@ -1170,6 +1174,8 @@ static int ds5_sensor_get_fmt(struct v4l2_subdev *sd,
 {
 	struct ds5_sensor *sensor = container_of(sd, struct ds5_sensor, sd);
 	struct ds5 *state = v4l2_get_subdevdata(sd);
+
+	//fmt->pad = sensor->mux_pad;
 
 	if (fmt->pad)
 		return -EINVAL;
@@ -1375,6 +1381,7 @@ static int ds5_sensor_set_fmt(struct v4l2_subdev *sd,
 #endif
 }
 
+#if 0 /* function not called */
 static int ds5_configure(struct ds5 *state)
 {
 	struct ds5_sensor *sensor;
@@ -1382,7 +1389,7 @@ static int ds5_configure(struct ds5 *state)
 	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
 	int ret;
 
-	if (state->is_depth) {
+	// if (state->is_depth) {
 		sensor = &state->depth.sensor;
 		dt_addr = DS5_DEPTH_STREAM_DT;
 		md_addr = DS5_DEPTH_STREAM_MD;
@@ -1390,42 +1397,9 @@ static int ds5_configure(struct ds5 *state)
 		fps_addr = DS5_DEPTH_FPS;
 		width_addr = DS5_DEPTH_RES_WIDTH;
 		height_addr = DS5_DEPTH_RES_HEIGHT;
-		md_fmt = 0x12;
+		// TODO: read VC from device tree
 		vc_id = 0;
-	} else if (state->is_rgb) {
-		sensor = &state->rgb.sensor;
-		dt_addr = DS5_RGB_STREAM_DT;
-		md_addr = DS5_RGB_STREAM_MD;
-		override_addr = 0;
-		fps_addr = DS5_RGB_FPS;
-		width_addr = DS5_RGB_RES_WIDTH;
-		height_addr = DS5_RGB_RES_HEIGHT;
 		md_fmt = 0x12;
-		vc_id = 1;
-	} else if (state->is_y8) {
-		sensor = &state->motion_t.sensor;
-		dt_addr = DS5_IR_STREAM_DT;
-		md_addr = DS5_IR_STREAM_MD;
-		override_addr = DS5_IR_OVERRIDE;
-		fps_addr = DS5_IR_FPS;
-		width_addr = DS5_IR_RES_WIDTH;
-		height_addr = DS5_IR_RES_HEIGHT;
-		md_fmt = 0x12;
-		vc_id = 2;
-	} else if (state->is_imu) {
-		sensor = &state->imu.sensor;
-		dt_addr = DS5_IMU_STREAM_DT;
-		md_addr = DS5_IMU_STREAM_MD;
-		override_addr = 0;
-		fps_addr = DS5_IMU_FPS;
-		width_addr = DS5_IMU_RES_WIDTH;
-		height_addr = DS5_IMU_RES_HEIGHT;
-		md_fmt = 0x0;
-		vc_id = 3;
-	} else {
-		return -EINVAL;
-	}
-
 
 	fmt = sensor->streaming ? sensor->config.format->data_type : 0;
 
@@ -1433,13 +1407,8 @@ static int ds5_configure(struct ds5 *state)
 	 * Set depth stream Z16 data type as 0x31
 	 * Set IR stream Y8I data type as 0x32
 	 */
-	if (state->is_depth && fmt != 0)
+	if (fmt != 0)
 		ret = ds5_write(state, dt_addr, 0x31);
-	else if (state->is_y8 && fmt != 0 &&
-		 sensor->config.format->data_type == 0x1E)
-		ret = ds5_write(state, dt_addr, 0x32);
-	else
-		ret = ds5_write(state, dt_addr, fmt);
 	if (ret < 0)
 		return ret;
 
@@ -1447,7 +1416,47 @@ static int ds5_configure(struct ds5 *state)
 	if (ret < 0)
 		return ret;
 
-	if (!sensor->streaming)
+	if (override_addr != 0) {
+		ret = ds5_write(state, override_addr, fmt);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = ds5_write(state, fps_addr, sensor->config.framerate);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, width_addr, sensor->config.resolution->width);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, height_addr, sensor->config.resolution->height);
+	if (ret < 0)
+		return ret;
+
+	// } else if (state->is_rgb) {
+		sensor = &state->rgb.sensor;
+		dt_addr = DS5_RGB_STREAM_DT;
+		md_addr = DS5_RGB_STREAM_MD;
+		override_addr = 0;
+		fps_addr = DS5_RGB_FPS;
+		width_addr = DS5_RGB_RES_WIDTH;
+		height_addr = DS5_RGB_RES_HEIGHT;
+		vc_id = 1;
+		md_fmt = 0x12;
+
+	fmt = sensor->streaming ? sensor->config.format->data_type : 0;
+
+	/*
+	 * Set depth stream Z16 data type as 0x31
+	 * Set IR stream Y8I data type as 0x32
+	 */
+	ret = ds5_write(state, dt_addr, fmt);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, md_addr, (vc_id << 8) | md_fmt);
+	if (ret < 0)
 		return ret;
 
 	if (override_addr != 0) {
@@ -1455,6 +1464,303 @@ static int ds5_configure(struct ds5 *state)
 		if (ret < 0)
 			return ret;
 	}
+
+	ret = ds5_write(state, fps_addr, sensor->config.framerate);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, width_addr, sensor->config.resolution->width);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, height_addr, sensor->config.resolution->height);
+	if (ret < 0)
+		return ret;
+
+	// } else if (state->is_y8) {
+		sensor = &state->motion_t.sensor;
+		dt_addr = DS5_IR_STREAM_DT;
+		md_addr = DS5_IR_STREAM_MD;
+		override_addr = DS5_IR_OVERRIDE;
+		fps_addr = DS5_IR_FPS;
+		width_addr = DS5_IR_RES_WIDTH;
+		height_addr = DS5_IR_RES_HEIGHT;
+		vc_id = 2;
+		md_fmt = 0x12;
+
+	fmt = sensor->streaming ? sensor->config.format->data_type : 0;
+
+	/*
+	 * Set depth stream Z16 data type as 0x31
+	 * Set IR stream Y8I data type as 0x32
+	 */
+	if (fmt != 0 &&
+		 sensor->config.format->data_type == 0x1e)
+		ret = ds5_write(state, dt_addr, 0x32);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, md_addr, (vc_id << 8) | md_fmt);
+	if (ret < 0)
+		return ret;
+
+	if (override_addr != 0) {
+		ret = ds5_write(state, override_addr, fmt);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = ds5_write(state, fps_addr, sensor->config.framerate);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, width_addr, sensor->config.resolution->width);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, height_addr, sensor->config.resolution->height);
+	if (ret < 0)
+		return ret;
+
+	// } else if (state->is_imu) {
+		sensor = &state->imu.sensor;
+		dt_addr = DS5_IMU_STREAM_DT;
+		md_addr = DS5_IMU_STREAM_MD;
+		override_addr = 0;
+		fps_addr = DS5_IMU_FPS;
+		width_addr = DS5_IMU_RES_WIDTH;
+		height_addr = DS5_IMU_RES_HEIGHT;
+		vc_id = 3;
+		md_fmt = 0x0;
+
+	fmt = sensor->streaming ? sensor->config.format->data_type : 0;
+
+	/*
+	 * Set depth stream Z16 data type as 0x31
+	 * Set IR stream Y8I data type as 0x32
+	 */
+	ret = ds5_write(state, dt_addr, fmt);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, md_addr, (vc_id << 8) | md_fmt);
+	if (ret < 0)
+		return ret;
+
+	if (override_addr != 0) {
+		ret = ds5_write(state, override_addr, fmt);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = ds5_write(state, fps_addr, sensor->config.framerate);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, width_addr, sensor->config.resolution->width);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, height_addr, sensor->config.resolution->height);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+#endif
+
+static int ds5_configure_depth(struct ds5 *state)
+{
+	struct ds5_sensor *sensor;
+	u16 fmt, md_fmt, vc_id;
+	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
+	int ret = -1;
+
+	// if (state->is_depth) {
+		sensor = &state->depth.sensor;
+		dt_addr = DS5_DEPTH_STREAM_DT;
+		md_addr = DS5_DEPTH_STREAM_MD;
+		override_addr = DS5_DEPTH_OVERRIDE;
+		fps_addr = DS5_DEPTH_FPS;
+		width_addr = DS5_DEPTH_RES_WIDTH;
+		height_addr = DS5_DEPTH_RES_HEIGHT;
+		// TODO: read VC from device tree
+		vc_id = 0;
+		md_fmt = 0x12;
+
+	fmt = 0x1e;
+
+	/*
+	 * Set depth stream Z16 data type as 0x31
+	 * Set IR stream Y8I data type as 0x32
+	 */
+	//if (fmt != 0)
+		ret = ds5_write(state, dt_addr, 0x31);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, md_addr, (vc_id << 8) | md_fmt);
+	if (ret < 0)
+		return ret;
+
+	if (override_addr != 0) {
+		ret = ds5_write(state, override_addr, fmt);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = ds5_write(state, fps_addr, sensor->config.framerate);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, width_addr, sensor->config.resolution->width);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, height_addr, sensor->config.resolution->height);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+static int ds5_configure_rgb(struct ds5 *state)
+{
+	struct ds5_sensor *sensor;
+	u16 fmt, md_fmt, vc_id;
+	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
+	int ret = -1;
+
+	// } else if (state->is_rgb) {
+		sensor = &state->rgb.sensor;
+		dt_addr = DS5_RGB_STREAM_DT;
+		md_addr = DS5_RGB_STREAM_MD;
+		override_addr = 0;
+		fps_addr = DS5_RGB_FPS;
+		width_addr = DS5_RGB_RES_WIDTH;
+		height_addr = DS5_RGB_RES_HEIGHT;
+		vc_id = 1;
+		md_fmt = 0x12;
+
+	fmt = sensor->streaming ? sensor->config.format->data_type : 0;
+
+	/*
+	 * Set depth stream Z16 data type as 0x31
+	 * Set IR stream Y8I data type as 0x32
+	 */
+	dev_info(NULL, "%s, fmt 0x%08x, data_type 0x%08x\n", __func__, fmt, sensor->config.format->data_type);
+//	ret = ds5_write(state, dt_addr, fmt);
+	ret = ds5_write(state, dt_addr, 0x1e);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, md_addr, (vc_id << 8) | md_fmt);
+	if (ret < 0)
+		return ret;
+
+	if (override_addr != 0) {
+		ret = ds5_write(state, override_addr, fmt);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = ds5_write(state, fps_addr, sensor->config.framerate);
+	if (ret < 0)
+		return ret;
+
+	//ret = ds5_write(state, width_addr, 480);
+	ret = ds5_write(state, width_addr, sensor->config.resolution->width);
+	if (ret < 0)
+		return ret;
+
+	//ret = ds5_write(state, height_addr, 270);
+	ret = ds5_write(state, height_addr, sensor->config.resolution->height);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int ds5_configure_ir(struct ds5 *state)
+{
+	struct ds5_sensor *sensor;
+	u16 fmt, md_fmt, vc_id;
+	u16 dt_addr, md_addr, override_addr, fps_addr, width_addr, height_addr;
+	int ret = -1;
+
+	// } else if (state->is_y8) {
+		sensor = &state->motion_t.sensor;
+		dt_addr = DS5_IR_STREAM_DT;
+		md_addr = DS5_IR_STREAM_MD;
+		override_addr = DS5_IR_OVERRIDE;
+		fps_addr = DS5_IR_FPS;
+		width_addr = DS5_IR_RES_WIDTH;
+		height_addr = DS5_IR_RES_HEIGHT;
+		vc_id = 2;
+		md_fmt = 0x12;
+
+	fmt = sensor->config.format->data_type;
+
+	/*
+	 * Set depth stream Z16 data type as 0x31
+	 * Set IR stream Y8I data type as 0x32
+	 */
+	if (sensor->config.format->data_type == 0x1e)
+		ret = ds5_write(state, dt_addr, 0x32);
+	else if (sensor->config.format->data_type == 0x2a)
+		ret = ds5_write(state, dt_addr, 0x2a);
+
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, md_addr, (vc_id << 8) | md_fmt);
+	if (ret < 0)
+		return ret;
+
+	if (override_addr != 0) {
+		ret = ds5_write(state, override_addr, fmt);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = ds5_write(state, fps_addr, sensor->config.framerate);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, width_addr, sensor->config.resolution->width);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, height_addr, sensor->config.resolution->height);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int ds5_configure_imu(struct ds5 *state)
+{
+	struct ds5_sensor *sensor;
+	u16 fmt, md_fmt, vc_id;
+	u16 dt_addr, md_addr, fps_addr, width_addr, height_addr;
+	int ret = -1;
+
+	sensor = &state->imu.sensor;
+	dt_addr = DS5_IMU_STREAM_DT;
+	md_addr = DS5_IMU_STREAM_MD;
+	fps_addr = DS5_IMU_FPS;
+	width_addr = DS5_IMU_RES_WIDTH;
+	height_addr = DS5_IMU_RES_HEIGHT;
+	vc_id = 3;
+	md_fmt = 0;
+
+	fmt = sensor->config.format->data_type;
+	ret = ds5_write(state, dt_addr, fmt);
+	if (ret < 0)
+		return ret;
+
+	ret = ds5_write(state, md_addr, (vc_id << 8) | md_fmt);
+	if (ret < 0)
+		return ret;
 
 	ret = ds5_write(state, fps_addr, sensor->config.framerate);
 	if (ret < 0)
@@ -1615,7 +1921,7 @@ static int ds5_hw_set_auto_exposure(struct ds5 *state, u32 base, s32 val)
  */
 static int ds5_hw_set_exposure(struct ds5 *state, u32 base, s32 val)
 {
-	int ret;
+	int ret = -1;
 
 	if (val < 1)
 		val = 1;
@@ -1629,6 +1935,8 @@ static int ds5_hw_set_exposure(struct ds5 *state, u32 base, s32 val)
 	 *	Color: 1 is 100 us
 	 *	Depth: 1 is 1 us
 	 */
+//	if (!state->is_rgb)
+//		val *= 100;
 
 	ret = ds5_write(state, base | DS5_MANUAL_EXPOSURE_MSB, (u16)(val >> 16));
 	if (!ret)
@@ -1791,7 +2099,7 @@ static int ds5_get_hwmc(struct ds5 *state, unsigned char *data)
 static int ds5_set_calibration_data(struct ds5 *state,
 		struct hwm_cmd *cmd, u16 length)
 {
-	int ret;
+	int ret = -1;
 	int retries = 10;
 	u16 status = 2;
 
@@ -1813,8 +2121,6 @@ static int ds5_set_calibration_data(struct ds5 *state,
 
 	return -EINVAL;
 }
-
-static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on);
 
 static int ds5_s_state(struct ds5 *state, int vc)
 {
@@ -1852,7 +2158,6 @@ static int ds5_s_state(struct ds5 *state, int vc)
 		ret = -EINVAL;
 		break;
 	}
-	ds5_set_state_last_set(state);
 	return ret;
 }
 
@@ -1891,13 +2196,6 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 			state->is_y8 = 1;
 			state->is_imu = 0;
 		break;
-		case DS5_MUX_PAD_IMU_A:
-			state = container_of(ctrl->handler, struct ds5, ctrls.handler_imu);
-			state->is_rgb = 0;
-			state->is_depth = 0;
-			state->is_y8 = 0;
-			state->is_imu = 1;
-		break;
 		default:
 			state->is_rgb = 0;
 			state->is_depth = 0;
@@ -1910,6 +2208,8 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	if (state->is_rgb)
 		base = DS5_RGB_CONTROL_BASE;
+	else if (state->is_imu)
+		return ret;
 
 	v4l2_dbg(3, 1, sd, "ctrl: %s, value: %d\n", ctrl->name, ctrl->val);
 	dev_dbg(&state->client->dev, "%s(): %s - ctrl: %s, value: %d\n",
@@ -2166,18 +2466,17 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 		dev_info(&state->client->dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
 		vc_id = (val >> 8) & 0x00FF;
 		on = val & 0x00FF;
-		if (vc_id < DS5_MUX_PAD_COUNT)
+		if (on == 0xff) {
 			ret = ds5_s_state(state, vc_id);
-		if (on == 0xff)
 			break;
+		}
 		if (vc_id > NR_OF_DS5_STREAMS - 1)
 			dev_err(&state->client->dev, "invalid vc %d\n", vc_id);
 		else
 			d4xx_set_sub_stream[vc_id] = on;
-#ifndef CONFIG_VIDEO_D4XX_SERDES
-		ret = ds5_mux_s_stream(sd, on);
-#endif
-		ret = 0;
+
+		ret = ds5_mux_s_stream_vc(state, vc_id, on);
+
 		break;
 	}
 
@@ -2190,7 +2489,7 @@ static int ds5_get_calibration_data(struct ds5 *state, enum table_id id,
 		unsigned char *table, unsigned int length)
 {
 	struct hwm_cmd *cmd;
-	int ret;
+	int ret = -1;
 	int retries = 3;
 	u16 status = 2;
 	u16 table_length;
@@ -2236,7 +2535,7 @@ static int ds5_get_calibration_data(struct ds5 *state, enum table_id id,
 static int ds5_gvd(struct ds5 *state, unsigned char *data)
 {
 	struct hwm_cmd cmd;
-	int ret;
+	int ret = -1;
 	u16 length = 0;
 	u16 status = 2;
 	u8 retries = 3;
@@ -2300,13 +2599,6 @@ static int ds5_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 			state->is_depth = 0;
 			state->is_y8 = 1;
 			state->is_imu = 0;
-		break;
-		case DS5_MUX_PAD_IMU_A:
-			state = container_of(ctrl->handler, struct ds5, ctrls.handler_imu);
-			state->is_rgb = 0;
-			state->is_depth = 0;
-			state->is_y8 = 0;
-			state->is_imu = 1;
 		break;
 		default:
 			state->is_rgb = 0;
@@ -2486,7 +2778,6 @@ static int ds5_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 				"%s(): V4L2_CID_IPU_QUERY_SUB_STREAM sensor->mux_pad:%d vc:[%d]\n",
 				__func__, sensor->mux_pad, vc_id);
 			*ctrl->p_new.p_s32 = pad_to_substream[sensor->mux_pad];
-			state->mux.last_set = sensor;
 			} else {
 				/* we are in DS5 MUX case */
 				*ctrl->p_new.p_s32 = -1;
@@ -2787,7 +3078,7 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 	struct ds5_ctrls *ctrls = &state->ctrls;
 	struct v4l2_ctrl_handler *hdl = &ctrls->handler;
 	struct v4l2_subdev *sd = &state->mux.sd.subdev;
-	int ret;
+	int ret = -1;
 	struct ds5_sensor *sensor = NULL;
 
 	switch (sid) {
@@ -2802,10 +3093,6 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 	case 2:
 		hdl = &ctrls->handler_y8;
 		sensor = &state->motion_t.sensor;
-		break;
-	case 3:
-		hdl = &ctrls->handler_imu;
-		sensor = &state->imu.sensor;
 		break;
 	default:
 		hdl = &ctrls->handler;
@@ -2845,21 +3132,21 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 		ctrls->gain->flags =
 				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
 	}
-	if (sid >= 0 && sid < 3) {
+if (sid >= 0) {
 
-		ctrls->auto_exp = v4l2_ctrl_new_std_menu(hdl, ops,
-				V4L2_CID_EXPOSURE_AUTO,
-				V4L2_EXPOSURE_APERTURE_PRIORITY,
-				~((1 << V4L2_EXPOSURE_MANUAL) |
-						(1 << V4L2_EXPOSURE_APERTURE_PRIORITY)),
-						V4L2_EXPOSURE_APERTURE_PRIORITY);
+	ctrls->auto_exp = v4l2_ctrl_new_std_menu(hdl, ops,
+			V4L2_CID_EXPOSURE_AUTO,
+			V4L2_EXPOSURE_APERTURE_PRIORITY,
+			~((1 << V4L2_EXPOSURE_MANUAL) |
+					(1 << V4L2_EXPOSURE_APERTURE_PRIORITY)),
+					V4L2_EXPOSURE_APERTURE_PRIORITY);
 
-		if (ctrls->auto_exp) {
-			ctrls->auto_exp->flags |=
-					V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
-			ctrls->auto_exp->priv = sensor;
-		}
+	if (ctrls->auto_exp) {
+		ctrls->auto_exp->flags |=
+				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
+		ctrls->auto_exp->priv = sensor;
 	}
+}
 	/* Exposure time: V4L2_CID_EXPOSURE_ABSOLUTE default unit: 100 us. */
 	if (sid == 0 || sid == 2) {
 		ctrls->exposure = v4l2_ctrl_new_std(hdl, ops,
@@ -2906,35 +3193,31 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 	// }
 
 	// Add these after v4l2_ctrl_handler_setup so they won't be set up
-	if (sid >= 0 && sid < 3) {
-		ctrls->log = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_log, sensor);
-		ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
-		ctrls->gvd = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_gvd, sensor);
-		ctrls->get_depth_calib =
-				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_depth_calib, sensor);
-		ctrls->set_depth_calib =
-				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_depth_calib, sensor);
-		ctrls->get_coeff_calib =
-				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_coeff_calib, sensor);
-		ctrls->set_coeff_calib =
-				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_coeff_calib, sensor);
-		ctrls->ae_roi_get = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_get, sensor);
-		ctrls->ae_roi_set = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_set, sensor);
-		ctrls->ae_setpoint_get =
-				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_get, sensor);
-		ctrls->ae_setpoint_set =
-				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_set, sensor);
-		ctrls->erb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_erb, sensor);
-		ctrls->ewb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ewb, sensor);
-		ctrls->hwmc = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc, sensor);
-		v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc_rw, sensor);
-	}
-	// DEPTH custom
+if (sid >= 0) {
+	ctrls->log = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_log, sensor);
+	ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
+	ctrls->gvd = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_gvd, sensor);
+	ctrls->get_depth_calib =
+			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_depth_calib, sensor);
+	ctrls->set_depth_calib =
+			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_depth_calib, sensor);
+	ctrls->get_coeff_calib =
+			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_coeff_calib, sensor);
+	ctrls->set_coeff_calib =
+			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_coeff_calib, sensor);
+	ctrls->ae_roi_get = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_get, sensor);
+	ctrls->ae_roi_set = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_set, sensor);
+	ctrls->ae_setpoint_get =
+			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_get, sensor);
+	ctrls->ae_setpoint_set =
+			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_set, sensor);
+	ctrls->erb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_erb, sensor);
+	ctrls->ewb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ewb, sensor);
+	ctrls->hwmc = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc, sensor);
+	v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc_rw, sensor);
+}
 	if (sid == 0)
 		v4l2_ctrl_new_custom(hdl, &ds5_ctrl_pwm, sensor);
-	// IMU custom
-	if (sid == 3)
-		ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
 
 	switch (sid) {
 	case 0:
@@ -2954,12 +3237,6 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 		dev_info(state->motion_t.sensor.sd.dev,
 			"%s():%d set ctrl_handler pad:%d\n",
 			__func__, __LINE__, state->motion_t.sensor.mux_pad);
-		break;
-	case 3:
-		state->imu.sensor.sd.ctrl_handler = hdl;
-		dev_info(state->imu.sensor.sd.dev,
-			"%s():%d set ctrl_handler pad:%d\n",
-			__func__, __LINE__, state->imu.sensor.mux_pad);
 		break;
 	default:
 		state->mux.sd.subdev.ctrl_handler = hdl;
@@ -3003,7 +3280,7 @@ static int ds5_sensor_register(struct ds5 *state, struct ds5_sensor *sensor)
 {
 	struct v4l2_subdev *sd = &sensor->sd;
 	struct media_entity *entity = &sensor->sd.entity;
-	int ret;
+	int ret = -1;
 
 	// FIXME: is async needed?
 	ret = v4l2_device_register_subdev(state->mux.sd.subdev.v4l2_dev, sd);
@@ -3078,7 +3355,7 @@ static int ds5_mux_enum_mbus_code(struct v4l2_subdev *sd,
 	struct ds5 *state = container_of(sd, struct ds5, mux.sd.subdev);
 	struct v4l2_subdev_mbus_code_enum tmp = *mce;
 	struct v4l2_subdev *remote_sd;
-	int ret;
+	int ret = -1;
 
 	dev_info(&state->client->dev, "%s(): %s \n", __func__, sd->name);
 	switch (mce->pad) {
@@ -3152,7 +3429,7 @@ static int ds5_mux_enum_frame_size(struct v4l2_subdev *sd,
 	struct v4l2_subdev_frame_size_enum tmp = *fse;
 	struct v4l2_subdev *remote_sd;
 	u32 pad = fse->pad;
-	int ret;
+	int ret = -1;
 
 	tmp.pad = 0;
 
@@ -3220,7 +3497,7 @@ static int ds5_mux_enum_frame_interval(struct v4l2_subdev *sd,
 	struct v4l2_subdev_frame_interval_enum tmp = *fie;
 	struct v4l2_subdev *remote_sd;
 	u32 pad = fie->pad;
-	int ret;
+	int ret = -1;
 
 	tmp.pad = 0;
 
@@ -3295,9 +3572,7 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	// u32 pad = fmt->pad;
 	int ret = 0;
 	int substream = -1;
-	if (pad != DS5_MUX_PAD_EXTERNAL)
-		ds5_s_state(state, pad - 1);
-	sensor = state->mux.last_set;
+
 	switch (pad) {
 	case DS5_MUX_PAD_DEPTH_A:
 	case DS5_MUX_PAD_MOTION_T_A:
@@ -3354,10 +3629,8 @@ static int ds5_mux_get_fmt(struct v4l2_subdev *sd,
 	int ret = 0;
 	struct ds5_sensor *sensor = state->mux.last_set;
 	u32 pad = sensor->mux_pad;
-	if (pad != DS5_MUX_PAD_EXTERNAL)
-		ds5_s_state(state, pad - 1);
-	sensor = state->mux.last_set;
-	dev_info(sd->dev, "%s(): %u %s %p\n", __func__, pad, ds5_get_sensor_name(state), state->mux.last_set);
+
+	dev_info(sd->dev, "%s(): %u %p\n", __func__, pad, state->mux.last_set);
 
 	switch (pad) {
 	case DS5_MUX_PAD_DEPTH_A:
@@ -3442,59 +3715,108 @@ static int ds5_mux_s_frame_interval(struct v4l2_subdev *sd,
 static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 {
 	struct ds5 *state = container_of(sd, struct ds5, mux.sd.subdev);
-	u16 streaming, status;
+	u16 streaming_depth, streaming_rgb, streaming_y8, rate, depth_status, rgb_status, y8_status;
 	int ret = 0;
+	u16 streaming, status;
+	u16 config_status_base, stream_status_base, stream_id;
 	unsigned int i = 0;
-	int restore_val = 0;
-	u16 config_status_base, stream_status_base, stream_id, vc_id;
+	u16 err_status;
+	u16 tmp;
 
-	if (state->is_depth) {
+	dev_info(&state->client->dev, "%s(): %s on = %d\n", __func__, state->mux.last_set->sd.name, on);
+
+	state->mux.last_set->streaming = on;
+
+	// TODO: remove, workaround for FW crash in start
+	msleep_range(100);
+
+	if (!on) {
+		ds5_read(state, 0x1004, &streaming_depth);
+		ds5_read(state, 0x4800, &depth_status);
+		ds5_read(state, 0x4802, &rgb_status);
+
+		msleep_range(100);
+		ret = ds5_write(state, DS5_START_STOP_STREAM,
+				DS5_STREAM_STOP | DS5_STREAM_DEPTH);
+		msleep_range(100);
+		ret = ds5_write(state, DS5_START_STOP_STREAM,
+				DS5_STREAM_STOP | DS5_STREAM_RGB);
+		msleep_range(100);
+		ret = ds5_write(state, DS5_START_STOP_STREAM,
+				DS5_STREAM_STOP | DS5_STREAM_IMU);
+		msleep_range(100);
+		ret = ds5_write(state, DS5_START_STOP_STREAM,
+				DS5_STREAM_STOP | DS5_STREAM_IR);
+
+		return 0;
+	}
+
+	msleep_range(100);
+	if (on)
+		ret = ds5_configure_depth(state);
+	msleep_range(100);
+	ds5_write(state, 0x1000,  on ? 0x200 : 0x100);
+
 		config_status_base = DS5_DEPTH_CONFIG_STATUS;
 		stream_status_base = DS5_DEPTH_STREAM_STATUS;
-		stream_id = DS5_STREAM_DEPTH;
-		vc_id = 0;
-	} else if (state->is_rgb) {
+		// check streaming status from FW
+		for (i = 0; i < DS5_START_MAX_COUNT; i++) {
+			ds5_read(state, stream_status_base, &streaming);
+			ds5_read(state, config_status_base, &status);
+			if ((status & DS5_STATUS_STREAMING) &&
+			    streaming == DS5_STREAM_STREAMING)
+				break;
+
+			msleep_range(DS5_START_POLL_TIME);
+		}
+
+		if (i == DS5_START_MAX_COUNT) {
+			dev_err(&state->client->dev,
+				"start depth streaming failed, exit on timeout\n");
+		}
+
+	msleep_range(100);
+	if (on)
+		ret = ds5_configure_rgb(state);
+	msleep_range(100);
+	/* RGB */
+	ds5_write(state, 0x1000,  on ? 0x201 : 0x101);
+
 		config_status_base = DS5_RGB_CONFIG_STATUS;
 		stream_status_base = DS5_RGB_STREAM_STATUS;
-		stream_id = DS5_STREAM_RGB;
-		vc_id = 1;
-	} else if (state->is_y8) {
+		// check streaming status from FW
+		for (i = 0; i < DS5_START_MAX_COUNT; i++) {
+			ds5_read(state, stream_status_base, &streaming);
+			ds5_read(state, config_status_base, &status);
+			if ((status & DS5_STATUS_STREAMING) &&
+			    streaming == DS5_STREAM_STREAMING)
+				break;
+
+			msleep_range(DS5_START_POLL_TIME);
+		}
+
+		if (i == DS5_START_MAX_COUNT) {
+			dev_err(&state->client->dev,
+				"start RGB streaming failed, exit on timeout\n");
+		}
+
+	/* IR */
+	msleep_range(100);
+	if (on)
+		ret = ds5_configure_ir(state);
+	msleep_range(100);
+	ds5_write(state, 0x1000,  on ? 0x204 : 0x104);
+
 		config_status_base = DS5_IR_CONFIG_STATUS;
 		stream_status_base = DS5_IR_STREAM_STATUS;
 		stream_id = DS5_STREAM_IR;
-		vc_id = 2;
-	} else if (state->is_imu) {
-		config_status_base = DS5_IMU_CONFIG_STATUS;
-		stream_status_base = DS5_IMU_STREAM_STATUS;
-		stream_id = DS5_STREAM_IMU;
-		vc_id = 3;
-	} else {
-		return -EINVAL;
-	}
-
-	dev_warn(&state->client->dev, "s_stream for stream %s, on = %d\n",
-			state->mux.last_set->sd.name, on);
-
-	restore_val = state->mux.last_set->streaming;
-	state->mux.last_set->streaming = on;
-
-	if (on) {
-
-		ret = ds5_configure(state);
-		if (ret)
-			goto restore_s_state;
-
-		ret = ds5_write(state, DS5_START_STOP_STREAM,
-				DS5_STREAM_START | stream_id);
-		if (ret < 0)
-			goto restore_s_state;
 
 		// check streaming status from FW
 		for (i = 0; i < DS5_START_MAX_COUNT; i++) {
 			ds5_read(state, stream_status_base, &streaming);
 			ds5_read(state, config_status_base, &status);
 			if ((status & DS5_STATUS_STREAMING) &&
-					streaming == DS5_STREAM_STREAMING)
+			    streaming == DS5_STREAM_STREAMING)
 				break;
 
 			msleep_range(DS5_START_POLL_TIME);
@@ -3502,43 +3824,216 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 
 		if (DS5_START_MAX_COUNT == i) {
 			dev_err(&state->client->dev,
-				"start streaming failed, exit on timeout\n");
-			/* notify fw */
-			ret = ds5_write(state, DS5_START_STOP_STREAM,
-					DS5_STREAM_STOP | stream_id);
-			ret = -EAGAIN;
-			goto restore_s_state;
-		} else {
-			dev_dbg(&state->client->dev, "started after %dms\n",
-				i * DS5_START_POLL_TIME);
+				"start imu streaming failed, exit on timeout\n");
 		}
-	} else {
-		ret = ds5_write(state, DS5_START_STOP_STREAM,
-				DS5_STREAM_STOP | stream_id);
-		if (ret < 0)
-			goto restore_s_state;
 
-	}
+	// TODO: this read seems to cause FW crash, need to debug
+	//ds5_read(state, 0x402, &rate);
+	rate = 0;
 
-	ds5_read(state, config_status_base, &status);
-	ds5_read(state, stream_status_base, &streaming);
-	dev_info(&state->client->dev,
-			"%s %s, stream_status 0x%x:%x, config_status 0x%x:%x\n",
-			ds5_get_sensor_name(state),
-			(on)?"START":"STOP",
-			stream_status_base, streaming,
-			config_status_base, status);
+	ds5_read(state, 0x401a, &err_status);
+	ds5_read(state, 0x1004, &streaming_depth);
+	ds5_read(state, 0x1008, &streaming_rgb);
+	ds5_read(state, 0x1010, &streaming_y8);
+	ds5_read(state, 0x4800, &depth_status);
+	ds5_read(state, 0x4802, &rgb_status);
+	ds5_read(state, 0x4808, &y8_status);
+	ds5_read(state, 0x4002, &tmp);
+	ds5_read(state, 0x4022, &tmp);
+	ds5_read(state, 0x4082, &tmp);
+
+	//ds5_write(state, 0x4002,  0x100 );
+	//ds5_write(state, 0x4022,  0x0 );
+	//ds5_read(state, 0x4002, &tmp);
+	//ds5_read(state, 0x4022, &tmp);
+	msleep_range(DS5_START_POLL_TIME*50);
+
+	dev_info(&state->client->dev, "%s(): streaming %x-%x-%x depth status 0x%04x, rgb status 0x%04x, rate %u\n", __func__,
+		 streaming_depth, streaming_rgb, streaming_y8, depth_status, rgb_status, rate);
 
 	return ret;
+}
 
-restore_s_state:
+static int ds5_mux_s_stream_vc(struct ds5 *state, u16 vc_id, u16 on)
+{
+	u16 streaming_depth, streaming_rgb, streaming_y8, rate, depth_status, rgb_status, y8_status;
+	int ret = 0;
+	u16 streaming, status;
+	u16 config_status_base, stream_status_base, stream_id;
+	unsigned int i = 0;
+	u16 err_status;
+	u16 tmp;
 
-	ds5_read(state, config_status_base, &status);
-	dev_err(&state->client->dev,
-			"%s stream toggle failed! %x status 0x%04x\n",
-			ds5_get_sensor_name(state) ,restore_val, status);
+	dev_info(&state->client->dev, "%s(): %s on = %d\n", __func__, state->mux.last_set->sd.name, on);
 
-	state->mux.last_set->streaming = restore_val;
+	state->mux.last_set->streaming = on;
+
+	// TODO: remove, workaround for FW crash in start
+	msleep_range(100);
+
+	if (!on) {
+		ds5_read(state, 0x1004, &streaming_depth);
+		ds5_read(state, 0x4800, &depth_status);
+		ds5_read(state, 0x4802, &rgb_status);
+
+		if ((vc_id == DS5_MUX_PAD_DEPTH_A - 1) || (vc_id == DS5_MUX_PAD_DEPTH_B - 1)) {
+			msleep_range(100);
+			ret = ds5_write(state, DS5_START_STOP_STREAM,
+					DS5_STREAM_STOP | DS5_STREAM_DEPTH);
+		}
+		if ((vc_id == DS5_MUX_PAD_RGB_A - 1) || (vc_id == DS5_MUX_PAD_RGB_B - 1)) {
+			msleep_range(100);
+			ret = ds5_write(state, DS5_START_STOP_STREAM,
+					DS5_STREAM_STOP | DS5_STREAM_RGB);
+		}
+		if ((vc_id == DS5_MUX_PAD_IMU_A - 1) || (vc_id == DS5_MUX_PAD_IMU_B - 1)) {
+			msleep_range(100);
+			ret = ds5_write(state, DS5_START_STOP_STREAM,
+					DS5_STREAM_STOP | DS5_STREAM_IMU);
+		}
+		if ((vc_id == DS5_MUX_PAD_MOTION_T_A - 1) || (vc_id == DS5_MUX_PAD_MOTION_T_B - 1)) {
+			msleep_range(100);
+			ret = ds5_write(state, DS5_START_STOP_STREAM,
+					DS5_STREAM_STOP | DS5_STREAM_IR);
+		}
+		return 0;
+	}
+
+	msleep_range(100);
+	if ((on) && ((vc_id == DS5_MUX_PAD_DEPTH_A - 1) || (vc_id == DS5_MUX_PAD_DEPTH_B - 1))) {
+		ret = ds5_configure_depth(state);
+	msleep_range(100);
+	ds5_write(state, 0x1000,  on ? 0x200 : 0x100);
+
+		config_status_base = DS5_DEPTH_CONFIG_STATUS;
+		stream_status_base = DS5_DEPTH_STREAM_STATUS;
+		// check streaming status from FW
+		for (i = 0; i < DS5_START_MAX_COUNT; i++) {
+			ds5_read(state, stream_status_base, &streaming);
+			ds5_read(state, config_status_base, &status);
+			if ((status & DS5_STATUS_STREAMING) &&
+			    streaming == DS5_STREAM_STREAMING)
+				break;
+
+			msleep_range(DS5_START_POLL_TIME);
+		}
+
+		if (DS5_START_MAX_COUNT == i) {
+			dev_err(&state->client->dev,
+				"start depth streaming failed, exit on timeout\n");
+		}
+	}
+
+	if ((on) && ((vc_id == DS5_MUX_PAD_RGB_A - 1) || (vc_id == DS5_MUX_PAD_RGB_B - 1))) {
+	msleep_range(100);
+	if (on)
+		ret = ds5_configure_rgb(state);
+	msleep_range(100);
+	/* RGB */
+	ds5_write(state, 0x1000,  on ? 0x201 : 0x101);
+
+		config_status_base = DS5_RGB_CONFIG_STATUS;
+		stream_status_base = DS5_RGB_STREAM_STATUS;
+		// check streaming status from FW
+		for (i = 0; i < DS5_START_MAX_COUNT; i++) {
+			ds5_read(state, stream_status_base, &streaming);
+			ds5_read(state, config_status_base, &status);
+			if ((status & DS5_STATUS_STREAMING) &&
+			    streaming == DS5_STREAM_STREAMING)
+				break;
+
+			msleep_range(DS5_START_POLL_TIME);
+		}
+
+		if (DS5_START_MAX_COUNT == i) {
+			dev_err(&state->client->dev,
+					"start RGB streaming failed, exit on timeout\n");
+		}
+	}
+
+	if ((on) && ((vc_id == DS5_MUX_PAD_MOTION_T_A - 1) || (vc_id == DS5_MUX_PAD_MOTION_T_B - 1))) {
+	msleep_range(100);
+	if (on)
+		ret = ds5_configure_ir(state);
+	msleep_range(100);
+	ds5_write(state, 0x1000,  on ? 0x204 : 0x104);
+
+		config_status_base = DS5_IR_CONFIG_STATUS;
+		stream_status_base = DS5_IR_STREAM_STATUS;
+		stream_id = DS5_STREAM_IR;
+
+		// check streaming status from FW
+		for (i = 0; i < DS5_START_MAX_COUNT; i++) {
+			ds5_read(state, stream_status_base, &streaming);
+			ds5_read(state, config_status_base, &status);
+			if ((status & DS5_STATUS_STREAMING) &&
+			    streaming == DS5_STREAM_STREAMING)
+				break;
+
+			msleep_range(DS5_START_POLL_TIME);
+		}
+
+		if (DS5_START_MAX_COUNT == i) {
+			dev_err(&state->client->dev,
+				"start imu streaming failed, exit on timeout\n");
+		}
+	}
+
+	if ((on) && ((vc_id == DS5_MUX_PAD_IMU_A - 1) ||
+	    (vc_id == DS5_MUX_PAD_IMU_B - 1))) {
+		msleep_range(100);
+
+		if (on)
+			ret = ds5_configure_imu(state);
+
+		msleep_range(100);
+		ds5_write(state, 0x1000,  on ? 0x202 : 0x102);
+
+		config_status_base = DS5_IMU_CONFIG_STATUS;
+		stream_status_base = DS5_IMU_STREAM_STATUS;
+		stream_id = DS5_STREAM_IMU;
+
+		// check streaming status from FW
+		for (i = 0; i < DS5_START_MAX_COUNT; i++) {
+			ds5_read(state, stream_status_base, &streaming);
+			ds5_read(state, config_status_base, &status);
+
+			if ((status & DS5_STATUS_STREAMING) &&
+			    (streaming == DS5_STREAM_STREAMING))
+				break;
+
+			msleep_range(DS5_START_POLL_TIME);
+		}
+
+		if (i == DS5_START_MAX_COUNT) {
+			dev_err(&state->client->dev,
+				"start imu streaming failed, exit on timeout\n");
+		}
+	}
+
+	// TODO: this read seems to cause FW crash, need to debug
+	//ds5_read(state, 0x402, &rate);
+	rate = 0;
+	ds5_read(state, 0x401a, &err_status);
+
+	ds5_read(state, 0x1004, &streaming_depth);
+	ds5_read(state, 0x1008, &streaming_rgb);
+	ds5_read(state, 0x1010, &streaming_y8);
+	ds5_read(state, 0x4800, &depth_status);
+	ds5_read(state, 0x4802, &rgb_status);
+	ds5_read(state, 0x4808, &y8_status);
+	ds5_read(state, 0x4002, &tmp);
+	ds5_read(state, 0x4022, &tmp);
+	ds5_read(state, 0x4082, &tmp);
+
+	//ds5_write(state, 0x4002,  0x100 );
+	//ds5_write(state, 0x4022,  0x0 );
+	//ds5_read(state, 0x4002, &tmp);
+	//ds5_read(state, 0x4022, &tmp);
+	msleep_range(DS5_START_POLL_TIME*50);
+
+	dev_info(&state->client->dev, "%s(): streaming %x-%x-%x depth status 0x%04x, rgb status 0x%04x, rate %u\n", __func__,
+		 streaming_depth, streaming_rgb, streaming_y8, depth_status, rgb_status, rate);
 
 	return ret;
 }
@@ -3813,12 +4308,15 @@ static int ds5_mux_init(struct i2c_client *c, struct ds5 *state)
 	ret = ds5_ctrl_init(state, 2);
 	if (ret < 0)
 		return ret;
-	/*set for imu*/
-	ret = ds5_ctrl_init(state, 3);
-	if (ret < 0)
-		return ret;
 
-	ds5_set_state_last_set(state);
+	if (state->is_depth)
+		state->mux.last_set = &state->depth.sensor;
+	else if (state->is_rgb)
+		state->mux.last_set = &state->rgb.sensor;
+	else if (state->is_y8)
+		state->mux.last_set = &state->motion_t.sensor;
+	else
+		state->mux.last_set = &state->imu.sensor;
 
 #ifdef CONFIG_TEGRA_CAMERA_PLATFORM
 	state->mux.sd.dev = &c->dev;
@@ -4138,20 +4636,16 @@ static ssize_t ds5_dfu_device_read(struct file *flip,
 		char __user *buffer, size_t len, loff_t *offset)
 {
 	struct ds5 *state = flip->private_data;
-	u16 fw_ver, fw_build;
-	char msg[32];
+	u16 fw_ver;
+	char msg[20];
 	int ret = 0;
 
 	if (mutex_lock_interruptible(&state->lock))
 		return -ERESTARTSYS;
-	ret |= ds5_read(state, DS5_FW_VERSION, &fw_ver);
-	ret |= ds5_read(state, DS5_FW_BUILD, &fw_build);
+	ret = ds5_read(state, DS5_FW_VERSION, &fw_ver);
 	if (ret < 0)
 		goto e_dfu_read_failed;
-	snprintf(msg, sizeof(msg) ,"DFU info: \tver:  %d.%d.%d.%d\n",
-			(fw_ver >> 8) & 0xff, fw_ver & 0xff,
-			(fw_build >> 8) & 0xff, fw_build & 0xff);
-
+	snprintf(msg, sizeof(msg), "DFU info: \tver: (0x%x)\n", fw_ver);
 	if (copy_to_user(buffer, msg, strlen(msg)))
 		ret = -EFAULT;
 	else {
@@ -4181,8 +4675,7 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 					__func__, ret);
 			goto dfu_write_error;
 		}
-	/*fallthrough - procceed to recovery*/
-	__attribute__((__fallthrough__));
+	/*no break - proceed to recovery*/
 	case DS5_DFU_RECOVERY:
 		ret = ds5_dfu_detach(state);
 		if (ret < 0) {
@@ -4192,8 +4685,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 		}
 		state->dfu_dev.dfu_state_flag = DS5_DFU_IN_PROGRESS;
 		state->dfu_dev.init_v4l_f = 1;
-	/*fallthrough - procceed to download*/
-	__attribute__((__fallthrough__));
+
+	/*no break - proceed to download*/
 	case DS5_DFU_IN_PROGRESS: {
 		unsigned int dfu_full_blocks = len / DFU_BLOCK_SIZE;
 		unsigned int dfu_part_blocks = len % DFU_BLOCK_SIZE;
@@ -4244,11 +4737,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 	return len;
 
 dfu_write_error:
+	//TODO: Reset device here
 	state->dfu_dev.dfu_state_flag = DS5_DFU_ERROR;
-	// Reset DFU device to IDLE states
-	ret = ds5_write(state, 0x5010, 0x0);
-	if (!ret)
-		state->dfu_dev.dfu_state_flag = DS5_DFU_IDLE;
 	mutex_unlock(&state->lock);
 	return ret;
 };
@@ -4257,6 +4747,8 @@ static int ds5_dfu_device_open(struct inode *inode, struct file *file)
 {
 	struct ds5 *state = container_of(inode->i_cdev, struct ds5,
 			dfu_dev.ds5_cdev);
+	struct i2c_adapter *parent = i2c_parent_is_i2c_adapter(
+			state->client->adapter);
 
 	if (state->dfu_dev.device_open_count)
 		return -EBUSY;
@@ -4356,14 +4848,12 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 {
 	struct cdev *ds5_cdev = &state->dfu_dev.ds5_cdev;
 	struct class **ds5_class = &state->dfu_dev.ds5_class;
-	struct d4xx_pdata *pdata = c->dev.platform_data;
-
 	struct device *chr_dev;
-	char dev_name[sizeof(DS5_DRIVER_NAME_DFU) + 8];
+	char dev_name[sizeof(DS5_DRIVER_NAME_DFU) + 5];
 	dev_t *dev_num = &c->dev.devt;
 	int ret;
 
-	dev_dbg(&c->dev, "%s()\n", __func__);
+	dev_info(&c->dev, "%s()\n", __func__);
 	/* Request the kernel for N_MINOR devices */
 	ret = alloc_chrdev_region(dev_num, 0, 1, DS5_DRIVER_NAME_DFU);
 	if (ret < 0)
@@ -4388,8 +4878,8 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 	/* Build up the current device number. To be used further */
 	*dev_num = MKDEV(MAJOR(*dev_num), MINOR(*dev_num));
 	/* Create a device node for this device. */
-	snprintf(dev_name, sizeof(dev_name), "%s-%c",
-			DS5_DRIVER_NAME_DFU, pdata->suffix);
+	snprintf(dev_name, sizeof(dev_name), "%s%d",
+			DS5_DRIVER_NAME_DFU, MAJOR(*dev_num));
 	chr_dev = device_create(*ds5_class, NULL, *dev_num, NULL, dev_name);
 	if (IS_ERR(chr_dev)) {
 		ret = PTR_ERR(chr_dev);
@@ -4406,9 +4896,7 @@ static int ds5_chrdev_remove(struct ds5 *state)
 {
 	struct class **ds5_class = &state->dfu_dev.ds5_class;
 	dev_t *dev_num = &state->client->dev.devt;
-	if (!ds5_class) {
-		return 0;
-	}
+
 	dev_dbg(&state->client->dev, "%s()\n", __func__);
 	unregister_chrdev_region(*dev_num, 1);
 	device_destroy(*ds5_class, *dev_num);
@@ -4639,16 +5127,16 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	}
 
 	c->addr = 0x48;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 	c->addr = 0x4a;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 	c->addr = 0x68;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 	c->addr = 0x6c;
-	max9296_write_8(state, 0x0010, 0x23);
+	max9296_write_8(state, 0x0010, 0x40);
 
 	c->addr = 0x6c;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
@@ -4660,7 +5148,7 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	max9295_write_8(state, 0x0045, 0x20);
 
 	c->addr = 0x68;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
@@ -4670,7 +5158,7 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	max9295_write_8(state, 0x0045, 0x20);
 
 	c->addr = 0x4a;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
@@ -4680,7 +5168,7 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	max9295_write_8(state, 0x0045, 0x20);
 
 	c->addr = 0x48;
-	max9296_write_8(state, 0x0010, 0x22);
+	max9296_write_8(state, 0x0010, 0x32);
 	msleep_range(1000);
 
 	c->addr = 0x40;
@@ -4751,47 +5239,14 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		}
 	}
 
-	// Verify communication
-	retry = 10;
+	ret = ds5_chrdev_init(c, state);
+	if (ret < 0)
+		goto e_regulator;
+
+	retry = 100;
 	do {
 	ret = ds5_read(state, 0x5020, &rec_state);
 	} while (retry-- && ret < 0);
-	if (ret < 0) {
-		dev_err(&c->dev,
-			"%s(): cannot communicate with D4XX: %d on addr: 0x%x\n",
-			__func__, ret, c->addr);
-		goto e_regulator;
-	}
-
-	state->is_depth = 0;
-	state->is_y8 = 0;
-	state->is_rgb = 0;
-	state->is_imu = 0;
-#ifdef CONFIG_OF
-	ret = of_property_read_string(c->dev.of_node, "cam-type", &str);
-	if (!ret && !strncmp(str, "Depth", strlen("Depth"))) {
-		state->is_depth = 1;
-	}
-	if (!ret && !strncmp(str, "Y8", strlen("Y8"))) {
-		state->is_y8 = 1;
-	}
-	if (!ret && !strncmp(str, "RGB", strlen("RGB"))) {
-		state->is_rgb = 1;
-	}
-	if (!ret && !strncmp(str, "IMU", strlen("IMU"))) {
-		state->is_imu = 1;
-	}
-#else
-	state->is_depth = 1;
-#endif
-	/* create DFU chardev once */
-	if (state->is_depth) {
-		ret = ds5_chrdev_init(c, state);
-		if (ret < 0)
-			goto e_regulator;
-	}
-
-	ret = ds5_read(state, 0x5020, &rec_state);
 	if (ret < 0) {
 		dev_err(&c->dev, "%s(): cannot communicate with D4XX: %d\n",
 				__func__, ret);
@@ -4803,6 +5258,22 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		state->dfu_dev.dfu_state_flag = DS5_DFU_RECOVERY;
 		return 0;
 	}
+
+	state->is_depth = 0;
+	state->is_y8 = 0;
+	state->is_rgb = 0;
+	state->is_imu = 0;
+
+	err = of_property_read_string(c->dev.of_node, "cam-type",
+			&str);
+	if (!err && !strncmp(str, "Depth", strlen("Depth")))
+		state->is_depth = 1;
+	if (!err && !strncmp(str, "Y8", strlen("Y8")))
+		state->is_y8 = 1;
+	if (!err && !strncmp(str, "RGB", strlen("RGB")))
+		state->is_rgb = 1;
+	if (!err && !strncmp(str, "IMU", strlen("IMU")))
+		state->is_imu = 1;
 
 	ds5_read_with_check(state, DS5_FW_VERSION, &state->fw_version);
 	ds5_read_with_check(state, DS5_FW_BUILD, &state->fw_build);
@@ -4835,8 +5306,7 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 	return 0;
 
 e_chardev:
-	if(state->dfu_dev.ds5_class)
-		ds5_chrdev_remove(state);
+	ds5_chrdev_remove(state);
 e_regulator:
 	if (state->vcc)
 		regulator_disable(state->vcc);
@@ -4852,10 +5322,7 @@ static int ds5_remove(struct i2c_client *c)
 	if (state->vcc)
 		regulator_disable(state->vcc);
 //	gpio_free(state->pwdn_gpio);
-	if (state->is_depth) {
-		ds5_chrdev_remove(state);
-	}
-
+	ds5_chrdev_remove(state);
 	if (state->dfu_dev.dfu_state_flag != DS5_DFU_RECOVERY) {
 #ifdef CONFIG_SYSFS
 		sysfs_remove_group(&c->dev.kobj, &ds5_attr_group);

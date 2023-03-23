@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2021 Intel Corporation.
+// Copyright (c) 2021-2022 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -1197,7 +1197,11 @@ static int ov8856_identify_module(struct ov8856 *ov8856)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int ov8856_remove(struct i2c_client *client)
+#else
+static void ov8856_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov8856 *ov8856 = to_ov8856(sd);
@@ -1208,7 +1212,9 @@ static int ov8856_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov8856->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	return 0;
+#endif
 }
 
 static int ov8856_probe(struct i2c_client *client)
