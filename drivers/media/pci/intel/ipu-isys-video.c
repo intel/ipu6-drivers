@@ -1504,6 +1504,81 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 	return ret;
 }
 
+static int media_pipeline_update_fmt(struct ipu_isys_video *av)
+{
+	struct media_pad *source_pad = media_entity_remote_pad(&av->pad);
+	struct media_pad *remote_pad = source_pad;
+	struct v4l2_subdev *sd = NULL;
+	int ret = 0;
+	struct v4l2_subdev_format fmt = {
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE,
+		.pad = 0,
+	};
+	struct v4l2_mbus_framefmt format = {
+		.width = av->mpix.width,
+		.height = av->mpix.height,
+		.code = av->pfmt->code,
+		.field = av->mpix.field,
+		.colorspace = av->mpix.colorspace,
+		.ycbcr_enc = av->mpix.ycbcr_enc,
+		.quantization = av->mpix.quantization,
+		.xfer_func = av->mpix.xfer_func,
+	};
+
+	if (av->aq.vbq.streaming)
+		return -EBUSY;
+
+	fmt.format = format;
+
+	/* set format for CSI-2 and CSI2 BE SOC  */
+	do {
+		/* Non-subdev nodes can be safely ignored here. */
+		if (!is_media_entity_v4l2_subdev(remote_pad->entity))
+			continue;
+		/* Set only for IPU6 CSI entities */
+		if ((strncmp(remote_pad->entity->name,
+					IPU_ISYS_ENTITY_PREFIX " CSI",
+					strlen(IPU_ISYS_ENTITY_PREFIX " CSI")) != 0)) {
+			struct v4l2_ext_control c = {
+				.id = V4L2_CID_IPU_SET_SUB_STREAM,
+			};
+			struct v4l2_ext_controls cs = {.count = 1,
+				.controls = &c,
+			};
+			dev_dbg(remote_pad->entity->graph_obj.mdev->dev,
+					"%s():%d %s, switch sensor and complete\n",
+					__func__, __LINE__,
+					remote_pad->entity->name);
+			sd = media_entity_to_v4l2_subdev(remote_pad->entity);
+			c.value64 = SUB_STREAM_SET_VALUE(av->ip.vc, 0xff);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+			v4l2_s_ext_ctrls(NULL, sd->ctrl_handler,
+					sd->devnode,
+					sd->v4l2_dev->mdev,
+					&cs);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+			v4l2_s_ext_ctrls(NULL, sd->ctrl_handler,
+					sd->v4l2_dev->mdev,
+					&cs);
+#endif
+			break;
+		}
+
+		dev_dbg(remote_pad->entity->graph_obj.mdev->dev,
+				"%s():%d WE finds: %s\n",
+				__func__, __LINE__,
+				remote_pad->entity->name);
+		sd = media_entity_to_v4l2_subdev(remote_pad->entity);
+		ret = ipu_isys_set_fmt_subdev(av, sd, &fmt);
+
+		if (ret)
+			return -EINVAL;
+	} while ((remote_pad =
+			media_entity_remote_pad(&remote_pad->entity->pads[0])));
+
+	return 0;
+}
+
 static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 				     struct media_pipeline *pipe)
 {
@@ -1542,6 +1617,13 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 		if (ret)
 			goto error_graph_walk_start;
 	}
+	/*
+	* Update media link format according to capture format
+	* This needed as for entities CSI2 BE SOC source pad and CSI-2 sink
+	* and source pads have single link point while BE-SOC sink 
+	* and external entities has multiple source pads.
+	*/
+	media_pipeline_update_fmt(av);
 
 	media_graph_walk_start(&pipe->graph, entity);
 	while ((entity = media_graph_walk_next(graph))) {
