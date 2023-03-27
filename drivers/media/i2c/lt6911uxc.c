@@ -24,8 +24,6 @@
 #include <linux/version.h>
 #include <media/lt6911uxc.h>
 
-#include <linux/ipu-isys.h>
-
 /* v4l2 debug level */
 static int debug;
 module_param(debug, int, 0644);
@@ -196,8 +194,6 @@ struct lt6911uxc_state {
 	struct v4l2_ctrl *strobe_stop;
 	struct v4l2_ctrl *timeout;
 	struct v4l2_ctrl *hblank;
-	struct v4l2_ctrl *query_sub_stream;
-	struct v4l2_ctrl *set_sub_stream;
 
 	struct v4l2_dv_timings timings;
 	struct v4l2_dv_timings detected_timings;
@@ -561,8 +557,6 @@ static u64 __maybe_unused get_hblank(struct lt6911uxc_state *lt6911uxc)
 	return hblank;
 }
 
-static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable);
-
 static int lt6911uxc_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct lt6911uxc_state *lt6911uxc = container_of(ctrl->handler,
@@ -570,17 +564,6 @@ static int lt6911uxc_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&lt6911uxc->sd);
 	s64 exposure_max;
 	int ret = 0;
-	u32 val;
-
-	/* Set streaming when ipu set sub_stream */
-	if (ctrl->id == V4L2_CID_IPU_SET_SUB_STREAM) {
-		val = (*ctrl->p_new.p_s64 & 0xFFFF);
-		dev_info(&client->dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
-		mutex_unlock(&lt6911uxc->mutex);
-		ret = lt6911uxc_set_stream(&lt6911uxc->sd, val & 0x00FF);
-		mutex_lock(&lt6911uxc->mutex);
-		return ret;
-	}
 
 	/* Propagate change of current control to all related controls */
 	if (ctrl->id == V4L2_CID_VBLANK) {
@@ -716,29 +699,6 @@ static struct v4l2_ctrl_config lt6911uxc_frame_interval = {
 	.flags	= V4L2_CTRL_FLAG_READ_ONLY,
 };
 
-static struct v4l2_ctrl_config lt6911uxc_q_sub_stream = {
-	.ops = &lt6911uxc_ctrl_ops,
-	.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
-	.name = "query virtual channel",
-	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
-	.max = 1,
-	.min = 0,
-	.def = 0,
-	.menu_skip_mask = 0,
-	.qmenu_int = NULL,
-};
-
-static const struct v4l2_ctrl_config lt6911uxc_s_sub_stream = {
-	.ops = &lt6911uxc_ctrl_ops,
-	.id = V4L2_CID_IPU_SET_SUB_STREAM,
-	.name = "set virtual channel",
-	.type = V4L2_CTRL_TYPE_INTEGER64,
-	.max = 0xFFFF,
-	.min = 0,
-	.def = 0,
-	.step = 1,
-};
-
 static u64 get_pixel_rate(struct lt6911uxc_state *lt6911uxc)
 {
 	if (lt6911uxc->cur_mode->lanes)
@@ -746,57 +706,6 @@ static u64 get_pixel_rate(struct lt6911uxc_state *lt6911uxc)
 			lt6911uxc->cur_mode->fps * 16 / lt6911uxc->cur_mode->lanes;
 	else
 		return 995328000; /* default value: 4K@30 */
-}
-
-#define MIPI_CSI2_TYPE_YUV422_8         0x1e
-
-static unsigned int mbus_code_to_mipi(u32 code)
-{
-	switch (code) {
-	case MEDIA_BUS_FMT_UYVY8_1X16:
-		return MIPI_CSI2_TYPE_YUV422_8;
-	default:
-		WARN_ON(1);
-		return -EINVAL;
-	}
-}
-
-static void set_sub_stream_fmt(s64 *sub_stream, u32 code)
-{
-       *sub_stream &= 0xFFFFFFFFFFFF0000;
-       *sub_stream |= code;
-}
-
-static void set_sub_stream_h(s64 *sub_stream, u32 height)
-{
-       s64 val = height;
-       val &= 0xFFFF;
-       *sub_stream &= 0xFFFFFFFF0000FFFF;
-       *sub_stream |= val << 16;
-}
-
-static void set_sub_stream_w(s64 *sub_stream, u32 width)
-{
-       s64 val = width;
-       val &= 0xFFFF;
-       *sub_stream &= 0xFFFF0000FFFFFFFF;
-       *sub_stream |= val << 32;
-}
-
-static void set_sub_stream_dt(s64 *sub_stream, u32 dt)
-{
-       s64 val = dt;
-       val &= 0xFF;
-       *sub_stream &= 0xFF00FFFFFFFFFFFF;
-       *sub_stream |= val << 48;
-}
-
-static void set_sub_stream_vc_id(s64 *sub_stream, u32 vc_id)
-{
-       s64 val = vc_id;
-       val &= 0xFF;
-       *sub_stream &= 0x00FFFFFFFFFFFFFF;
-       *sub_stream |= val << 56;
 }
 
 static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
@@ -961,20 +870,6 @@ static int lt6911uxc_init_controls(struct lt6911uxc_state *lt6911uxc)
 		return ctrl_hdlr->error;
 	}
 
-	lt6911uxc_q_sub_stream.qmenu_int = &lt6911uxc->sub_stream;
-	lt6911uxc->query_sub_stream = v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_q_sub_stream, NULL);
-	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set query sub stream ctrl, error = %d.\n",
-			ctrl_hdlr->error);
-		return ctrl_hdlr->error;
-	}
-	lt6911uxc->set_sub_stream = v4l2_ctrl_new_custom(ctrl_hdlr, &lt6911uxc_s_sub_stream, NULL);
-	if (ctrl_hdlr->error) {
-		dev_dbg(&client->dev, "Set set sub stream ctrl, error = %d.\n",
-			ctrl_hdlr->error);
-		return ctrl_hdlr->error;
-	}
-
 	lt6911uxc->sd.ctrl_handler = ctrl_hdlr;
 	return 0;
 }
@@ -1108,11 +1003,6 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 		else
 			__v4l2_ctrl_s_ctrl(lt6911uxc->frame_interval, 33);
 	}
-	set_sub_stream_fmt(&lt6911uxc->sub_stream, fmt->format.code);
-	set_sub_stream_h(&lt6911uxc->sub_stream, fmt->format.height);
-	set_sub_stream_w(&lt6911uxc->sub_stream, fmt->format.width);
-	set_sub_stream_dt(&lt6911uxc->sub_stream, mbus_code_to_mipi(fmt->format.code));
-	set_sub_stream_vc_id(&lt6911uxc->sub_stream, 0);
 	mutex_unlock(&lt6911uxc->mutex);
 
 	return 0;

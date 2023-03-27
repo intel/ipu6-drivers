@@ -328,6 +328,7 @@ struct ds5_ctrls {
 	struct v4l2_ctrl_handler handler_depth;
 	struct v4l2_ctrl_handler handler_rgb;
 	struct v4l2_ctrl_handler handler_y8;
+	struct v4l2_ctrl_handler handler_imu;
 	struct {
 		struct v4l2_ctrl *log;
 		struct v4l2_ctrl *fw_version;
@@ -2196,6 +2197,13 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 			state->is_y8 = 1;
 			state->is_imu = 0;
 		break;
+		case DS5_MUX_PAD_IMU_A:
+			state = container_of(ctrl->handler, struct ds5, ctrls.handler_imu);
+			state->is_rgb = 0;
+			state->is_depth = 0;
+			state->is_y8 = 0;
+			state->is_imu = 1;
+		break;
 		default:
 			state->is_rgb = 0;
 			state->is_depth = 0;
@@ -2208,8 +2216,6 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	if (state->is_rgb)
 		base = DS5_RGB_CONTROL_BASE;
-	else if (state->is_imu)
-		return ret;
 
 	v4l2_dbg(3, 1, sd, "ctrl: %s, value: %d\n", ctrl->name, ctrl->val);
 	dev_dbg(&state->client->dev, "%s(): %s - ctrl: %s, value: %d\n",
@@ -2599,6 +2605,13 @@ static int ds5_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 			state->is_depth = 0;
 			state->is_y8 = 1;
 			state->is_imu = 0;
+		break;
+		case DS5_MUX_PAD_IMU_A:
+			state = container_of(ctrl->handler, struct ds5, ctrls.handler_imu);
+			state->is_rgb = 0;
+			state->is_depth = 0;
+			state->is_y8 = 0;
+			state->is_imu = 1;
 		break;
 		default:
 			state->is_rgb = 0;
@@ -3094,6 +3107,10 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 		hdl = &ctrls->handler_y8;
 		sensor = &state->motion_t.sensor;
 		break;
+	case 3:
+		hdl = &ctrls->handler_imu;
+		sensor = &state->imu.sensor;
+		break;
 	default:
 		hdl = &ctrls->handler;
 		sensor = NULL;
@@ -3132,21 +3149,21 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 		ctrls->gain->flags =
 				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
 	}
-if (sid >= 0) {
+	if (sid >= 0 && sid < 3) {
 
-	ctrls->auto_exp = v4l2_ctrl_new_std_menu(hdl, ops,
-			V4L2_CID_EXPOSURE_AUTO,
-			V4L2_EXPOSURE_APERTURE_PRIORITY,
-			~((1 << V4L2_EXPOSURE_MANUAL) |
-					(1 << V4L2_EXPOSURE_APERTURE_PRIORITY)),
-					V4L2_EXPOSURE_APERTURE_PRIORITY);
+		ctrls->auto_exp = v4l2_ctrl_new_std_menu(hdl, ops,
+				V4L2_CID_EXPOSURE_AUTO,
+				V4L2_EXPOSURE_APERTURE_PRIORITY,
+				~((1 << V4L2_EXPOSURE_MANUAL) |
+						(1 << V4L2_EXPOSURE_APERTURE_PRIORITY)),
+						V4L2_EXPOSURE_APERTURE_PRIORITY);
 
-	if (ctrls->auto_exp) {
-		ctrls->auto_exp->flags |=
-				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
-		ctrls->auto_exp->priv = sensor;
+		if (ctrls->auto_exp) {
+			ctrls->auto_exp->flags |=
+					V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
+			ctrls->auto_exp->priv = sensor;
+		}
 	}
-}
 	/* Exposure time: V4L2_CID_EXPOSURE_ABSOLUTE default unit: 100 us. */
 	if (sid == 0 || sid == 2) {
 		ctrls->exposure = v4l2_ctrl_new_std(hdl, ops,
@@ -3193,31 +3210,35 @@ if (sid >= 0) {
 	// }
 
 	// Add these after v4l2_ctrl_handler_setup so they won't be set up
-if (sid >= 0) {
-	ctrls->log = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_log, sensor);
-	ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
-	ctrls->gvd = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_gvd, sensor);
-	ctrls->get_depth_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_depth_calib, sensor);
-	ctrls->set_depth_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_depth_calib, sensor);
-	ctrls->get_coeff_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_coeff_calib, sensor);
-	ctrls->set_coeff_calib =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_coeff_calib, sensor);
-	ctrls->ae_roi_get = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_get, sensor);
-	ctrls->ae_roi_set = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_set, sensor);
-	ctrls->ae_setpoint_get =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_get, sensor);
-	ctrls->ae_setpoint_set =
-			v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_set, sensor);
-	ctrls->erb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_erb, sensor);
-	ctrls->ewb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ewb, sensor);
-	ctrls->hwmc = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc, sensor);
-	v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc_rw, sensor);
-}
+	if (sid >= 0 && sid < 3) {
+		ctrls->log = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_log, sensor);
+		ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
+		ctrls->gvd = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_gvd, sensor);
+		ctrls->get_depth_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_depth_calib, sensor);
+		ctrls->set_depth_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_depth_calib, sensor);
+		ctrls->get_coeff_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_get_coeff_calib, sensor);
+		ctrls->set_coeff_calib =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_set_coeff_calib, sensor);
+		ctrls->ae_roi_get = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_get, sensor);
+		ctrls->ae_roi_set = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_roi_set, sensor);
+		ctrls->ae_setpoint_get =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_get, sensor);
+		ctrls->ae_setpoint_set =
+				v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ae_setpoint_set, sensor);
+		ctrls->erb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_erb, sensor);
+		ctrls->ewb = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_ewb, sensor);
+		ctrls->hwmc = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc, sensor);
+		v4l2_ctrl_new_custom(hdl, &ds5_ctrl_hwmc_rw, sensor);
+	}
+	// DEPTH custom
 	if (sid == 0)
 		v4l2_ctrl_new_custom(hdl, &ds5_ctrl_pwm, sensor);
+	// IMU custom
+	if (sid == 3)
+		ctrls->fw_version = v4l2_ctrl_new_custom(hdl, &ds5_ctrl_fw_version, sensor);
 
 	switch (sid) {
 	case 0:
@@ -3237,6 +3258,12 @@ if (sid >= 0) {
 		dev_info(state->motion_t.sensor.sd.dev,
 			"%s():%d set ctrl_handler pad:%d\n",
 			__func__, __LINE__, state->motion_t.sensor.mux_pad);
+		break;
+	case 3:
+		state->imu.sensor.sd.ctrl_handler = hdl;
+		dev_info(state->imu.sensor.sd.dev,
+			"%s():%d set ctrl_handler pad:%d\n",
+			__func__, __LINE__, state->imu.sensor.mux_pad);
 		break;
 	default:
 		state->mux.sd.subdev.ctrl_handler = hdl;
@@ -4308,6 +4335,10 @@ static int ds5_mux_init(struct i2c_client *c, struct ds5 *state)
 	ret = ds5_ctrl_init(state, 2);
 	if (ret < 0)
 		return ret;
+	/*set for imu*/
+	ret = ds5_ctrl_init(state, 3);
+	if (ret < 0)
+		return ret;
 
 	if (state->is_depth)
 		state->mux.last_set = &state->depth.sensor;
@@ -4636,16 +4667,20 @@ static ssize_t ds5_dfu_device_read(struct file *flip,
 		char __user *buffer, size_t len, loff_t *offset)
 {
 	struct ds5 *state = flip->private_data;
-	u16 fw_ver;
-	char msg[20];
+	u16 fw_ver, fw_build;
+	char msg[32];
 	int ret = 0;
 
 	if (mutex_lock_interruptible(&state->lock))
 		return -ERESTARTSYS;
-	ret = ds5_read(state, DS5_FW_VERSION, &fw_ver);
+	ret |= ds5_read(state, DS5_FW_VERSION, &fw_ver);
+	ret |= ds5_read(state, DS5_FW_BUILD, &fw_build);
 	if (ret < 0)
 		goto e_dfu_read_failed;
-	snprintf(msg, sizeof(msg), "DFU info: \tver: (0x%x)\n", fw_ver);
+	snprintf(msg, sizeof(msg), "DFU info: \tver:  %d.%d.%d.%d\n",
+			(fw_ver >> 8) & 0xff, fw_ver & 0xff,
+			(fw_build >> 8) & 0xff, fw_build & 0xff);
+
 	if (copy_to_user(buffer, msg, strlen(msg)))
 		ret = -EFAULT;
 	else {
@@ -4675,7 +4710,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 					__func__, ret);
 			goto dfu_write_error;
 		}
-	/*no break - proceed to recovery*/
+	/* fallthrough - procceed to recovery */
+	__attribute__((__fallthrough__));
 	case DS5_DFU_RECOVERY:
 		ret = ds5_dfu_detach(state);
 		if (ret < 0) {
@@ -4685,8 +4721,8 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 		}
 		state->dfu_dev.dfu_state_flag = DS5_DFU_IN_PROGRESS;
 		state->dfu_dev.init_v4l_f = 1;
-
-	/*no break - proceed to download*/
+	/* fallthrough - procceed to download */
+	__attribute__((__fallthrough__));
 	case DS5_DFU_IN_PROGRESS: {
 		unsigned int dfu_full_blocks = len / DFU_BLOCK_SIZE;
 		unsigned int dfu_part_blocks = len % DFU_BLOCK_SIZE;
@@ -4737,8 +4773,11 @@ static ssize_t ds5_dfu_device_write(struct file *flip,
 	return len;
 
 dfu_write_error:
-	//TODO: Reset device here
 	state->dfu_dev.dfu_state_flag = DS5_DFU_ERROR;
+	// Reset DFU device to IDLE states
+	ret = ds5_write(state, 0x5010, 0x0);
+	if (!ret)
+		state->dfu_dev.dfu_state_flag = DS5_DFU_IDLE;
 	mutex_unlock(&state->lock);
 	return ret;
 };
@@ -4747,8 +4786,6 @@ static int ds5_dfu_device_open(struct inode *inode, struct file *file)
 {
 	struct ds5 *state = container_of(inode->i_cdev, struct ds5,
 			dfu_dev.ds5_cdev);
-	struct i2c_adapter *parent = i2c_parent_is_i2c_adapter(
-			state->client->adapter);
 
 	if (state->dfu_dev.device_open_count)
 		return -EBUSY;
@@ -4848,12 +4885,14 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 {
 	struct cdev *ds5_cdev = &state->dfu_dev.ds5_cdev;
 	struct class **ds5_class = &state->dfu_dev.ds5_class;
+	struct d4xx_pdata *pdata = c->dev.platform_data;
+
 	struct device *chr_dev;
-	char dev_name[sizeof(DS5_DRIVER_NAME_DFU) + 5];
+	char dev_name[sizeof(DS5_DRIVER_NAME_DFU) + 8];
 	dev_t *dev_num = &c->dev.devt;
 	int ret;
 
-	dev_info(&c->dev, "%s()\n", __func__);
+	dev_dbg(&c->dev, "%s()\n", __func__);
 	/* Request the kernel for N_MINOR devices */
 	ret = alloc_chrdev_region(dev_num, 0, 1, DS5_DRIVER_NAME_DFU);
 	if (ret < 0)
@@ -4878,8 +4917,8 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 	/* Build up the current device number. To be used further */
 	*dev_num = MKDEV(MAJOR(*dev_num), MINOR(*dev_num));
 	/* Create a device node for this device. */
-	snprintf(dev_name, sizeof(dev_name), "%s%d",
-			DS5_DRIVER_NAME_DFU, MAJOR(*dev_num));
+	snprintf(dev_name, sizeof(dev_name), "%s-%c",
+			DS5_DRIVER_NAME_DFU, pdata->suffix);
 	chr_dev = device_create(*ds5_class, NULL, *dev_num, NULL, dev_name);
 	if (IS_ERR(chr_dev)) {
 		ret = PTR_ERR(chr_dev);
@@ -4896,7 +4935,9 @@ static int ds5_chrdev_remove(struct ds5 *state)
 {
 	struct class **ds5_class = &state->dfu_dev.ds5_class;
 	dev_t *dev_num = &state->client->dev.devt;
-
+	if (!ds5_class) {
+		return 0;
+	}
 	dev_dbg(&state->client->dev, "%s()\n", __func__);
 	unregister_chrdev_region(*dev_num, 1);
 	device_destroy(*ds5_class, *dev_num);
@@ -5239,14 +5280,47 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		}
 	}
 
-	ret = ds5_chrdev_init(c, state);
-	if (ret < 0)
-		goto e_regulator;
-
-	retry = 100;
+	// Verify communication
+	retry = 10;
 	do {
 	ret = ds5_read(state, 0x5020, &rec_state);
 	} while (retry-- && ret < 0);
+	if (ret < 0) {
+		dev_err(&c->dev,
+			"%s(): cannot communicate with D4XX: %d on addr: 0x%x\n",
+			__func__, ret, c->addr);
+		goto e_regulator;
+	}
+
+	state->is_depth = 0;
+	state->is_y8 = 0;
+	state->is_rgb = 0;
+	state->is_imu = 0;
+#ifdef CONFIG_OF
+	ret = of_property_read_string(c->dev.of_node, "cam-type", &str);
+	if (!ret && !strncmp(str, "Depth", strlen("Depth"))) {
+		state->is_depth = 1;
+	}
+	if (!ret && !strncmp(str, "Y8", strlen("Y8"))) {
+		state->is_y8 = 1;
+	}
+	if (!ret && !strncmp(str, "RGB", strlen("RGB"))) {
+		state->is_rgb = 1;
+	}
+	if (!ret && !strncmp(str, "IMU", strlen("IMU"))) {
+		state->is_imu = 1;
+	}
+#else
+	state->is_depth = 1;
+#endif
+	/* create DFU chardev once */
+	if (state->is_depth) {
+		ret = ds5_chrdev_init(c, state);
+		if (ret < 0)
+			goto e_regulator;
+	}
+
+	ret = ds5_read(state, 0x5020, &rec_state);
 	if (ret < 0) {
 		dev_err(&c->dev, "%s(): cannot communicate with D4XX: %d\n",
 				__func__, ret);
@@ -5258,22 +5332,6 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 		state->dfu_dev.dfu_state_flag = DS5_DFU_RECOVERY;
 		return 0;
 	}
-
-	state->is_depth = 0;
-	state->is_y8 = 0;
-	state->is_rgb = 0;
-	state->is_imu = 0;
-
-	err = of_property_read_string(c->dev.of_node, "cam-type",
-			&str);
-	if (!err && !strncmp(str, "Depth", strlen("Depth")))
-		state->is_depth = 1;
-	if (!err && !strncmp(str, "Y8", strlen("Y8")))
-		state->is_y8 = 1;
-	if (!err && !strncmp(str, "RGB", strlen("RGB")))
-		state->is_rgb = 1;
-	if (!err && !strncmp(str, "IMU", strlen("IMU")))
-		state->is_imu = 1;
 
 	ds5_read_with_check(state, DS5_FW_VERSION, &state->fw_version);
 	ds5_read_with_check(state, DS5_FW_BUILD, &state->fw_build);
@@ -5306,7 +5364,8 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 	return 0;
 
 e_chardev:
-	ds5_chrdev_remove(state);
+	if (state->dfu_dev.ds5_class)
+		ds5_chrdev_remove(state);
 e_regulator:
 	if (state->vcc)
 		regulator_disable(state->vcc);
@@ -5322,7 +5381,10 @@ static int ds5_remove(struct i2c_client *c)
 	if (state->vcc)
 		regulator_disable(state->vcc);
 //	gpio_free(state->pwdn_gpio);
-	ds5_chrdev_remove(state);
+	if (state->is_depth) {
+		ds5_chrdev_remove(state);
+	}
+
 	if (state->dfu_dev.dfu_state_flag != DS5_DFU_RECOVERY) {
 #ifdef CONFIG_SYSFS
 		sysfs_remove_group(&c->dev.kobj, &ds5_attr_group);

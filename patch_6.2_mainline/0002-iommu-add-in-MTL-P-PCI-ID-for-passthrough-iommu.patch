@@ -1,0 +1,28 @@
+From d2ad20b11cd6e8d73804d870a6c94918b0590c04 Mon Sep 17 00:00:00 2001
+From: Xiaohong Zou <xiaohong.zou@intel.com>
+Date: Wed, 14 Dec 2022 04:21:50 +0200
+Subject: [PATCH 2/7] iommu: add in MTL-P PCI ID for passthrough iommu
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: Sun Jia <jia1.sun@intel.com>
+---
+ drivers/iommu/intel/iommu.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/intel/iommu.c b/drivers/iommu/intel/iommu.c
+index 5f6916dbc6e4..23f1c7b31c86 100644
+--- a/drivers/iommu/intel/iommu.c
++++ b/drivers/iommu/intel/iommu.c
+@@ -42,7 +42,8 @@
+ 			    (pdev)->device == 0x9a39 ||		\
+ 			    (pdev)->device == 0x4e19 ||		\
+ 			    (pdev)->device == 0x465d ||		\
+-			    (pdev)->device == 0x1919 ||         \
++			    (pdev)->device == 0x1919 ||		\
++			    (pdev)->device == 0x7d19 ||		\
+ 			    (pdev)->device == 0xa75d))
+ #define IS_AZALIA(pdev) ((pdev)->vendor == 0x8086 && (pdev)->device == 0x3a3e)
+ 
+-- 
+2.34.1
+
