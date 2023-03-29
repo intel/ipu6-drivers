@@ -20,9 +20,12 @@ Three ways are available:
 
 ### 1. Build with kernel source tree
 - Check out kernel source tree
-- Apply patches:
+- Apply patche based on kernel version:
 ```sh
-	patch/IOMMU-passthrough-for-intel-ipu.diff
+  # For kernel version = 5.19, use patches in patch_5.19_mainline
+	patch_5.19_mainline/*.patch
+  # For kernel version = 6.2, use patches in patch_6.2_mainline
+        patch_6.2_mainline/*.patch
 ```
 - Copy repo content to kernel source **(except Makefile and {Kconfig, Makefile} under "drivers/media/i2c/", they need to be changed manually)**
 - Modify related Kconfig and Makefile
