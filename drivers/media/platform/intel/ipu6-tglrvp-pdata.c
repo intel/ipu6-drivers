@@ -64,6 +64,7 @@ static struct ipu_isys_subdev_info ov8856_sd_2 = {
 
 #endif
 
+#if IS_ENABLED(CONFIG_VIDEO_AR0234)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
 	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
 static void ar0234_fixup_spdata(const void *spdata_rep, void *spdata)
@@ -83,8 +84,6 @@ static void ar0234_fixup_spdata(const void *spdata_rep, void *spdata)
 	}
 }
 #endif
-
-#if IS_ENABLED(CONFIG_VIDEO_AR0234)
 
 #define AR0234_LANES       2
 #define AR0234_I2C_ADDRESS 0x10

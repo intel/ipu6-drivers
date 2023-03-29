@@ -51,6 +51,8 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_NV16},
 	{V4L2_PIX_FMT_XRGB32, 32, 32, 0, MEDIA_BUS_FMT_RGB565_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
+	{V4L2_PIX_FMT_Y12I, 24, 24, 0, MEDIA_BUS_FMT_RGB888_1X24,
+	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	{V4L2_PIX_FMT_XBGR32, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	/* Raw bayer formats. */
@@ -1047,8 +1049,12 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 			(pad_id - NR_OF_CSI2_BE_SOC_SINK_PADS)) {
 			ip->vc = ip->asv[qm.index].vc;
 			flag = true;
-			pr_info("The current entityvc:id:%d\n", ip->vc);
+			pr_info("The current entity vc:id:%d\n", ip->vc);
 		}
+		dev_dbg(source_pad->entity->graph_obj.mdev->dev,
+			"dentity vc:%d, dt:%x, substream:%d\n",
+			ip->vc, ip->asv[qm.index].dt,
+			ip->asv[qm.index].substream);
 	}
 
 	if (flag)
@@ -1061,10 +1067,6 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 				     struct media_pipeline *pipe)
 {
-	int ret = -ENOLINK;
-	int i;
-	int entity_vc = INVALIA_VC_ID;
-	u32 n;
 	struct media_entity *entity = &av->vdev.entity;
 	struct media_device *mdev = entity->graph_obj.mdev;
 	struct media_graph *graph = &pipe->graph;
@@ -1081,18 +1083,25 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 	int previous_stream_count = 0;
 	struct media_entity *entity_enum = entity;
 #endif
+	int ret = -ENOLINK;
+	int i;
+	int entity_vc = INVALIA_VC_ID;
+	u32 n;
+	bool is_vc = false;
 
 	if (!source_pad) {
 		dev_err(entity->graph_obj.mdev->dev, "no remote pad found\n");
 		return ret;
 	}
-	pad_id = source_pad->index;
 
-	ret = ipu_isys_query_sensor_info(source_pad, ip);
-	if (ret) {
-		dev_err(entity->graph_obj.mdev->dev,
-			"query sensor info failed\n");
-		return ret;
+	is_vc = is_support_vc(source_pad, ip);
+	if (is_vc)  {
+		ret = ipu_isys_query_sensor_info(source_pad, ip);
+		if (ret) {
+			dev_err(entity->graph_obj.mdev->dev,
+				"query sensor info failed\n");
+			return ret;
+		}
 	}
 
 	if (!pipe->streaming_count++) {
@@ -1138,7 +1147,7 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 		 * If it is video device and its vc id is not equal to curren
 		 * video device's vc id, it should continue.
 		 */
-		if (is_media_entity_v4l2_video_device(entity)) {
+		if (is_vc && is_media_entity_v4l2_video_device(entity)) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 			source_pad =
 				media_entity_remote_pad(entity->pads);
@@ -1560,9 +1569,11 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 						      BITS_PER_BYTE),
 					 av->isys->line_align);
 
-	pin_info->pt =
-		(input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8 ?
-		 IPU_FW_ISYS_PIN_TYPE_MIPI : aq->css_pin_type);
+	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8 ||
+	    input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_RGB888)
+		pin_info->pt = IPU_FW_ISYS_PIN_TYPE_MIPI;
+	else
+		pin_info->pt = aq->css_pin_type;
 	pin_info->ft = av->pfmt->css_pixelformat;
 	pin_info->send_irq = 1;
 	memset(pin_info->ts_offsets, 0, sizeof(pin_info->ts_offsets));
