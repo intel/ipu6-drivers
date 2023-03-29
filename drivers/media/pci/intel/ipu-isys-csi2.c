@@ -25,6 +25,7 @@ static const u32 csi2_supported_codes_pad_sink[] = {
 	MEDIA_BUS_FMT_RGB888_1X24,
 	MEDIA_BUS_FMT_UYVY8_1X16,
 	MEDIA_BUS_FMT_YUYV8_1X16,
+	MEDIA_BUS_FMT_VYUY8_1X16,
 	MEDIA_BUS_FMT_YUYV10_1X20,
 	MEDIA_BUS_FMT_SBGGR10_1X10,
 	MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -52,6 +53,7 @@ static const u32 csi2_supported_codes_pad_source[] = {
 	MEDIA_BUS_FMT_RGB888_1X24,
 	MEDIA_BUS_FMT_UYVY8_1X16,
 	MEDIA_BUS_FMT_YUYV8_1X16,
+	MEDIA_BUS_FMT_VYUY8_1X16,
 	MEDIA_BUS_FMT_YUYV10_1X20,
 	MEDIA_BUS_FMT_SBGGR10_1X10,
 	MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -329,6 +331,9 @@ static int csi2_link_validate(struct media_link *link)
 	struct media_pipeline *media_pipe;
 	struct ipu_isys_csi2 *csi2;
 	struct ipu_isys_pipeline *ip;
+	struct v4l2_subdev *source_sd;
+	struct v4l2_subdev *sink_sd;
+
 	int rval;
 
 	if (!link->sink->entity || !link->source->entity)
@@ -343,26 +348,17 @@ static int csi2_link_validate(struct media_link *link)
 	csi2->receiver_errors = 0;
 	ip->csi2 = csi2;
 	ipu_isys_video_add_capture_done(ip, csi2_capture_done);
+	source_sd = media_entity_to_v4l2_subdev(link->source->entity);
+	sink_sd = media_entity_to_v4l2_subdev(link->sink->entity);
+	if (!source_sd)
+		return -ENODEV;
 
-	rval = v4l2_subdev_link_validate(link);
-	if (rval)
-		return rval;
-
-	if (!v4l2_ctrl_g_ctrl(csi2->store_csi2_header)) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
-		struct media_pad *remote_pad =
-		    media_entity_remote_pad(&csi2->asd.pad[CSI2_PAD_SOURCE]);
-#else
-		struct media_pad *remote_pad =
-		    media_pad_remote_pad_first(&csi2->asd.pad[CSI2_PAD_SOURCE]);
-#endif
-
-		if (remote_pad &&
-		    is_media_entity_v4l2_subdev(remote_pad->entity)) {
-			dev_err(&csi2->isys->adev->dev,
-				"CSI2 BE requires CSI2 headers.\n");
-			return -EINVAL;
-		}
+	if (strncmp(source_sd->name, IPU_ISYS_ENTITY_PREFIX,
+		    strlen(IPU_ISYS_ENTITY_PREFIX)) != 0) {
+		ip->external = link->source;
+		ip->source = to_ipu_isys_subdev(sink_sd)->source;
+		dev_dbg(&csi2->isys->adev->dev, "%s: using source %d\n",
+			sink_sd->entity.name, ip->source);
 	}
 
 	return 0;
