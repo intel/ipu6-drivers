@@ -1567,8 +1567,7 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 						      BITS_PER_BYTE),
 					 av->isys->line_align);
 
-	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8 ||
-	    input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_RGB888)
+	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8)
 		pin_info->pt = IPU_FW_ISYS_PIN_TYPE_MIPI;
 	else
 		pin_info->pt = aq->css_pin_type;
