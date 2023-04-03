@@ -272,8 +272,12 @@ static void cio2_bridge_instantiate_vcm_i2c_client(struct cio2_sensor *sensor)
 	board_info.swnode = &sensor->swnodes[SWNODE_VCM];
 
 	sensor->vcm_i2c_client =
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 		i2c_acpi_new_device_by_fwnode(acpi_fwnode_handle(sensor->adev),
 					      1, &board_info);
+#else
+		i2c_acpi_new_device(&sensor->adev->dev, 1, &board_info);
+#endif
 	if (IS_ERR(sensor->vcm_i2c_client)) {
 		dev_warn(&sensor->adev->dev,
 			 "Error instantiation VCM i2c-client: %ld\n",
@@ -406,6 +410,7 @@ err_unregister_sensors:
 	return ret;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 /*
  * The VCM cannot be probed until the PMIC is completely setup. We cannot rely
  * on -EPROBE_DEFER for this, since the consumer<->supplier relations between
@@ -439,6 +444,7 @@ static int cio2_bridge_sensors_are_ready(void)
 
 	return ready;
 }
+#endif
 
 int cio2_bridge_init(struct pci_dev *cio2)
 {
@@ -448,9 +454,11 @@ int cio2_bridge_init(struct pci_dev *cio2)
 	unsigned int i;
 	int ret;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 	if (!cio2_bridge_sensors_are_ready())
 		return -EPROBE_DEFER;
 
+#endif
 	bridge = kzalloc(sizeof(*bridge), GFP_KERNEL);
 	if (!bridge)
 		return -ENOMEM;

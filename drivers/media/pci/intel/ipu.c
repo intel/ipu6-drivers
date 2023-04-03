@@ -718,6 +718,29 @@ static void ipu_pci_remove(struct pci_dev *pdev)
 	ipu_mmu_cleanup(isp->isys->mmu);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
+static void ipu_pci_reset_notify(struct pci_dev *pdev, bool prepare)
+{
+	struct ipu_device *isp = pci_get_drvdata(pdev);
+
+	if (prepare) {
+		dev_err(&pdev->dev, "FLR prepare\n");
+		pm_runtime_forbid(&isp->pdev->dev);
+		isp->flr_done = true;
+		return;
+	}
+
+	ipu_buttress_restore(isp);
+	if (isp->secure_mode)
+		ipu_buttress_reset_authentication(isp);
+
+	ipu_bus_flr_recovery();
+	isp->ipc_reinit = true;
+	pm_runtime_allow(&isp->pdev->dev);
+
+	dev_err(&pdev->dev, "FLR completed\n");
+}
+#else
 static void ipu_pci_reset_prepare(struct pci_dev *pdev)
 {
 	struct ipu_device *isp = pci_get_drvdata(pdev);
@@ -741,6 +764,7 @@ static void ipu_pci_reset_done(struct pci_dev *pdev)
 
 	dev_warn(&pdev->dev, "FLR completed\n");
 }
+#endif
 
 #ifdef CONFIG_PM
 
@@ -841,8 +865,12 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
 
 static const struct pci_error_handlers pci_err_handlers = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
+	.reset_notify = ipu_pci_reset_notify,
+#else
 	.reset_prepare = ipu_pci_reset_prepare,
 	.reset_done = ipu_pci_reset_done,
+#endif
 };
 
 static struct pci_driver ipu_pci_driver = {

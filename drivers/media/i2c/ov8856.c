@@ -1022,7 +1022,11 @@ static int __maybe_unused ov8856_resume(struct device *dev)
 }
 
 static int ov8856_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct ov8856 *ov8856 = to_ov8856(sd);
@@ -1037,7 +1041,11 @@ static int ov8856_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&ov8856->mutex);
 	ov8856_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#else
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		ov8856->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ov8856->link_freq, mode->link_freq_index);
@@ -1063,15 +1071,24 @@ static int ov8856_set_format(struct v4l2_subdev *sd,
 }
 
 static int ov8856_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct ov8856 *ov8856 = to_ov8856(sd);
 
 	mutex_lock(&ov8856->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		fmt->format = *v4l2_subdev_get_try_format(&ov8856->sd, cfg,
+							  fmt->pad);
+#else
 		fmt->format = *v4l2_subdev_get_try_format(&ov8856->sd,
 							  sd_state, fmt->pad);
+#endif
 	else
 		ov8856_update_pad_format(ov8856->cur_mode, &fmt->format);
 
@@ -1081,7 +1098,11 @@ static int ov8856_get_format(struct v4l2_subdev *sd,
 }
 
 static int ov8856_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				 struct v4l2_subdev_pad_config *cfg,
+#else
 				 struct v4l2_subdev_state *sd_state,
+#endif
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	/* Only one bayer order GRBG is supported */
@@ -1094,7 +1115,11 @@ static int ov8856_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov8856_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				  struct v4l2_subdev_pad_config *cfg,
+#else
 				  struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1116,8 +1141,13 @@ static int ov8856_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct ov8856 *ov8856 = to_ov8856(sd);
 
 	mutex_lock(&ov8856->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	ov8856_update_pad_format(&supported_modes[0],
+				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#else
 	ov8856_update_pad_format(&supported_modes[0],
 				 v4l2_subdev_get_try_format(sd, fh->state, 0));
+#endif
 	mutex_unlock(&ov8856->mutex);
 
 	return 0;
@@ -1167,7 +1197,11 @@ static int ov8856_identify_module(struct ov8856 *ov8856)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int ov8856_remove(struct i2c_client *client)
+#else
 static void ov8856_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov8856 *ov8856 = to_ov8856(sd);
@@ -1178,6 +1212,9 @@ static void ov8856_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov8856->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	return 0;
+#endif
 }
 
 static int ov8856_probe(struct i2c_client *client)
@@ -1215,7 +1252,11 @@ static int ov8856_probe(struct i2c_client *client)
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
+	ret = v4l2_async_register_subdev_sensor_common(&ov8856->sd);
+#else
 	ret = v4l2_async_register_subdev_sensor(&ov8856->sd);
+#endif
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);

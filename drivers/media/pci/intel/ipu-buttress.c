@@ -736,6 +736,9 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 	const void *addr;
 	unsigned long n_pages;
 	int rval, i;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	int nents;
+#endif
 
 	n_pages = PAGE_ALIGN(fw->size) >> PAGE_SHIFT;
 
@@ -762,6 +765,17 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 		goto out;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	nents = dma_map_sg(&sys->dev, sgt->sgl, sgt->orig_nents, DMA_TO_DEVICE);
+	if (!nents) {
+		rval = -ENOMEM;
+		sg_free_table(sgt);
+		goto out;
+	}
+	sgt->nents = nents;
+	dma_sync_sg_for_device(&sys->dev, sgt->sgl, sgt->orig_nents,
+			       DMA_TO_DEVICE);
+#else
 	rval = dma_map_sgtable(&sys->dev, sgt, DMA_TO_DEVICE, 0);
 	if (rval < 0) {
 		rval = -ENOMEM;
@@ -770,6 +784,7 @@ int ipu_buttress_map_fw_image(struct ipu_bus_device *sys,
 	}
 
 	dma_sync_sgtable_for_device(&sys->dev, sgt, DMA_TO_DEVICE);
+#endif
 
 out:
 	kfree(pages);

@@ -136,15 +136,31 @@ static void ipu_isys_tpg_init_controls(struct v4l2_subdev *sd)
 }
 
 static void tpg_set_ffmt(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
+			 struct v4l2_subdev_fh *cfg,
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			 struct v4l2_subdev_pad_config *cfg,
+#else
 			 struct v4l2_subdev_state *state,
+#endif
 			 struct v4l2_subdev_format *fmt)
 {
 	fmt->format.field = V4L2_FIELD_NONE;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	*__ipu_isys_get_ffmt(sd, cfg, fmt->pad, fmt->which) = fmt->format;
+#else
 	*__ipu_isys_get_ffmt(sd, state, fmt->pad, fmt->which) = fmt->format;
+#endif
 }
 
 static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
+				 struct v4l2_subdev_fh *cfg,
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				 struct v4l2_subdev_pad_config *cfg,
+#else
 				 struct v4l2_subdev_state *state,
+#endif
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ipu_isys_tpg *tpg = to_ipu_isys_tpg(sd);
@@ -154,7 +170,11 @@ static int ipu_isys_tpg_set_ffmt(struct v4l2_subdev *sd,
 	int rval;
 
 	mutex_lock(&tpg->asd.mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	rval = __ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
+#else
 	rval = __ipu_isys_subdev_set_ffmt(sd, state, fmt);
+#endif
 	mutex_unlock(&tpg->asd.mutex);
 
 	if (rval || fmt->which != V4L2_SUBDEV_FORMAT_ACTIVE)
@@ -169,10 +189,16 @@ static const struct ipu_isys_pixelformat *
 ipu_isys_tpg_try_fmt(struct ipu_isys_video *av,
 		     struct v4l2_pix_format_mplane *mpix)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	struct media_entity entity = av->vdev.entity;
+	struct v4l2_subdev *sd =
+		media_entity_to_v4l2_subdev(entity.links[0].source->entity);
+#else
 	struct media_link *link = list_first_entry(&av->vdev.entity.links,
 						   struct media_link, list);
 	struct v4l2_subdev *sd =
 		media_entity_to_v4l2_subdev(link->source->entity);
+#endif
 	struct ipu_isys_tpg *tpg;
 
 	if (!sd)
@@ -260,7 +286,11 @@ int ipu_isys_tpg_init(struct ipu_isys_tpg *tpg,
 	if (rval)
 		return rval;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	tpg->asd.sd.entity.type = MEDIA_ENT_T_V4L2_SUBDEV_SENSOR;
+#else
 	tpg->asd.sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+#endif
 	tpg->asd.pad[TPG_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
 
 	tpg->asd.source = IPU_FW_ISYS_STREAM_SRC_MIPIGEN_PORT0 + index;
