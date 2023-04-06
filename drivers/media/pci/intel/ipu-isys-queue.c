@@ -22,25 +22,57 @@ module_param(wall_clock_ts_on, bool, 0660);
 MODULE_PARM_DESC(wall_clock_ts_on, "Timestamp based on REALTIME clock");
 
 static int queue_setup(struct vb2_queue *q,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+		       const struct v4l2_format *__fmt,
+#endif
 		       unsigned int *num_buffers, unsigned int *num_planes,
 		       unsigned int sizes[],
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+		       void *alloc_ctxs[])
+#else
 		       struct device *alloc_devs[])
+#endif
 {
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(q);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	const struct v4l2_format *fmt = __fmt;
+	const struct ipu_isys_pixelformat *pfmt;
+	struct v4l2_pix_format_mplane mpix;
+#else
 	bool use_fmt = false;
+#endif
 	unsigned int i;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	if (fmt)
+		mpix = fmt->fmt.pix_mp;
+	else
+		mpix = av->mpix;
+
+	pfmt = av->try_fmt_vid_mplane(av, &mpix);
+
+	*num_planes = mpix.num_planes;
+#else
 	/* num_planes == 0: we're being called through VIDIOC_REQBUFS */
 	if (!*num_planes) {
 		use_fmt = true;
 		*num_planes = av->mpix.num_planes;
 	}
+#endif
 
 	for (i = 0; i < *num_planes; i++) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+		sizes[i] = mpix.plane_fmt[i].sizeimage;
+#else
 		if (use_fmt)
 			sizes[i] = av->mpix.plane_fmt[i].sizeimage;
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+		alloc_ctxs[i] = aq->ctx;
+#else
 		alloc_devs[i] = aq->dev;
+#endif
 		dev_dbg(&av->isys->adev->dev,
 			"%s: queue setup: plane %d size %u\n",
 			av->vdev.name, i, sizes[i]);
@@ -96,7 +128,11 @@ int ipu_isys_buf_prepare(struct vb2_buffer *vb)
 
 	vb2_set_plane_payload(vb, 0, av->mpix.plane_fmt[0].bytesperline *
 			      av->mpix.height);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	vb->v4l2_planes[0].data_offset = av->line_header_length / BITS_PER_BYTE;
+#else
 	vb->planes[0].data_offset = av->line_header_length / BITS_PER_BYTE;
+#endif
 
 	return 0;
 }
@@ -235,7 +271,11 @@ static void flush_firmware_streamon_fail(struct ipu_isys_pipeline *ip)
 				dev_dbg(&av->isys->adev->dev,
 					"%s: queue buffer %u back to incoming\n",
 					av->vdev.name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+					vb->v4l2_buf.index);
+#else
 					vb->index);
+#endif
 				/* Queue already streaming, return to driver. */
 				list_add(&ib->head, &aq->incoming);
 				continue;
@@ -244,7 +284,11 @@ static void flush_firmware_streamon_fail(struct ipu_isys_pipeline *ip)
 			dev_dbg(&av->isys->adev->dev,
 				"%s: return %u back to videobuf2\n",
 				av->vdev.name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+				vb->v4l2_buf.index);
+#else
 				vb->index);
+#endif
 			vb2_buffer_done(ipu_isys_buffer_to_vb2_buffer(ib),
 					VB2_BUF_STATE_QUEUED);
 		}
@@ -289,7 +333,11 @@ static int buffer_list_get(struct ipu_isys_pipeline *ip,
 
 		dev_dbg(&ip->isys->adev->dev, "buffer: %s: buffer %u\n",
 			ipu_isys_queue_to_video(aq)->vdev.name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+			ipu_isys_buffer_to_vb2_buffer(ib)->v4l2_buf.index
+#else
 			ipu_isys_buffer_to_vb2_buffer(ib)->index
+#endif
 		    );
 		list_del(&ib->head);
 		list_add(&ib->head, &bl->head);
@@ -344,7 +392,11 @@ ipu_isys_buffer_to_fw_frame_buff_pin(struct vb2_buffer *vb,
 	set->output_pins[aq->fw_output].addr =
 	    vb2_dma_contig_plane_dma_addr(vb, 0);
 	set->output_pins[aq->fw_output].out_buf_id =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	    vb->v4l2_buf.index + 1;
+#else
 	    vb->index + 1;
+#endif
 }
 
 /*
@@ -496,7 +548,11 @@ static void buf_queue(struct vb2_buffer *vb)
 
 	dev_dbg(&av->isys->adev->dev, "buffer: %s: buf_queue %u\n",
 		av->vdev.name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+		vb->v4l2_buf.index
+#else
 		vb->index
+#endif
 	    );
 
 	for (i = 0; i < vb->num_planes; i++)
@@ -592,8 +648,12 @@ int ipu_isys_link_fmt_validate(struct ipu_isys_queue *aq)
 {
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
 	struct v4l2_subdev_format fmt = { 0 };
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+	struct media_pad *pad = media_entity_remote_pad(av->vdev.entity.pads);
+#else
 	struct media_pad *pad =
 		media_pad_remote_pad_first(av->vdev.entity.pads);
+#endif
 	struct v4l2_subdev *sd;
 	int rval;
 
@@ -662,7 +722,11 @@ static void return_buffers(struct ipu_isys_queue *aq,
 			"%s: stop_streaming incoming %u\n",
 			ipu_isys_queue_to_video(vb2_queue_to_ipu_isys_queue
 						(vb->vb2_queue))->vdev.name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+			vb->v4l2_buf.index);
+#else
 			vb->index);
+#endif
 
 		spin_lock_irqsave(&aq->lock, flags);
 	}
@@ -687,7 +751,11 @@ static void return_buffers(struct ipu_isys_queue *aq,
 		dev_warn(&av->isys->adev->dev, "%s: cleaning active queue %u\n",
 			 ipu_isys_queue_to_video(vb2_queue_to_ipu_isys_queue
 						 (vb->vb2_queue))->vdev.name,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+			 vb->v4l2_buf.index);
+#else
 			 vb->index);
+#endif
 
 		spin_lock_irqsave(&aq->lock, flags);
 		reset_needed = 1;
@@ -877,7 +945,12 @@ ipu_isys_buf_calc_sequence_time(struct ipu_isys_buffer *ib,
 				struct ipu_fw_isys_resp_info_abi *info)
 {
 	struct vb2_buffer *vb = ipu_isys_buffer_to_vb2_buffer(ib);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	struct timespec ts_now;
+#endif
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(vb->vb2_queue);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
 	struct device *dev = &av->isys->adev->dev;
@@ -897,6 +970,23 @@ ipu_isys_buf_calc_sequence_time(struct ipu_isys_buffer *ib,
 		    / ip->nr_queues;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	vb->v4l2_buf.sequence = sequence;
+	ts_now = ns_to_timespec(ns);
+	vb->v4l2_buf.timestamp.tv_sec = ts_now.tv_sec;
+	vb->v4l2_buf.timestamp.tv_usec = ts_now.tv_nsec / NSEC_PER_USEC;
+
+	dev_dbg(dev, "buffer: %s: buffer done %u\n", av->vdev.name,
+		vb->v4l2_buf.index);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	vbuf->sequence = sequence;
+	ts_now = ns_to_timespec(ns);
+	vbuf->timestamp.tv_sec = ts_now.tv_sec;
+	vbuf->timestamp.tv_usec = ts_now.tv_nsec / NSEC_PER_USEC;
+
+	dev_dbg(dev, "%s: buffer done %u\n", av->vdev.name,
+		vb->index);
+#else
 	vbuf->vb2_buf.timestamp = ns;
 	vbuf->sequence = sequence;
 
@@ -904,6 +994,7 @@ ipu_isys_buf_calc_sequence_time(struct ipu_isys_buffer *ib,
 		av->vdev.name, ktime_get_ns(), sequence);
 	dev_dbg(dev, "index:%d, vbuf timestamp:%lld, endl\n",
 		vb->index, vbuf->vb2_buf.timestamp);
+#endif
 }
 
 void ipu_isys_queue_buf_done(struct ipu_isys_buffer *ib)
@@ -932,7 +1023,11 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 	struct vb2_buffer *vb;
 	unsigned long flags;
 	bool first = true;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	struct v4l2_buffer *buf;
+#else
 	struct vb2_v4l2_buffer *buf;
+#endif
 
 	dev_dbg(&isys->adev->dev, "buffer: %s: received buffer %8.8x\n",
 		ipu_isys_queue_to_video(aq)->vdev.name, info->pin.addr);
@@ -969,7 +1064,11 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 		}
 		dev_dbg(&isys->adev->dev, "buffer: found buffer %pad\n", &addr);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+		buf = &vb->v4l2_buf;
+#else
 		buf = to_vb2_v4l2_buffer(vb);
+#endif
 		buf->field = V4L2_FIELD_NONE;
 
 		list_del(&ib->head);
@@ -1045,8 +1144,16 @@ int ipu_isys_queue_init(struct ipu_isys_queue *aq)
 	if (rval)
 		return rval;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	aq->ctx = vb2_dma_contig_init_ctx(&isys->adev->dev);
+	if (IS_ERR(aq->ctx)) {
+		vb2_queue_release(&aq->vbq);
+		return PTR_ERR(aq->ctx);
+	}
+#else
 	aq->dev = &isys->adev->dev;
 	aq->vbq.dev = &isys->adev->dev;
+#endif
 	spin_lock_init(&aq->lock);
 	INIT_LIST_HEAD(&aq->active);
 	INIT_LIST_HEAD(&aq->incoming);
@@ -1056,5 +1163,12 @@ int ipu_isys_queue_init(struct ipu_isys_queue *aq)
 
 void ipu_isys_queue_cleanup(struct ipu_isys_queue *aq)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	if (IS_ERR_OR_NULL(aq->ctx))
+		return;
+
+	vb2_dma_contig_cleanup_ctx(aq->ctx);
+	aq->ctx = NULL;
+#endif
 	vb2_queue_release(&aq->vbq);
 }

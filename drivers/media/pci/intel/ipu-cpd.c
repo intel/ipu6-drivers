@@ -241,7 +241,11 @@ void *ipu_cpd_create_pkg_dir(struct ipu_bus_device *adev,
 	*pkg_dir_size = PKG_DIR_SIZE + man_sz + met_sz;
 	pkg_dir = dma_alloc_attrs(&adev->dev, *pkg_dir_size, dma_addr,
 				  GFP_KERNEL,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+				  NULL);
+#else
 				  0);
+#endif
 	if (!pkg_dir)
 		return pkg_dir;
 
@@ -267,7 +271,11 @@ void *ipu_cpd_create_pkg_dir(struct ipu_bus_device *adev,
 			"Unable to parse module data section!\n");
 		dma_free_attrs(&isp->psys->dev, *pkg_dir_size, pkg_dir,
 			       *dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL);
+#else
 			       0);
+#endif
 		return NULL;
 	}
 
@@ -290,7 +298,11 @@ void ipu_cpd_free_pkg_dir(struct ipu_bus_device *adev,
 			  u64 *pkg_dir,
 			  dma_addr_t dma_addr, unsigned int pkg_dir_size)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	dma_free_attrs(&adev->dev, pkg_dir_size, pkg_dir, dma_addr, NULL);
+#else
 	dma_free_attrs(&adev->dev, pkg_dir_size, pkg_dir, dma_addr, 0);
+#endif
 }
 EXPORT_SYMBOL_GPL(ipu_cpd_free_pkg_dir);
 

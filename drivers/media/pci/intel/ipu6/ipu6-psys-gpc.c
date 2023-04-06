@@ -180,8 +180,15 @@ int ipu_psys_gpc_init_debugfs(struct ipu_psys *psys)
 		if (IS_ERR(dir))
 			goto err;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		file = debugfs_create_bool("enable", 0600, dir,
+					   &psys_gpcs->gpc[idx].enable);
+		if (IS_ERR(file))
+			goto err;
+#else
 		debugfs_create_bool("enable", 0600, dir,
 				    &psys_gpcs->gpc[idx].enable);
+#endif
 
 		debugfs_create_u32("source", 0600, dir,
 				   &psys_gpcs->gpc[idx].source);

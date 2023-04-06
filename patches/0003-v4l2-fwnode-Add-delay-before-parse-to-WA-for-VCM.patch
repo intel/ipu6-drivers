@@ -1,0 +1,22 @@
+diff --git a/drivers/media/v4l2-core/v4l2-fwnode.c b/drivers/media/v4l2-core/v4l2-fwnode.c
+index 3d9533c1b202..d19a5362db6c 100644
+--- a/drivers/media/v4l2-core/v4l2-fwnode.c
++++ b/drivers/media/v4l2-core/v4l2-fwnode.c
+@@ -15,6 +15,7 @@
+  * Author: Guennadi Liakhovetski <g.liakhovetski@gmx.de>
+  */
+ #include <linux/acpi.h>
++#include <linux/delay.h>
+ #include <linux/kernel.h>
+ #include <linux/mm.h>
+ #include <linux/module.h>
+@@ -1268,6 +1269,9 @@ v4l2_async_nf_parse_fwnode_sensor(struct device *dev,
+ 	};
+ 	unsigned int i;
+ 
++#if defined(CONFIG_IPU_ISYS_BRIDGE)
++	msleep_interruptible(500);
++#endif
+ 	for (i = 0; i < ARRAY_SIZE(props); i++) {
+ 		int ret;
+ 

@@ -18,19 +18,10 @@ two ways are available:
 - building out of kernel source tree
 
 ### Build with kernel source tree
-* Tested with kernel 6.0
+* Tested with kernel <= 6.2
 * Check out kernel
-* Apply `patch.diff` to kernel source code
+* Apply `patches/*.patch` to kernel source code
 * Copy repo content (exclude Makefile,drivers/media/i2c/Makefile) to kernel source
-* Modify drivers/media/pci/Kconfig
-
-```
-# replace line:
-# source "drivers/media/pci/intel/ipu3/Kconfig"
-# with line:
-source "drivers/media/pci/intel/Kconfig"
-```
-
 * Enable the following settings in .config
 
 ```
@@ -42,7 +33,7 @@ CONFIG_INTEL_SKL_INT3472=m
 
 ### Build outside kernel source tree
 * requires kernel header installed on building environment
-* requires `patch.diff` patched on target kernel
+* requires 0002 ~ 0006 in `patches` folder patched on target kernel
 
 to compile
 ```bash

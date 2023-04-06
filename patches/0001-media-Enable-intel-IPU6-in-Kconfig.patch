@@ -1,0 +1,13 @@
+diff --git a/drivers/media/pci/Kconfig b/drivers/media/pci/Kconfig
+index dff0b450f387..ab938260b6de 100644
+--- a/drivers/media/pci/Kconfig
++++ b/drivers/media/pci/Kconfig
+@@ -71,7 +71,7 @@ config VIDEO_PCI_SKELETON
+ 	  Enable build of the skeleton PCI driver, used as a reference
+ 	  when developing new drivers.
+ 
+-source "drivers/media/pci/intel/ipu3/Kconfig"
++source "drivers/media/pci/intel/Kconfig"
+ 
+ endif #MEDIA_PCI_SUPPORT
+ endif #PCI
