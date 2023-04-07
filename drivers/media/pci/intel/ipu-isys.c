@@ -422,6 +422,57 @@ skip_put_adapter:
 	return rval;
 }
 
+static int isys_unregister_ext_subdev(struct ipu_isys *isys,
+				    struct ipu_isys_subdev_info *sd_info)
+{
+	struct i2c_adapter *adapter;
+	struct i2c_client *client;
+	int rval;
+	int bus;
+
+	bus = ipu_get_i2c_bus_id(sd_info->i2c.i2c_adapter_id,
+			sd_info->i2c.i2c_adapter_bdf,
+			sizeof(sd_info->i2c.i2c_adapter_bdf));
+	if (bus < 0) {
+		dev_err(&isys->adev->dev,
+			"getting i2c bus id for adapter %d (bdf %s) failed",
+			sd_info->i2c.i2c_adapter_id,
+			sd_info->i2c.i2c_adapter_bdf);
+		return -ENOENT;
+	}
+	dev_info(&isys->adev->dev,
+		 "got i2c bus id %d for adapter %d (bdf %s)", bus,
+		 sd_info->i2c.i2c_adapter_id,
+		 sd_info->i2c.i2c_adapter_bdf);
+	adapter = i2c_get_adapter(bus);
+	if (!adapter) {
+		dev_warn(&isys->adev->dev, "can't find adapter\n");
+		return -ENOENT;
+	}
+
+	dev_info(&isys->adev->dev,
+		 "unregister i2c subdev for %s (address %2.2x, bus %d)",
+		 sd_info->i2c.board_info.type, sd_info->i2c.board_info.addr,
+		 bus);
+
+	client = isys_find_i2c_subdev(adapter, sd_info);
+	if (!client) {
+		dev_dbg(&isys->adev->dev, "Device not exists\n");
+		rval = 0;
+		goto skip_put_adapter;
+	}
+
+	i2c_unregister_device(client);
+	i2c_put_adapter(adapter);
+
+	return 0;
+
+skip_put_adapter:
+	i2c_put_adapter(adapter);
+
+	return rval;
+}
+
 static void isys_register_ext_subdevs(struct ipu_isys *isys)
 {
 	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
@@ -433,6 +484,19 @@ static void isys_register_ext_subdevs(struct ipu_isys *isys)
 	}
 	for (sd_info = spdata->subdevs; *sd_info; sd_info++)
 		isys_register_ext_subdev(isys, *sd_info);
+}
+
+static void isys_unregister_ext_subdevs(struct ipu_isys *isys)
+{
+	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
+	struct ipu_isys_subdev_info **sd_info;
+
+	if (!spdata) {
+		dev_info(&isys->adev->dev, "no subdevice info provided\n");
+		return;
+	}
+	for (sd_info = spdata->subdevs; *sd_info; sd_info++)
+		isys_unregister_ext_subdev(isys, *sd_info);
 }
 #endif
 
@@ -793,6 +857,9 @@ out_media_device_unregister:
 static void isys_unregister_devices(struct ipu_isys *isys)
 {
 	isys_unregister_subdevices(isys);
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+	isys_unregister_ext_subdevs(isys);
+#endif
 	v4l2_device_unregister(&isys->v4l2_dev);
 	media_device_unregister(&isys->media_dev);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
