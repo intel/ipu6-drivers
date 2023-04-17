@@ -1049,12 +1049,8 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 			(pad_id - NR_OF_CSI2_BE_SOC_SINK_PADS)) {
 			ip->vc = ip->asv[qm.index].vc;
 			flag = true;
-			pr_info("The current entity vc:id:%d\n", ip->vc);
+			pr_info("The current entityvc:id:%d\n", ip->vc);
 		}
-		dev_dbg(source_pad->entity->graph_obj.mdev->dev,
-			"dentity vc:%d, dt:%x, substream:%d\n",
-			ip->vc, ip->asv[qm.index].dt,
-			ip->asv[qm.index].substream);
 	}
 
 	if (flag)
@@ -1131,9 +1127,10 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 #endif
 
 		if (entity->pipe && entity->pipe == pipe) {
-			dev_warn(entity->graph_obj.mdev->dev,
-			       "Pipe active for %s. when start for %s\n",
+			pr_err("Pipe active for %s. Can't start for %s\n",
 			       entity->name, entity_err->name);
+			ret = -EBUSY;
+			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1347,9 +1344,10 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 			entity->name);
 
 		if (entity->pads[0].pipe && entity->pads[0].pipe == pipe) {
-			dev_warn(entity->graph_obj.mdev->dev,
-			       "Pipe active for %s. when start for %s\n",
+			pr_err("Pipe active for %s. Can't start for %s\n",
 			       entity->name, entity_err->name);
+			ret = -EBUSY;
+			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -2035,10 +2033,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 			short_packet_queue_destroy(ip);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 		media_pipeline_stop(&av->vdev.entity);
-		av->vdev.entity.pipe = NULL;
 #else
 		media_pipeline_stop_for_vc(av);
-		av->vdev.entity.pads[0].pipe = NULL;
 #endif
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;

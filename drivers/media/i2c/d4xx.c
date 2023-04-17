@@ -1811,8 +1811,6 @@ static int ds5_set_calibration_data(struct ds5 *state,
 	return -EINVAL;
 }
 
-static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on);
-
 static int ds5_s_state(struct ds5 *state, int vc)
 {
 	int ret = 0;
@@ -1852,6 +1850,8 @@ static int ds5_s_state(struct ds5 *state, int vc)
 	ds5_set_state_last_set(state);
 	return ret;
 }
+
+static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on);
 
 static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 {
@@ -2163,10 +2163,10 @@ static int ds5_s_ctrl(struct v4l2_ctrl *ctrl)
 		dev_info(&state->client->dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
 		vc_id = (val >> 8) & 0x00FF;
 		on = val & 0x00FF;
-		if (vc_id < DS5_MUX_PAD_COUNT)
+		if (on == 0xff) {
 			ret = ds5_s_state(state, vc_id);
-		if (on == 0xff)
 			break;
+		}
 		if (vc_id > NR_OF_DS5_STREAMS - 1)
 			dev_err(&state->client->dev, "invalid vc %d\n", vc_id);
 		else
@@ -3293,9 +3293,7 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	// u32 pad = fmt->pad;
 	int ret = 0;
 	int substream = -1;
-	if (pad != DS5_MUX_PAD_EXTERNAL)
-		ds5_s_state(state, pad - 1);
-	sensor = state->mux.last_set;
+
 	switch (pad) {
 	case DS5_MUX_PAD_DEPTH_A:
 	case DS5_MUX_PAD_MOTION_T_A:
@@ -3352,10 +3350,8 @@ static int ds5_mux_get_fmt(struct v4l2_subdev *sd,
 	int ret = 0;
 	struct ds5_sensor *sensor = state->mux.last_set;
 	u32 pad = sensor->mux_pad;
-	if (pad != DS5_MUX_PAD_EXTERNAL)
-		ds5_s_state(state, pad - 1);
-	sensor = state->mux.last_set;
-	dev_info(sd->dev, "%s(): %u %s %p\n", __func__, pad, ds5_get_sensor_name(state), state->mux.last_set);
+
+	dev_info(sd->dev, "%s(): %u %p\n", __func__, pad, state->mux.last_set);
 
 	switch (pad) {
 	case DS5_MUX_PAD_DEPTH_A:
@@ -3437,32 +3433,6 @@ static int ds5_mux_s_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
-int d4xx_reset_oneshot(struct ds5 *state)
-{
-	int s_addr = state->client->addr;
-	int n_addr = 0;
-	int ret = 0;
-
-	if (s_addr == 0x12)
-		n_addr = 0x48;
-	if (s_addr == 0x14)
-		n_addr = 0x4a;
-	if (s_addr == 0x16)
-		n_addr = 0x68;
-	if (s_addr == 0x18)
-		n_addr = 0x6c;
-	if (n_addr) {
-		state->client->addr = n_addr;
-		dev_warn(&state->client->dev, "One-shot reset 0x%x enable auto-link\n", n_addr);
-		ret = max9296_write_8(state, 0x0010, 0x31); // One-shot reset  enable auto-link
-		state->client->addr = s_addr;
-		/* delay to settle link */
-		msleep(100);
-	}
-
-	return ret;
-}
-
 static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 {
 	struct ds5 *state = container_of(sd, struct ds5, mux.sd.subdev);
@@ -3471,9 +3441,7 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 	unsigned int i = 0;
 	int restore_val = 0;
 	u16 config_status_base, stream_status_base, stream_id, vc_id;
-	// spare duplicate calls
-	if (state->mux.last_set->streaming == on)
-		return 0;
+
 	if (state->is_depth) {
 		config_status_base = DS5_DEPTH_CONFIG_STATUS;
 		stream_status_base = DS5_DEPTH_STREAM_STATUS;
@@ -3538,13 +3506,11 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 			dev_dbg(&state->client->dev, "started after %dms\n",
 				i * DS5_START_POLL_TIME);
 		}
-	} else { // off
+	} else {
 		ret = ds5_write(state, DS5_START_STOP_STREAM,
 				DS5_STREAM_STOP | stream_id);
 		if (ret < 0)
 			goto restore_s_state;
-
-		d4xx_reset_oneshot(state);
 	}
 
 	ds5_read(state, config_status_base, &status);
