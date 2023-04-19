@@ -51,7 +51,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_NV16},
 	{V4L2_PIX_FMT_XRGB32, 32, 32, 0, MEDIA_BUS_FMT_RGB565_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
-	{V4L2_PIX_FMT_Y12I, 24, 24, 0, MEDIA_BUS_FMT_RGB888_1X24,
+	{V4L2_PIX_FMT_Y12I, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	{V4L2_PIX_FMT_XBGR32, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
@@ -1049,8 +1049,12 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 			(pad_id - NR_OF_CSI2_BE_SOC_SINK_PADS)) {
 			ip->vc = ip->asv[qm.index].vc;
 			flag = true;
-			pr_info("The current entityvc:id:%d\n", ip->vc);
+			pr_info("The current entity vc:id:%d\n", ip->vc);
 		}
+		dev_dbg(source_pad->entity->graph_obj.mdev->dev,
+			"dentity vc:%d, dt:%x, substream:%d\n",
+			ip->vc, ip->asv[qm.index].dt,
+			ip->asv[qm.index].substream);
 	}
 
 	if (flag)
@@ -1127,10 +1131,9 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 #endif
 
 		if (entity->pipe && entity->pipe == pipe) {
-			pr_err("Pipe active for %s. Can't start for %s\n",
+			dev_dbg(entity->graph_obj.mdev->dev,
+			       "Pipe active for %s. when start for %s\n",
 			       entity->name, entity_err->name);
-			ret = -EBUSY;
-			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1344,10 +1347,9 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 			entity->name);
 
 		if (entity->pads[0].pipe && entity->pads[0].pipe == pipe) {
-			pr_err("Pipe active for %s. Can't start for %s\n",
+			dev_dbg(entity->graph_obj.mdev->dev,
+			       "Pipe active for %s. when start for %s\n",
 			       entity->name, entity_err->name);
-			ret = -EBUSY;
-			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1565,8 +1567,7 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 						      BITS_PER_BYTE),
 					 av->isys->line_align);
 
-	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8 ||
-	    input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_RGB888)
+	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8)
 		pin_info->pt = IPU_FW_ISYS_PIN_TYPE_MIPI;
 	else
 		pin_info->pt = aq->css_pin_type;
@@ -2033,8 +2034,10 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 			short_packet_queue_destroy(ip);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 		media_pipeline_stop(&av->vdev.entity);
+		av->vdev.entity.pipe = NULL;
 #else
 		media_pipeline_stop_for_vc(av);
+		av->vdev.entity.pads[0].pipe = NULL;
 #endif
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;
@@ -2061,14 +2064,12 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->interlaced = false;
 
 	rval = media_entity_enum_init(&ip->entity_enum, mdev);
-	if (rval) {
-		dev_err(dev, "entity enum init failed\n");
+	if (rval)
 		return rval;
-	}
 
 	rval = media_pipeline_start_by_vc(av, &ip->pipe);
 	if (rval < 0) {
-		dev_err(dev, "pipeline start failed\n");
+		dev_dbg(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
 	}
 
@@ -2079,10 +2080,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	rval = media_graph_walk_init(&graph, mdev);
-	if (rval) {
-		dev_err(dev, "graph walk init failed\n");
+	if (rval)
 		goto out_pipeline_stop;
-	}
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);

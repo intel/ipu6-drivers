@@ -585,7 +585,7 @@ static void buf_queue(struct vb2_buffer *vb)
 		return;
 
 	if (!pipe_av || !media_pipe || !vb->vb2_queue->start_streaming_called) {
-		dev_info(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"no pipe or streaming, adding to incoming\n");
 		return;
 	}
@@ -594,7 +594,7 @@ static void buf_queue(struct vb2_buffer *vb)
 	mutex_lock(&pipe_av->mutex);
 
 	if (ip->nr_streaming != ip->nr_queues) {
-		dev_info(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"not streaming yet, adding to incoming\n");
 		goto out;
 	}
@@ -611,7 +611,7 @@ static void buf_queue(struct vb2_buffer *vb)
 				"error: buffer list get failed\n");
 			WARN_ON(1);
 		} else {
-			dev_info(&av->isys->adev->dev,
+			dev_dbg(&av->isys->adev->dev,
 				"not enough buffers available\n");
 		}
 		goto out;
@@ -620,8 +620,6 @@ static void buf_queue(struct vb2_buffer *vb)
 	msg = ipu_get_fw_msg_buf(ip);
 	if (!msg) {
 		rval = -ENOMEM;
-		dev_err(&av->isys->adev->dev,
-			"failed to get fw msg buf\n");
 		goto out;
 	}
 	buf = to_frame_msg_buf(msg);
@@ -632,7 +630,7 @@ static void buf_queue(struct vb2_buffer *vb)
 					ip->nr_output_pins);
 
 	if (!ip->streaming) {
-		dev_info(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"got a buffer to start streaming!\n");
 		rval = ipu_isys_stream_start(ip, &bl, true);
 		if (rval)
@@ -819,14 +817,6 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 
 	mutex_unlock(&av->isys->stream_mutex);
 
-	rval = aq->link_fmt_validate(aq);
-	if (rval) {
-		dev_err(&av->isys->adev->dev,
-			"%s: link format validation failed (%d)\n",
-			av->vdev.name, rval);
-		goto out_unprepare_streaming;
-	}
-
 	ip = to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	pipe_av = container_of(ip, struct ipu_isys_video, ip);
 	if (pipe_av != av) {
@@ -839,7 +829,7 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 		ip->nr_queues);
 	list_add(&aq->node, &ip->queues);
 	if (ip->nr_streaming != ip->nr_queues) {
-		dev_err(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"%s: streaming queue not match (%d)(%d)\n",
 			av->vdev.name, ip->nr_streaming, ip->nr_queues);
 		goto out;
@@ -853,7 +843,7 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 				"buffer list invalid\n");
 			goto out_stream_start;
 		} else if (rval < 0) {
-			dev_err(&av->isys->adev->dev,
+			dev_dbg(&av->isys->adev->dev,
 				"no request available, postponing streamon\n");
 			goto out;
 		}
@@ -882,7 +872,6 @@ out_stream_start:
 		mutex_lock(&av->mutex);
 	}
 
-out_unprepare_streaming:
 	mutex_lock(&av->isys->stream_mutex);
 	if (first)
 		ipu_isys_video_prepare_streaming(av, 0);
