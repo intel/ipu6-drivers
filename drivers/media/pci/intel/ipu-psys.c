@@ -640,17 +640,17 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 	if (kbuf->kaddr)
 		dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
 #endif
-	if (kbuf->sgt) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+	if (kbuf->sgt)
 		dma_buf_unmap_attachment_unlocked(kbuf->db_attach,
 						  kbuf->sgt,
 						  DMA_BIDIRECTIONAL);
 #else
+	if (kbuf->sgt)
 		dma_buf_unmap_attachment(kbuf->db_attach,
 					 kbuf->sgt,
 					 DMA_BIDIRECTIONAL);
 #endif
-	}
 	if (kbuf->db_attach)
 		dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
 	dma_buf_put(kbuf->dbuf);
