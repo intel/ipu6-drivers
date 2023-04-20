@@ -9,9 +9,13 @@ export CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA = y
 export CONFIG_INTEL_SKL_INT3472 = m
 export CONFIG_INTEL_IPU6_ACPI = m
 obj-y += drivers/media/pci/intel/
+obj-y += drivers/media/platform/intel/
 
 export CONFIG_VIDEO_AR0234 = m
 export CONFIG_VIDEO_LT6911UXC = m
+export CONFIG_I2C_IOEXPANDER_SER_MAX9295 = m
+export CONFIG_I2C_IOEXPANDER_DESER_MAX9296 = m
+
 obj-y += drivers/media/i2c/
 
 KERNEL_SRC := /lib/modules/$(shell uname -r)/build
