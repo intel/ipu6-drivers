@@ -987,7 +987,7 @@ static const struct ds5_format ds5_y_formats_ds5u[] = {
 	{
 		/* First format: default */
 		.data_type = 0x2a,	/* Y8 */
-		.mbus_code = MEDIA_BUS_FMT_SBGGR8_1X8,
+		.mbus_code = MEDIA_BUS_FMT_Y8_1X8,
 		.n_resolutions = ARRAY_SIZE(y8_sizes),
 		.resolutions = y8_sizes,
 	}, {
@@ -2881,7 +2881,7 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 						0, 128, 1, 64);
 	}
 
-	if (ctrls->gain) {
+	if ((ctrls->gain) && (sid >= 0 && sid < 3)) {
 		ctrls->gain->priv = sensor;
 		ctrls->gain->flags =
 				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
@@ -2912,7 +2912,7 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 					1, MAX_RGB_EXP, 1, DEF_RGB_EXP);
 	}
 
-	if (ctrls->exposure) {
+	if ((ctrls->exposure) && (sid >= 0 && sid < 3)) {
 		ctrls->exposure->priv = sensor;
 		ctrls->exposure->flags |=
 				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
