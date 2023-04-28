@@ -51,6 +51,8 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_NV16},
 	{V4L2_PIX_FMT_XRGB32, 32, 32, 0, MEDIA_BUS_FMT_RGB565_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
+	{V4L2_PIX_FMT_Y12I, 24, 24, 0, MEDIA_BUS_FMT_RGB888_1X24,
+	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	{V4L2_PIX_FMT_XBGR32, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	/* Raw bayer formats. */
@@ -80,6 +82,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
+	{V4L2_META_FMT_D4XX, 8, 8, 0, MEDIA_BUS_FMT_FIXED, 0},
 	{}
 };
 
@@ -415,6 +418,16 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *fh,
 {
 	struct ipu_isys_video *av = video_drvdata(file);
 
+	if (fmt->type == V4L2_BUF_TYPE_META_CAPTURE) {
+		fmt->fmt.meta.buffersize = av->mpix.plane_fmt[0].sizeimage;
+		fmt->fmt.meta.bytesperline = av->mpix.plane_fmt[0].bytesperline;
+		fmt->fmt.meta.width = av->mpix.width;
+		fmt->fmt.meta.height = av->mpix.height;
+		fmt->fmt.meta.dataformat = av->mpix.pixelformat;
+
+		return 0;
+	}
+
 	fmt->fmt.pix_mp = av->mpix;
 
 	return 0;
@@ -538,10 +551,29 @@ static int vidioc_s_fmt_vid_cap_mplane(struct file *file, void *fh,
 				       struct v4l2_format *f)
 {
 	struct ipu_isys_video *av = video_drvdata(file);
+	struct v4l2_pix_format_mplane mpix;
 
 	if (av->aq.vbq.streaming)
 		return -EBUSY;
 
+	if (f->type == V4L2_BUF_TYPE_META_CAPTURE) {
+		memset(&av->mpix, 0, sizeof(av->mpix));
+		memset(&mpix, 0, sizeof(mpix));
+		mpix.width = f->fmt.meta.width;
+		mpix.height = f->fmt.meta.height;
+		mpix.pixelformat = f->fmt.meta.dataformat;
+		av->pfmt = av->try_fmt_vid_mplane(av, &mpix);
+		av->aq.vbq.type = V4L2_BUF_TYPE_META_CAPTURE;
+		av->aq.vbq.is_multiplanar = false;
+		av->aq.vbq.is_output = false;
+		av->mpix = mpix;
+		f->fmt.meta.width = mpix.width;
+		f->fmt.meta.height = mpix.height;
+		f->fmt.meta.dataformat = mpix.pixelformat;
+		f->fmt.meta.bytesperline = mpix.plane_fmt[0].bytesperline;
+		f->fmt.meta.buffersize = mpix.plane_fmt[0].sizeimage;
+		return 0;
+	}
 	av->pfmt = av->try_fmt_vid_mplane(av, &f->fmt.pix_mp);
 	av->mpix = f->fmt.pix_mp;
 
@@ -1047,8 +1079,12 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 			(pad_id - NR_OF_CSI2_BE_SOC_SINK_PADS)) {
 			ip->vc = ip->asv[qm.index].vc;
 			flag = true;
-			pr_info("The current entityvc:id:%d\n", ip->vc);
+			pr_info("The current entity vc:id:%d\n", ip->vc);
 		}
+		dev_dbg(source_pad->entity->graph_obj.mdev->dev,
+			"dentity vc:%d, dt:%x, substream:%d\n",
+			ip->vc, ip->asv[qm.index].dt,
+			ip->asv[qm.index].substream);
 	}
 
 	if (flag)
@@ -1061,10 +1097,6 @@ static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
 static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 				     struct media_pipeline *pipe)
 {
-	int ret = -ENOLINK;
-	int i;
-	int entity_vc = INVALIA_VC_ID;
-	u32 n;
 	struct media_entity *entity = &av->vdev.entity;
 	struct media_device *mdev = entity->graph_obj.mdev;
 	struct media_graph *graph = &pipe->graph;
@@ -1081,18 +1113,25 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 	int previous_stream_count = 0;
 	struct media_entity *entity_enum = entity;
 #endif
+	int ret = -ENOLINK;
+	int i;
+	int entity_vc = INVALIA_VC_ID;
+	u32 n;
+	bool is_vc = false;
 
 	if (!source_pad) {
 		dev_err(entity->graph_obj.mdev->dev, "no remote pad found\n");
 		return ret;
 	}
-	pad_id = source_pad->index;
 
-	ret = ipu_isys_query_sensor_info(source_pad, ip);
-	if (ret) {
-		dev_err(entity->graph_obj.mdev->dev,
-			"query sensor info failed\n");
-		return ret;
+	is_vc = is_support_vc(source_pad, ip);
+	if (is_vc)  {
+		ret = ipu_isys_query_sensor_info(source_pad, ip);
+		if (ret) {
+			dev_err(entity->graph_obj.mdev->dev,
+				"query sensor info failed\n");
+			return ret;
+		}
 	}
 
 	if (!pipe->streaming_count++) {
@@ -1122,10 +1161,9 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 #endif
 
 		if (entity->pipe && entity->pipe == pipe) {
-			pr_err("Pipe active for %s. Can't start for %s\n",
+			dev_dbg(entity->graph_obj.mdev->dev,
+			       "Pipe active for %s. when start for %s\n",
 			       entity->name, entity_err->name);
-			ret = -EBUSY;
-			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1138,7 +1176,7 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 		 * If it is video device and its vc id is not equal to curren
 		 * video device's vc id, it should continue.
 		 */
-		if (is_media_entity_v4l2_video_device(entity)) {
+		if (is_vc && is_media_entity_v4l2_video_device(entity)) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 			source_pad =
 				media_entity_remote_pad(entity->pads);
@@ -1339,10 +1377,9 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 			entity->name);
 
 		if (entity->pads[0].pipe && entity->pads[0].pipe == pipe) {
-			pr_err("Pipe active for %s. Can't start for %s\n",
+			dev_dbg(entity->graph_obj.mdev->dev,
+			       "Pipe active for %s. when start for %s\n",
 			       entity->name, entity_err->name);
-			ret = -EBUSY;
-			goto error;
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1560,9 +1597,11 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 						      BITS_PER_BYTE),
 					 av->isys->line_align);
 
-	pin_info->pt =
-		(input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8 ?
-		 IPU_FW_ISYS_PIN_TYPE_MIPI : aq->css_pin_type);
+	if (input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8 ||
+	    input_pin_info->dt == IPU_ISYS_MIPI_CSI2_TYPE_RGB888)
+		pin_info->pt = IPU_FW_ISYS_PIN_TYPE_MIPI;
+	else
+		pin_info->pt = aq->css_pin_type;
 	pin_info->ft = av->pfmt->css_pixelformat;
 	pin_info->send_irq = 1;
 	memset(pin_info->ts_offsets, 0, sizeof(pin_info->ts_offsets));
@@ -2026,8 +2065,10 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 			short_packet_queue_destroy(ip);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 		media_pipeline_stop(&av->vdev.entity);
+		av->vdev.entity.pipe = NULL;
 #else
 		media_pipeline_stop_for_vc(av);
+		av->vdev.entity.pads[0].pipe = NULL;
 #endif
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;
@@ -2054,14 +2095,12 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->interlaced = false;
 
 	rval = media_entity_enum_init(&ip->entity_enum, mdev);
-	if (rval) {
-		dev_err(dev, "entity enum init failed\n");
+	if (rval)
 		return rval;
-	}
 
 	rval = media_pipeline_start_by_vc(av, &ip->pipe);
 	if (rval < 0) {
-		dev_err(dev, "pipeline start failed\n");
+		dev_dbg(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
 	}
 
@@ -2072,10 +2111,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	rval = media_graph_walk_init(&graph, mdev);
-	if (rval) {
-		dev_err(dev, "graph walk init failed\n");
+	if (rval)
 		goto out_pipeline_stop;
-	}
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
@@ -2326,6 +2363,10 @@ static const struct v4l2_ioctl_ops ioctl_ops_mplane = {
 	.vidioc_g_fmt_vid_cap_mplane = vidioc_g_fmt_vid_cap_mplane,
 	.vidioc_s_fmt_vid_cap_mplane = vidioc_s_fmt_vid_cap_mplane,
 	.vidioc_try_fmt_vid_cap_mplane = vidioc_try_fmt_vid_cap_mplane,
+	.vidioc_enum_fmt_meta_cap = ipu_isys_vidioc_enum_fmt,
+	.vidioc_g_fmt_meta_cap = vidioc_g_fmt_vid_cap_mplane,
+	.vidioc_s_fmt_meta_cap = vidioc_s_fmt_vid_cap_mplane,
+	.vidioc_try_fmt_meta_cap = vidioc_try_fmt_vid_cap_mplane,
 	.vidioc_reqbufs = vb2_ioctl_reqbufs,
 	.vidioc_create_bufs = vb2_ioctl_create_bufs,
 	.vidioc_prepare_buf = vb2_ioctl_prepare_buf,
@@ -2394,6 +2435,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 		av->aq.vbq.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 		ioctl_ops = &ioctl_ops_mplane;
 		av->vdev.device_caps |= V4L2_CAP_VIDEO_CAPTURE_MPLANE;
+		av->vdev.device_caps |= V4L2_CAP_META_CAPTURE;
 		av->vdev.vfl_dir = VFL_DIR_RX;
 	} else {
 		av->aq.vbq.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
