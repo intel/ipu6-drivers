@@ -38,6 +38,13 @@
 /* use max resolution pixel rate by default */
 #define DEFAULT_PIXEL_RATE	(360000000ULL * 2 * 4 / 10)
 
+#define MAX_VIDEO_DEVICES	8
+
+static int video_nr[MAX_VIDEO_DEVICES] = { [0 ...(MAX_VIDEO_DEVICES - 1)] = -1 };
+module_param_array(video_nr, int, NULL, 0444);
+MODULE_PARM_DESC(video_nr,
+		 "video device numbers (-1=auto, 0=/dev/video0, etc.)");
+
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW16},
@@ -1823,8 +1830,9 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 			unsigned int pad, unsigned long pad_flags,
 			unsigned int flags)
 {
+	static atomic_t video_dev_count = ATOMIC_INIT(0);
 	const struct v4l2_ioctl_ops *ioctl_ops = NULL;
-	int rval;
+	int rval, video_dev_nr;
 
 	mutex_init(&av->mutex);
 	init_completion(&av->ip.stream_open_completion);
@@ -1874,12 +1882,18 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	set_bit(V4L2_FL_USES_V4L2_FH, &av->vdev.flags);
 	video_set_drvdata(&av->vdev, av);
 
+	video_dev_nr = atomic_inc_return(&video_dev_count) - 1;
+	if (video_dev_nr < MAX_VIDEO_DEVICES)
+		video_dev_nr = video_nr[video_dev_nr];
+	else
+		video_dev_nr = -1;
+
 	mutex_lock(&av->mutex);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-	rval = video_register_device(&av->vdev, VFL_TYPE_GRABBER, -1);
+	rval = video_register_device(&av->vdev, VFL_TYPE_GRABBER, video_dev_nr);
 #else
-	rval = video_register_device(&av->vdev, VFL_TYPE_VIDEO, -1);
+	rval = video_register_device(&av->vdev, VFL_TYPE_VIDEO, video_dev_nr);
 #endif
 	if (rval)
 		goto out_media_entity_cleanup;
