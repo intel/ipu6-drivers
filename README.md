@@ -10,7 +10,7 @@ There are 4 repositories:
 
 ## Content of this repository:
 - Intel IPU kernel driver
-- Drivers for AR0234, LT6911UXC and D457
+- Drivers for AR0234, LT6911UXC, D457, TI960 and IMX390
 
 ## Build instructions:
 Three ways are available:
@@ -31,6 +31,12 @@ Three ways are available:
 - Modify related Kconfig and Makefile
 - Add config in "drivers/media/i2c/Kconfig"
 ```conf
+config VIDEO_TI960
+  tristate "TI960 driver support"
+  depends on I2C && VIDEO_V4L2
+  help
+    This is a driver for TI960 Deserializer.
+
 config VIDEO_AR0234 
   tristate "OnSemi AR0234 sensor support" 
   depends on I2C && VIDEO_V4L2_SUBDEV_API 
@@ -48,11 +54,17 @@ config VIDEO_LT6911UXC
    To compile this driver as a module, choose M here: the
     module will be called lt6911uxc.
 
- config VIDEO_D4XX
+config VIDEO_D4XX
   depends on I2C && VIDEO_V4L2
   tristate "D4XX Camera Driver"
   help
     This is a Video4Linux2 sensor-level driver for intel realsence camera.
+
+config VIDEO_IMX390
+  depends on I2C && VIDEO_V4L2
+  tristate "IMX390 Camera Driver"
+  help
+    This is a Video4Linux2 sensor-level driver for Sony IMX390 camera.
 ```
 
 - Add to drivers/media/i2c/Makefile
@@ -60,6 +72,9 @@ config VIDEO_LT6911UXC
 obj-$(CONFIG_VIDEO_AR0234) += ar0234.o 
 obj-$(CONFIG_VIDEO_LT6911UXC) += lt6911uxc.o 
 obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
+ti960-objs      := ti953-ser.o ti960-des.o
+obj-$(CONFIG_VIDEO_TI960) += ti960.o
+obj-$(CONFIG_VIDEO_IMX390) += imx390.o
 ```
 
 - Modify drivers/media/pci/Kconfig
@@ -77,6 +92,8 @@ obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
  CONFIG_VIDEO_AR0234=m 
  CONFIG_VIDEO_LT6911UXC=m 
  CONFIG_VIDEO_D4XX=m 
+ CONFIG_VIDEO_TI960=m
+ CONFIG_VIDEO_IMX390=m
  CONFIG_INTEL_IPU6_ACPI=m
  CONFIG_VIDEO_INTEL_IPU_SOC=y
  CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA=y
