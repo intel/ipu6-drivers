@@ -1,0 +1,231 @@
+From fb6e1344d16d85314cb59198264da331ffe2d89d Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Tue, 4 Apr 2023 10:57:06 +0800
+Subject: [PATCH 1/2] ov13b10: Use runtime pm callback to control power
+
+Change-Id: I126c54a271b9cdeae478e55625ba0953a2b29275
+Tracked-On: #JIITL8-733
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/i2c/ov13b10.c | 122 +++++++++++++++++++++++-------------
+ 1 file changed, 79 insertions(+), 43 deletions(-)
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index e45fcce701fe..69d4b9523465 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -1032,41 +1032,45 @@ ov13b10_set_pad_format(struct v4l2_subdev *sd,
+ 	return 0;
+ }
+ 
+-static void __ov13b10_set_power(struct ov13b10 *ov13b10, bool on) {
+-	struct i2c_client *client = v4l2_get_subdevdata(&ov13b10->sd);
+-	int ret;
++static int ov13b10_power_off(struct device *dev)
++{
++	struct v4l2_subdev *sd = dev_get_drvdata(dev);
++	struct ov13b10 *ov13b10 = to_ov13b10(sd);
++	int ret = 0;
++
++	gpiod_set_value_cansleep(ov13b10->reset_gpio, 1);
++	ret = regulator_disable(ov13b10->vcc);
++	if (ret < 0)
++		dev_err(dev, "failed to disable vcc: %d", ret);
++
++	clk_disable_unprepare(ov13b10->imgclk);
++	msleep(5);
+ 
+-	if (!(IS_ENABLED(CONFIG_INTEL_SKL_INT3472) && ov13b10->imgclk &&
+-	      ov13b10->vcc && ov13b10->reset_gpio))
+-		return;
++	return ret;
++}
+ 
+-	if (!on)
+-		goto disable_reset;
++static int ov13b10_power_on(struct device *dev)
++{
++	struct v4l2_subdev *sd = dev_get_drvdata(dev);
++	struct ov13b10 *ov13b10 = to_ov13b10(sd);
++	int ret;
+ 
+ 	ret = clk_prepare_enable(ov13b10->imgclk);
+ 	if (ret < 0) {
+-		dev_err(&client->dev, "failed to enable imgclk");
+-		goto disable_imgclk;
++		dev_err(dev, "failed to enable imgclk: %d", ret);
++		return ret;
+ 	}
+ 
+ 	ret = regulator_enable(ov13b10->vcc);
+-	if (ret < 0) {
+-		dev_err(&client->dev, "failed to enable vcc");
+-		goto disable_vcc;
++	if (ret < 0){
++		dev_err(dev, "failed to enable vcc: %d", ret);
++		return ret;
+ 	}
+ 
+ 	gpiod_set_value_cansleep(ov13b10->reset_gpio, 0);
+ 	msleep(5);
+ 
+-	return;
+-
+-disable_reset:
+-	gpiod_set_value_cansleep(ov13b10->reset_gpio, 1);
+-	msleep(5);
+-disable_vcc:
+-	regulator_disable(ov13b10->vcc);
+-disable_imgclk:
+-	clk_disable_unprepare(ov13b10->imgclk);
++	return 0;
+ }
+ 
+ static int ov13b10_start_streaming(struct ov13b10 *ov13b)
+@@ -1166,7 +1170,6 @@ static int __maybe_unused ov13b10_suspend(struct device *dev)
+ 
+ 	if (ov13b->streaming)
+ 		ov13b10_stop_streaming(ov13b);
+-	__ov13b10_set_power(ov13b, 0);
+ 
+ 	return 0;
+ }
+@@ -1177,7 +1180,6 @@ static int __maybe_unused ov13b10_resume(struct device *dev)
+ 	struct ov13b10 *ov13b = to_ov13b10(sd);
+ 	int ret;
+ 
+-	__ov13b10_set_power(ov13b, 1);
+ 	if (ov13b->streaming) {
+ 		ret = ov13b10_start_streaming(ov13b);
+ 		if (ret)
+@@ -1354,6 +1356,40 @@ static void ov13b10_free_controls(struct ov13b10 *ov13b)
+ 	mutex_destroy(&ov13b->mutex);
+ }
+ 
++static int ov13b10_check_dep(struct device *dev)
++{
++	acpi_handle handle = ACPI_HANDLE(dev);
++	struct acpi_handle_list dep_devices;
++	acpi_status status;
++	int i = 0;
++
++	/* Check if depends on INT3472 */
++	if (!acpi_has_method(handle, "_DEP"))
++		return false;
++
++	/* Call _DEP method of OV13B */
++	status = acpi_evaluate_reference(handle, "_DEP", NULL, &dep_devices);
++	if (ACPI_FAILURE(status)) {
++		acpi_handle_debug(handle, "Failed to evaluate _DEP.\n");
++		return false;
++	}
++	/* Find INT3472 in _DEP */
++	for (i = 0; i < dep_devices.count; i++) {
++		struct acpi_device *dep_device = NULL;
++		const char* dep_hid = NULL;
++
++		if (dep_devices.handles[i])
++			dep_device =
++				acpi_fetch_acpi_dev(dep_devices.handles[i]);
++		if (dep_device)
++			dep_hid = acpi_device_hid(dep_device);
++		if (dep_hid && strcmp("INT3472", dep_hid) == 0)
++			return true;
++	}
++
++	return false;
++}
++
+ static int ov13b10_check_hwcfg(struct device *dev)
+ {
+ 	struct v4l2_fwnode_endpoint bus_cfg = {
+@@ -1365,8 +1401,8 @@ static int ov13b10_check_hwcfg(struct device *dev)
+ 	int ret;
+ 	u32 ext_clk;
+ 
+-	/* Platforms with INT3472 don't have complete config */
+-	if (IS_ENABLED(CONFIG_INTEL_SKL_INT3472))
++	/* If ov13b10 depends on INT3472, no need to check hwcfg */
++	if (ov13b10_check_dep(dev))
+ 		return 0;
+ 
+ 	if (!fwnode)
+@@ -1430,26 +1466,27 @@ static int ov13b10_check_hwcfg(struct device *dev)
+ 
+ static void ov13b10_get_hwcfg(struct ov13b10 *ov13b10, struct device *dev)
+ {
+-	/* Get HW config mapped by INT3472 */
+-	if (!IS_ENABLED(CONFIG_INTEL_SKL_INT3472)) {
++	ov13b10->imgclk = devm_clk_get_optional(dev, NULL);
++	if (IS_ERR(ov13b10->imgclk)) {
++		dev_dbg(dev, "could not get imgclk: %ld",
++			PTR_ERR(ov13b10->imgclk));
+ 		ov13b10->imgclk = NULL;
+-		ov13b10->vcc = NULL;
+-		ov13b10->reset_gpio = NULL;
+-		return;
+ 	}
+ 
+-	ov13b10->imgclk = devm_clk_get(dev, NULL);
+-	if (IS_ERR(ov13b10->imgclk))
+-		dev_warn(dev, "could not get imgclk");
+-
+ 	ov13b10->vcc = devm_regulator_get_optional(dev, "vcc");
+-	if (IS_ERR(ov13b10->vcc))
+-		dev_warn(dev, "could not get regulator vcc");
++	if (IS_ERR(ov13b10->vcc)) {
++		dev_dbg(dev, "could not get regulator vcc: %ld",
++			PTR_ERR(ov13b10->vcc));
++		ov13b10->vcc = NULL;
++	}
+ 
+ 	ov13b10->reset_gpio = devm_gpiod_get_optional(dev, "reset",
+ 						      GPIOD_OUT_LOW);
+-	if (IS_ERR(ov13b10->reset_gpio))
+-		dev_warn(dev, "could not get gpio reset");
++	if (IS_ERR(ov13b10->reset_gpio)) {
++		dev_dbg(dev, "could not get gpio reset: %ld",
++			PTR_ERR(ov13b10->vcc));
++		ov13b10->vcc = NULL;
++	}
+ }
+ 
+ static int ov13b10_probe(struct i2c_client *client)
+@@ -1470,11 +1507,10 @@ static int ov13b10_probe(struct i2c_client *client)
+ 
+ 	/* Get HW config */
+ 	ov13b10_get_hwcfg(ov13b, &client->dev);
+-
+ 	/* Initialize subdev */
+ 	v4l2_i2c_subdev_init(&ov13b->sd, client, &ov13b10_subdev_ops);
+-	__ov13b10_set_power(ov13b, 1);
+ 
++	ov13b10_power_on(&client->dev);
+ 	/* Check module identity */
+ 	ret = ov13b10_identify_module(ov13b);
+ 	if (ret) {
+@@ -1524,7 +1560,7 @@ static int ov13b10_probe(struct i2c_client *client)
+ 	ov13b10_free_controls(ov13b);
+ 	dev_err(&client->dev, "%s failed:%d\n", __func__, ret);
+ error_power_off:
+-	__ov13b10_set_power(ov13b, 0);
++	ov13b10_power_off(&client->dev);
+ 
+ 	return ret;
+ }
+@@ -1539,11 +1575,11 @@ static void ov13b10_remove(struct i2c_client *client)
+ 	ov13b10_free_controls(ov13b);
+ 
+ 	pm_runtime_disable(&client->dev);
+-	__ov13b10_set_power(ov13b, 0);
+ }
+ 
+ static const struct dev_pm_ops ov13b10_pm_ops = {
+ 	SET_SYSTEM_SLEEP_PM_OPS(ov13b10_suspend, ov13b10_resume)
++	SET_RUNTIME_PM_OPS(ov13b10_power_off, ov13b10_power_on, NULL)
+ };
+ 
+ #ifdef CONFIG_ACPI
+-- 
+2.34.1
+
