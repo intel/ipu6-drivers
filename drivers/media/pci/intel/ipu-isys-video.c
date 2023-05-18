@@ -1451,10 +1451,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->interlaced = false;
 
 	rval = media_entity_enum_init(&ip->entity_enum, mdev);
-	if (rval) {
-		dev_err(dev, "entity enum init failed\n");
+	if (rval)
 		return rval;
-	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	rval = media_pipeline_start(&av->vdev.entity, &ip->pipe);
@@ -1462,7 +1460,7 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	rval = media_pipeline_start(av->vdev.entity.pads, &ip->pipe);
 #endif
 	if (rval < 0) {
-		dev_err(dev, "pipeline start failed\n");
+		dev_dbg(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
 	}
 
@@ -1473,10 +1471,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	rval = media_graph_walk_init(&graph, mdev);
-	if (rval) {
-		dev_err(dev, "graph walk init failed\n");
+	if (rval)
 		goto out_pipeline_stop;
-	}
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
