@@ -320,8 +320,13 @@ struct ov01a1s {
 	struct gpio_desc *reset_gpio;
 	/* GPIO for powerdown */
 	struct gpio_desc *powerdown_gpio;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	/* GPIO for clock enable */
 	struct gpio_desc *clken_gpio;
+#else
+	/* Clock provider */
+	struct clk *clk;
+#endif
 	/* GPIO for privacy LED */
 	struct gpio_desc *pled_gpio;
 #endif
@@ -340,9 +345,16 @@ static void ov01a1s_set_power(struct ov01a1s *ov01a1s, int on)
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	if (!(ov01a1s->reset_gpio && ov01a1s->powerdown_gpio))
 		return;
-	gpiod_set_value_cansleep(ov01a1s->reset_gpio, on);
-	gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, on);
+	gpiod_set_value_cansleep(ov01a1s->reset_gpio, !on);
+	gpiod_set_value_cansleep(ov01a1s->powerdown_gpio, !on);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	gpiod_set_value_cansleep(ov01a1s->clken_gpio, on);
+#else
+	if (on)
+		clk_prepare_enable(ov01a1s->clk);
+	else
+		clk_disable_unprepare(ov01a1s->clk);
+#endif
 	gpiod_set_value_cansleep(ov01a1s->pled_gpio, on);
 	msleep(20);
 #elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
@@ -976,14 +988,20 @@ static int ov01a1s_parse_dt(struct ov01a1s *ov01a1s)
 		return -EPROBE_DEFER;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 7)
 	ov01a1s->clken_gpio = devm_gpiod_get(dev, "clken", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov01a1s->clken_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting clken_gpio gpio: %d\n", ret);
 		return -EPROBE_DEFER;
 	}
+#else
+	ov01a1s->clk = devm_clk_get_optional(dev, "clk");
+	if (IS_ERR(ov01a1s->clk))
+		return dev_err_probe(dev, PTR_ERR(ov01a1s->clk), "getting clk\n");
+#endif
 
-	ov01a1s->pled_gpio = devm_gpiod_get(dev, "pled", GPIOD_OUT_HIGH);
+	ov01a1s->pled_gpio = devm_gpiod_get_optional(dev, "pled", GPIOD_OUT_HIGH);
 	ret = PTR_ERR_OR_ZERO(ov01a1s->pled_gpio);
 	if (ret < 0) {
 		dev_err(dev, "error while getting pled gpio: %d\n", ret);
@@ -1001,7 +1019,6 @@ static int ov01a1s_probe(struct i2c_client *client)
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
-	s64 link_freq;
 #endif
 
 	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
