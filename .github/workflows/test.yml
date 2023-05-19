@@ -112,9 +112,9 @@ jobs:
                                   add-apt-repository ppa:canonical-kernel-team/unstable
                                   apt-get update --quiet;
                                   # latest and wip generic kernel headers
-                                  apt-get install --yes linux-headers-generic
+                                  apt-get install --yes linux-headers-generic linux-headers-generic-wip
                                   # latest oem kernel
-                                  apt-get install --yes linux-headers-oem-22.04 linux-headers-oem-22.04a
+                                  apt-get install --yes linux-headers-oem-20.04
 
                         - name: Register with dkms
                           shell: bash
