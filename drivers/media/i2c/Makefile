@@ -2,6 +2,7 @@
 # Copyright (c) 2021 Intel Corporation.
 
 obj-$(CONFIG_VIDEO_HM11B1) += hm11b1.o
+obj-$(CONFIG_VIDEO_GC5035) += gc5035.o
 obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
 obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
 obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o

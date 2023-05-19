@@ -49,6 +49,8 @@ static const struct cio2_sensor_config cio2_supported_sensors[] = {
 	/* Omnivision ov13b10 */
 	CIO2_SENSOR_CONFIG("OVTIDB10", 0, 0),
 	CIO2_SENSOR_CONFIG("OVTI13B1", 0, 0),
+        /* galaxycore gc5035 */
+        CIO2_SENSOR_CONFIG("GCTI5035", 0, 0),
 };
 
 static const struct cio2_property_names prop_names = {
