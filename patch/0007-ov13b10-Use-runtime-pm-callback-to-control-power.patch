@@ -185,8 +185,8 @@ index e45fcce701fe..69d4b9523465 100644
 -		dev_warn(dev, "could not get gpio reset");
 +	if (IS_ERR(ov13b10->reset_gpio)) {
 +		dev_dbg(dev, "could not get gpio reset: %ld",
-+			PTR_ERR(ov13b10->vcc));
-+		ov13b10->vcc = NULL;
++			PTR_ERR(ov13b10->reset_gpio));
++		ov13b10->reset_gpio= NULL;
 +	}
  }
  
