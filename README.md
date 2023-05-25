@@ -33,13 +33,13 @@ Three ways are available:
 ```conf
 config VIDEO_TI960
   tristate "TI960 driver support"
-  depends on I2C && VIDEO_V4L2
+  depends on VIDEO_DEV && I2C
   help
     This is a driver for TI960 Deserializer.
 
 config VIDEO_AR0234 
   tristate "OnSemi AR0234 sensor support" 
-  depends on I2C && VIDEO_V4L2
+  depends on VIDEO_DEV && I2C
   depends on MEDIA_CAMERA_SUPPORT 
   select VIDEO_V4L2_SUBDEV_API
   help This is a Video4Linux2 sensor-level driver for the OnSemi ar0234 camera.
@@ -47,7 +47,7 @@ config VIDEO_AR0234
 
 config VIDEO_LT6911UXC
   tristate "Lontium LT6911UXC decoder"
-  depends on I2C && VIDEO_V4L2
+  depends on VIDEO_DEV && I2C
   select VIDEO_V4L2_SUBDEV_API
   help
     This is a Video4Linux2 sensor-level driver for the Lontium
@@ -57,13 +57,13 @@ config VIDEO_LT6911UXC
     module will be called lt6911uxc.
 
 config VIDEO_D4XX
-  depends on I2C && VIDEO_V4L2
+  depends on VIDEO_DEV && I2C
   tristate "D4XX Camera Driver"
   help
     This is a Video4Linux2 sensor-level driver for intel realsence camera.
 
 config VIDEO_IMX390
-  depends on I2C && VIDEO_V4L2
+  depends on VIDEO_DEV && I2C
   tristate "IMX390 Camera Driver"
   help
     This is a Video4Linux2 sensor-level driver for Sony IMX390 camera.
