@@ -1,0 +1,68 @@
+From cc7f17e4beaed99e6e6561eb0a7ea986092d579a Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Tue, 23 Aug 2022 12:47:20 +0800
+Subject: [PATCH 6/9] media: intel: Support lt6911uxc and Intel IPU6
+
+Change Description:
+Message for Open Source:
+Add support for lt6911uxc and Intel IPU6.
+
+Message for Internal:
+Add support for lt6911uxc and Intel IPU6.
+
+Test Platform:
+RPL-P RVP
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: Sun Jia <jia1.sun@intel.com>
+---
+ drivers/media/i2c/Kconfig  | 9 +++++++++
+ drivers/media/i2c/Makefile | 1 +
+ drivers/media/pci/Kconfig  | 2 +-
+ 3 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index c3d5952ca27e..63ab4ea92a01 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -1675,6 +1675,15 @@ config VIDEO_THS7303
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called ths7303.
+ 
++config VIDEO_LT6911UXC
++	tristate "Lontium LT6911UXC decoder"
++	depends on I2C && VIDEO_V4L2_SUBDEV_API
++	help
++	This is a Video4Linux2 sensor-level driver for the Lontium
++	LT6911UXC HDMI to MIPI CSI-2 bridge.
++
++	To compile this driver as a module, choose M here: the
++	module will be called lt6911uxc.
+ endmenu
+ 
+ endif # VIDEO_DEV
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 4f5e9d9cee85..be0ed0ea2445 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -148,3 +148,4 @@ obj-$(CONFIG_VIDEO_VPX3220) += vpx3220.o
+ obj-$(CONFIG_VIDEO_VS6624) += vs6624.o
+ obj-$(CONFIG_VIDEO_WM8739) += wm8739.o
+ obj-$(CONFIG_VIDEO_WM8775) += wm8775.o
++obj-$(CONFIG_VIDEO_LT6911UXC) += lt6911uxc.o
+diff --git a/drivers/media/pci/Kconfig b/drivers/media/pci/Kconfig
+index 480194543d05..ee095bde0b68 100644
+--- a/drivers/media/pci/Kconfig
++++ b/drivers/media/pci/Kconfig
+@@ -73,7 +73,7 @@ config VIDEO_PCI_SKELETON
+ 	  Enable build of the skeleton PCI driver, used as a reference
+ 	  when developing new drivers.
+ 
+-source "drivers/media/pci/intel/ipu3/Kconfig"
++source "drivers/media/pci/intel/Kconfig"
+ 
+ endif #MEDIA_PCI_SUPPORT
+ endif #PCI
+-- 
+2.17.1
+

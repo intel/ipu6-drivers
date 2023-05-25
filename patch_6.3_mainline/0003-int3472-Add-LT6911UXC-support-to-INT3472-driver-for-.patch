@@ -1,0 +1,86 @@
+From c42552bf208a68e46a4d97a67a32997e2cedb5ac Mon Sep 17 00:00:00 2001
+From: Ng Khai Wen <khai.wen.ng@intel.com>
+Date: Wed, 11 Jan 2023 15:27:18 +0800
+Subject: [PATCH 3/9] int3472: Add LT6911UXC support to INT3472 driver for 6.3
+
+Signed-off-by: Ng Khai Wen <khai.wen.ng@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: Sun Jia <jia1.sun@intel.com>
+---
+ drivers/platform/x86/intel/int3472/common.h   |  5 ++++-
+ drivers/platform/x86/intel/int3472/discrete.c | 18 +++++++++++++++++-
+ 2 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/x86/intel/int3472/common.h b/drivers/platform/x86/intel/int3472/common.h
+index 61688e450ce5..17feb4999b09 100644
+--- a/drivers/platform/x86/intel/int3472/common.h
++++ b/drivers/platform/x86/intel/int3472/common.h
+@@ -22,9 +22,11 @@
+ #define INT3472_GPIO_TYPE_POWER_ENABLE				0x0b
+ #define INT3472_GPIO_TYPE_CLK_ENABLE				0x0c
+ #define INT3472_GPIO_TYPE_PRIVACY_LED				0x0d
++#define INT3472_GPIO_TYPE_READY_STAT				0x13
++#define INT3472_GPIO_TYPE_HDMI_DETECT				0x14
+ 
+ #define INT3472_PDEV_MAX_NAME_LEN				23
+-#define INT3472_MAX_SENSOR_GPIOS				3
++#define INT3472_MAX_SENSOR_GPIOS				4
+ 
+ #define GPIO_REGULATOR_NAME_LENGTH				21
+ #define GPIO_REGULATOR_SUPPLY_NAME_LENGTH			9
+@@ -76,6 +78,7 @@ struct int3472_sensor_config {
+ 	const char *sensor_module_name;
+ 	struct regulator_consumer_supply supply_map;
+ 	const struct int3472_gpio_function_remap *function_maps;
++	const bool independent_clk_gpios;
+ };
+ 
+ struct int3472_discrete_device {
+diff --git a/drivers/platform/x86/intel/int3472/discrete.c b/drivers/platform/x86/intel/int3472/discrete.c
+index f064da74f50a..606e8e131bb7 100644
+--- a/drivers/platform/x86/intel/int3472/discrete.c
++++ b/drivers/platform/x86/intel/int3472/discrete.c
+@@ -60,6 +60,8 @@ static const struct int3472_sensor_config int3472_sensor_configs[] = {
+ 	{ "GEFF150023R", REGULATOR_SUPPLY("avdd", NULL), NULL },
+ 	/* Surface Go 1&2 - OV5693, Front */
+ 	{ "YHCU", REGULATOR_SUPPLY("avdd", NULL), NULL },
++	/* Lontium Display Bridge */
++	{ "LT6911UXC", { 0 }, NULL, true },
+ };
+ 
+ static const struct int3472_sensor_config *
+@@ -167,6 +169,14 @@ static void int3472_get_func_and_polarity(u8 type, const char **func, u32 *polar
+ 		*func = "power-enable";
+ 		*polarity = GPIO_ACTIVE_HIGH;
+ 		break;
++	case INT3472_GPIO_TYPE_READY_STAT:
++		*func = "readystat";
++		*polarity = GPIO_LOOKUP_FLAGS_DEFAULT;
++		break;
++	case INT3472_GPIO_TYPE_HDMI_DETECT:
++		*func = "hdmidetect";
++		*polarity = GPIO_LOOKUP_FLAGS_DEFAULT;
++		break;
+ 	default:
+ 		*func = "unknown";
+ 		*polarity = GPIO_ACTIVE_HIGH;
+@@ -252,9 +262,15 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
+ 	switch (type) {
+ 	case INT3472_GPIO_TYPE_RESET:
+ 	case INT3472_GPIO_TYPE_POWERDOWN:
++	case INT3472_GPIO_TYPE_READY_STAT:
++	case INT3472_GPIO_TYPE_HDMI_DETECT:
+ 		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, func, polarity);
+-		if (ret)
++		if (ret) {
+ 			err_msg = "Failed to map GPIO pin to sensor\n";
++			dev_warn(int3472->dev,
++				"Failed to map GPIO pin to sensor, type %02x, func %s, polarity %u\n",
++				type, func, polarity);
++		}
+ 
+ 		break;
+ 	case INT3472_GPIO_TYPE_CLK_ENABLE:
+-- 
+2.17.1
+
