@@ -334,8 +334,6 @@ static int csi2_link_validate(struct media_link *link)
 	struct v4l2_subdev *source_sd;
 	struct v4l2_subdev *sink_sd;
 
-	int rval;
-
 	if (!link->sink->entity || !link->source->entity)
 		return -EINVAL;
 	media_pipe = media_entity_pipeline(link->sink->entity);
