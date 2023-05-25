@@ -39,14 +39,16 @@ config VIDEO_TI960
 
 config VIDEO_AR0234 
   tristate "OnSemi AR0234 sensor support" 
-  depends on I2C && VIDEO_V4L2_SUBDEV_API 
+  depends on I2C && VIDEO_V4L2
   depends on MEDIA_CAMERA_SUPPORT 
+  select VIDEO_V4L2_SUBDEV_API
   help This is a Video4Linux2 sensor-level driver for the OnSemi ar0234 camera.
     AR0234 is a 2Mp Digital image sensor with global shutter.
 
 config VIDEO_LT6911UXC
   tristate "Lontium LT6911UXC decoder"
-  depends on I2C && VIDEO_V4L2_SUBDEV_API
+  depends on I2C && VIDEO_V4L2
+  select VIDEO_V4L2_SUBDEV_API
   help
     This is a Video4Linux2 sensor-level driver for the Lontium
     LT6911UXC HDMI to MIPI CSI-2 bridge.
