@@ -218,7 +218,11 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 #else
 				    FOLL_WRITE,
 #endif
-				    pages, NULL);
+				    pages
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
+				    , NULL
+#endif
+				    );
 		if (nr < npages)
 			goto error_up_read;
 	}
