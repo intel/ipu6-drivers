@@ -4,11 +4,22 @@ on:
         pull_request:
         schedule:
                 - cron: '30 1 * * *' #every day at 1:30am
+
 jobs:
-        Ubuntu-2204-dkms:
+        build:
+                strategy:
+                        matrix:
+                                include:
+                                        - codename: jammy
+                                          kernels: "generic generic-hwe-22.04 generic-hwe-22.04-edge oem-22.04a oem-22.04b oem-22.04c"
+                                        - codename: lunar
+                                          kernels: "generic"
+                                        - codename: mantic
+                                          kernels: "generic generic-wip"
+
                 # ubuntu-lastest is currently still 20.04
                 runs-on: ubuntu-latest
-                container: ubuntu:22.04
+                container: ubuntu:${{ matrix.codename }}
                 steps:
                         - name: Checkout
                           uses: actions/checkout@v3
@@ -34,13 +45,18 @@ jobs:
                         - name: Download header files
                           shell: bash
                           run: |
-                                  # Add unstable kernel ppa
-                                  add-apt-repository ppa:canonical-kernel-team/unstable
+                                  case " ${{ matrix.kernels }} " in
+                                          # Add unstable kernel ppa
+                                          *" generic-wip "*)
+                                                  add-apt-repository ppa:canonical-kernel-team/unstable;
+                                                  ;;
+                                  esac
+
                                   apt-get update --quiet;
-                                  # latest and wip generic kernel headers
-                                  apt-get install --yes linux-headers-generic linux-headers-generic-hwe-22.04-edge
-                                  # latest oem kernel
-                                  apt-get install --yes linux-headers-oem-20.04 linux-headers-oem-22.04 linux-headers-oem-22.04b linux-headers-oem-22.04c
+                                  for pkg in $(echo "${{ matrix.kernels }}" | sed 's/[^ ]* */linux-headers-&/g'); do
+                                          { apt-cache search --names-only $pkg | grep -q "^$pkg - "; } || continue
+                                          apt-get install --yes $pkg
+                                  done
 
                         - name: Register with dkms
                           shell: bash
@@ -78,78 +94,3 @@ jobs:
                                         exit 1
                                   fi
                                   echo "#### Successful builds for kernels: ${succeeded}";
-
-        Ubuntu-rolling-dkms:
-                # ubuntu-lastest is currently still 20.04
-                runs-on: ubuntu-latest
-                container: ubuntu:rolling
-                steps:
-                        - name: Checkout
-                          uses: actions/checkout@v3
-
-                        - name: Checkout ivsc-driver repo
-                          uses: actions/checkout@v3
-                          with:
-                            repository: intel/ivsc-driver
-                            path: ivsc-driver
-
-                        - name: Merge with ivsc-driver
-                          shell: bash
-                          run: |
-                                  cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include .
-                                  rm -rf ivsc-driver
-
-                        - name: Prepare environment
-                          shell: bash
-                          run: |
-                                  apt-get update --quiet;
-                                  apt-get install --yes --no-install-recommends dkms gpg-agent kmod software-properties-common sudo
-
-                        - name: Download header files
-                          shell: bash
-                          run: |
-                                  # Add unstable kernel ppa
-                                  add-apt-repository ppa:canonical-kernel-team/unstable
-                                  apt-get update --quiet;
-                                  # latest and wip generic kernel headers
-                                  apt-get install --yes linux-headers-generic linux-headers-generic-wip
-                                  # latest oem kernel
-                                  apt-get install --yes linux-headers-oem-20.04
-
-                        - name: Register with dkms
-                          shell: bash
-                          run: |
-                                  dkms add .
-
-                        - name: Compile driver
-                          shell: bash
-                          run: |
-                                  # run dkms build and all available kernel headers
-                                  failed=""
-                                  succeeded=""
-                                  for kver in /lib/modules/*/build; do
-                                        # skip the kernel headers from the azure kernel. These kernel headers
-                                        # are preinstalled and of no interest
-                                        if [[ "$kver" == *"azure"* ]]; then
-                                                echo "Skipping $kver - This is the kernel of the github runner.";
-                                                continue;
-                                        fi;
-                                        test -d $kver || continue
-                                        kver=${kver%/build}
-                                        kver=${kver##*/}
-                                        echo "=== Testing ${kver} ===";
-                                        echo "running: dkms build -m ipu6-drivers/0.0.0 -k ${kver}";
-                                        ret=$(sudo dkms build -m ipu6-drivers/0.0.0 -k ${kver} >&2; echo $?);
-                                        if [ ${ret} -eq 0 ]; then
-                                                succeeded="${succeeded} ${kver}"
-                                        else
-                                                echo "#### Skipped unexpected failure ${kver}";
-                                                failed="${failed} ${kver}";
-                                        fi;
-                                  done
-                                  if [ "x${failed}" != "x" ]; then
-                                        echo "#### Failed kernels: ${failed}";
-                                        exit 1
-                                  fi
-                                  echo "#### Successful builds for kernels: ${succeeded}";
-
