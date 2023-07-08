@@ -6,16 +6,61 @@ on:
                 - cron: '30 1 * * *' #every day at 1:30am
 
 jobs:
+        generate-jobs:
+                name: Generate Jobs
+                runs-on: ubuntu-latest
+                outputs:
+                        strategy: ${{ steps.generate-jobs.outputs.strategy }}
+                steps:
+                        - id: generate-jobs
+                          name: Generate Jobs
+                          run: |
+                                  curl -o kernel-series.yaml https://kernel.ubuntu.com/git/ubuntu/kteam-tools.git/plain/info/kernel-series.yaml
+                                  json=$(cat kernel-series.yaml | yq -o json 'with_entries(select(.value.supported or .value.development)) | sort_keys(.) | map_values({ "codename": .codename, "sources": (.sources | with_entries(select(.key == "linux" or .key == "linux-unstable" or .key == "linux-hwe-*" or .key == "linux-oem-*")) | map_values(.variants)) })')
+                                  # {
+                                  #   ...
+                                  #   "23.10": {
+                                  #     "codename": "mantic",
+                                  #     "sources": {
+                                  #       "linux-unstable": [
+                                  #         "-wip"
+                                  #       ],
+                                  #       "linux": [
+                                  #         "--",
+                                  #         "-hwe-22.04",
+                                  #         "-hwe-22.04-edge"
+                                  #       ]
+                                  #     }
+                                  #   }
+                                  # }
+
+                                  strategy='{"matrix": {"include": []}}'
+                                  for series in $(jq <<<"$json" -r 'keys | .[]'); do
+                                          [ "$({ echo $series; echo 22.04; } | sort -V -r | head -n 1)" = "$series" ] || continue
+
+                                          kernels=
+                                          for kernel in $(jq <<<"$json" -r ".\"$series\".sources | keys | .[]"); do
+                                                  for variant in $(jq <<<"$json" -r ".\"$series\".sources.\"$kernel\" | .[]"); do
+                                                          case "$variant" in
+                                                                  --) kernels="${kernels:+${kernels} }generic" ;;
+                                                                  *) case "$kernel" in
+                                                                          linux-unstable|linux-hwe-*) kernels="${kernels:+${kernels} }generic$variant" ;;
+                                                                          linux-oem-*) kernels="${kernels:+${kernels} }oem$variant" ;;
+                                                                  esac ;;
+                                                          esac;
+                                                  done
+                                          done;
+                                          strategy="$(jq <<<"$strategy" -c \
+                                                  --arg codename $(jq <<<"$json" -r ".\"$series\".codename") \
+                                                  '.matrix.include[.matrix.include | length] |= . + {"codename": $codename, "kernels": "'"$kernels"'"}')"
+                                  done
+
+                                  echo "strategy=$strategy" | tee -a "$GITHUB_OUTPUT"
+                                  jq . <<<"$strategy" # sanity check / debugging aid
+
         build:
-                strategy:
-                        matrix:
-                                include:
-                                        - codename: jammy
-                                          kernels: "generic generic-hwe-22.04 generic-hwe-22.04-edge oem-22.04a oem-22.04b oem-22.04c"
-                                        - codename: lunar
-                                          kernels: "generic"
-                                        - codename: mantic
-                                          kernels: "generic generic-wip"
+                needs: generate-jobs
+                strategy: ${{ fromJson(needs.generate-jobs.outputs.strategy) }}
 
                 # ubuntu-lastest is currently still 20.04
                 runs-on: ubuntu-latest
