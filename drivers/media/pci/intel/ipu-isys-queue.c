@@ -584,7 +584,8 @@ static void buf_queue(struct vb2_buffer *vb)
 	if (ib->req)
 		return;
 
-	if (!pipe_av || !media_pipe || !vb->vb2_queue->start_streaming_called) {
+	if (!pipe_av || !media_pipe ||
+	    !vb->vb2_queue->start_streaming_called) {
 		dev_dbg(&av->isys->adev->dev,
 			"no pipe or streaming, adding to incoming\n");
 		return;
@@ -965,7 +966,7 @@ static int reset_start_streaming(struct ipu_isys_video *av)
 }
 
 static int ipu_isys_reset(struct ipu_isys_video *self_av,
-						  struct ipu_isys_pipeline *self_ip)
+			  struct ipu_isys_pipeline *self_ip)
 {
 	struct ipu_isys *isys = self_av->isys;
 	struct ipu_bus_device *adev = isys->adev;
@@ -1192,7 +1193,6 @@ static void stop_streaming(struct vb2_queue *q)
 	mutex_lock(&av->isys->reset_mutex);
 	av->isys->in_stop_streaming = false;
 	mutex_unlock(&av->isys->reset_mutex);
-
 }
 
 static unsigned int
