@@ -43,6 +43,13 @@
 /* use max resolution pixel rate by default */
 #define DEFAULT_PIXEL_RATE	(360000000ULL * 2 * 4 / 10)
 
+#define MAX_VIDEO_DEVICES	8
+
+static int video_nr[MAX_VIDEO_DEVICES] = { [0 ...(MAX_VIDEO_DEVICES - 1)] = -1 };
+module_param_array(video_nr, int, NULL, 0444);
+MODULE_PARM_DESC(video_nr,
+		 "video device numbers (-1=auto, 0=/dev/video0, etc.)");
+
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW16},
@@ -1095,7 +1102,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	struct media_pad *source_pad = media_pad_remote_pad_first(&av->pad);
 #endif
 	struct ipu_fw_isys_cropping_abi *crop;
-	enum ipu_fw_isys_send_type send_type;
 	int rval, rvalout, tout;
 
 	rval = get_external_facing_format(ip, &source_fmt);
@@ -1246,22 +1252,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	if (bl) {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
-		ipu_fw_isys_dump_frame_buff_set(dev, buf,
-						stream_cfg->nof_output_pins);
-		rval = ipu_fw_isys_complex_cmd(av->isys,
-					       ip->stream_handle,
-					       buf, to_dma_addr(msg),
-					       sizeof(*buf),
-					       send_type);
-	} else {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
-		rval = ipu_fw_isys_simple_cmd(av->isys,
-					      ip->stream_handle,
-					      send_type);
-	}
-
+	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
+				      IPU_FW_ISYS_SEND_TYPE_STREAM_START);
 	if (rval < 0) {
 		dev_err(dev, "can't start streaming (%d)\n", rval);
 		goto out_stream_close;
@@ -1279,7 +1271,18 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		rval = -EIO;
 		goto out_stream_close;
 	}
-	dev_dbg(dev, "start stream: complete\n");
+
+	if (!bl)
+		return 0;
+
+	ipu_fw_isys_dump_frame_buff_set(dev, buf, stream_cfg->nof_output_pins);
+	rval = ipu_fw_isys_complex_cmd(av->isys, ip->stream_handle, buf,
+				       to_dma_addr(msg), sizeof(*buf),
+				       IPU_FW_ISYS_SEND_TYPE_STREAM_CAPTURE);
+	if (rval < 0) {
+		dev_err(dev, "can't queue buffers (%d)\n", rval);
+		goto out_stream_close;
+	}
 
 	return 0;
 
@@ -1845,8 +1848,9 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 			unsigned int pad, unsigned long pad_flags,
 			unsigned int flags)
 {
+	static atomic_t video_dev_count = ATOMIC_INIT(0);
 	const struct v4l2_ioctl_ops *ioctl_ops = NULL;
-	int rval;
+	int rval, video_dev_nr;
 
 	mutex_init(&av->mutex);
 	init_completion(&av->ip.stream_open_completion);
@@ -1896,12 +1900,18 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	set_bit(V4L2_FL_USES_V4L2_FH, &av->vdev.flags);
 	video_set_drvdata(&av->vdev, av);
 
+	video_dev_nr = atomic_inc_return(&video_dev_count) - 1;
+	if (video_dev_nr < MAX_VIDEO_DEVICES)
+		video_dev_nr = video_nr[video_dev_nr];
+	else
+		video_dev_nr = -1;
+
 	mutex_lock(&av->mutex);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-	rval = video_register_device(&av->vdev, VFL_TYPE_GRABBER, -1);
+	rval = video_register_device(&av->vdev, VFL_TYPE_GRABBER, video_dev_nr);
 #else
-	rval = video_register_device(&av->vdev, VFL_TYPE_VIDEO, -1);
+	rval = video_register_device(&av->vdev, VFL_TYPE_VIDEO, video_dev_nr);
 #endif
 	if (rval)
 		goto out_media_entity_cleanup;

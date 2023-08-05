@@ -7,6 +7,7 @@ subdir-ccflags-y := -Wall -Wextra
 subdir-ccflags-y += $(call cc-disable-warning, unused-parameter)
 subdir-ccflags-y += $(call cc-disable-warning, implicit-fallthrough)
 subdir-ccflags-y += $(call cc-disable-warning, missing-field-initializers)
+subdir-ccflags-y += $(call cc-disable-warning, type-limits)
 subdir-ccflags-$(CONFIG_VIDEO_INTEL_IPU_WERROR) += -Werror
 
-obj-$(CONFIG_VIDEO_INTEL_IPU6)  += ipu6/
+obj-$(CONFIG_VIDEO_INTEL_IPU6)	+= ipu6/

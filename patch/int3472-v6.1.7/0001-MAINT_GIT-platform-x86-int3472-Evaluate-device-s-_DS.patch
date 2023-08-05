@@ -1,0 +1,238 @@
+From 1c07fff6e0ce61bc48dcd36494d5e057b46c2733 Mon Sep 17 00:00:00 2001
+From: Bingbu Cao <bingbu.cao@intel.com>
+Date: Wed, 31 May 2023 15:44:29 +0200
+Subject: [PATCH 1/8] MAINT_GIT: platform/x86: int3472: Evaluate device's _DSM
+ method to control imaging clock
+
+On some platforms, the imaging clock should be controlled by evaluating
+specific clock device's _DSM method instead of setting gpio, so this
+change register clock if no gpio based clock and then use the _DSM method
+to enable and disable clock.
+
+Signed-off-by: Bingbu Cao <bingbu.cao@intel.com>
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+Link: https://lore.kernel.org/r/20230524035135.90315-2-bingbu.cao@intel.com
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Link: https://lore.kernel.org/r/20230531134429.171337-1-hdegoede@redhat.com
+---
+ .../x86/intel/int3472/clk_and_regulator.c     | 92 +++++++++++++++++--
+ drivers/platform/x86/intel/int3472/common.h   | 14 ++-
+ drivers/platform/x86/intel/int3472/discrete.c |  8 +-
+ 3 files changed, 99 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/platform/x86/intel/int3472/clk_and_regulator.c b/drivers/platform/x86/intel/int3472/clk_and_regulator.c
+index 399f0623ca1b..410073ca371c 100644
+--- a/drivers/platform/x86/intel/int3472/clk_and_regulator.c
++++ b/drivers/platform/x86/intel/int3472/clk_and_regulator.c
+@@ -11,6 +11,41 @@
+ 
+ #include "common.h"
+ 
++/*
++ * 82c0d13a-78c5-4244-9bb1-eb8b539a8d11
++ * This _DSM GUID allows controlling the sensor clk when it is not controlled
++ * through a GPIO.
++ */
++static const guid_t img_clk_guid =
++	GUID_INIT(0x82c0d13a, 0x78c5, 0x4244,
++		  0x9b, 0xb1, 0xeb, 0x8b, 0x53, 0x9a, 0x8d, 0x11);
++
++static void skl_int3472_enable_clk(struct int3472_clock *clk, int enable)
++{
++	struct int3472_discrete_device *int3472 = to_int3472_device(clk);
++	union acpi_object args[3];
++	union acpi_object argv4;
++
++	if (clk->ena_gpio) {
++		gpiod_set_value_cansleep(clk->ena_gpio, enable);
++		return;
++	}
++
++	args[0].integer.type = ACPI_TYPE_INTEGER;
++	args[0].integer.value = clk->imgclk_index;
++	args[1].integer.type = ACPI_TYPE_INTEGER;
++	args[1].integer.value = enable;
++	args[2].integer.type = ACPI_TYPE_INTEGER;
++	args[2].integer.value = 1;
++
++	argv4.type = ACPI_TYPE_PACKAGE;
++	argv4.package.count = 3;
++	argv4.package.elements = args;
++
++	acpi_evaluate_dsm(acpi_device_handle(int3472->adev), &img_clk_guid,
++			  0, 1, &argv4);
++}
++
+ /*
+  * The regulators have to have .ops to be valid, but the only ops we actually
+  * support are .enable and .disable which are handled via .ena_gpiod. Pass an
+@@ -20,17 +55,13 @@ static const struct regulator_ops int3472_gpio_regulator_ops;
+ 
+ static int skl_int3472_clk_prepare(struct clk_hw *hw)
+ {
+-	struct int3472_gpio_clock *clk = to_int3472_clk(hw);
+-
+-	gpiod_set_value_cansleep(clk->ena_gpio, 1);
++	skl_int3472_enable_clk(to_int3472_clk(hw), 1);
+ 	return 0;
+ }
+ 
+ static void skl_int3472_clk_unprepare(struct clk_hw *hw)
+ {
+-	struct int3472_gpio_clock *clk = to_int3472_clk(hw);
+-
+-	gpiod_set_value_cansleep(clk->ena_gpio, 0);
++	skl_int3472_enable_clk(to_int3472_clk(hw), 0);
+ }
+ 
+ static int skl_int3472_clk_enable(struct clk_hw *hw)
+@@ -73,7 +104,7 @@ static unsigned int skl_int3472_get_clk_frequency(struct int3472_discrete_device
+ static unsigned long skl_int3472_clk_recalc_rate(struct clk_hw *hw,
+ 						 unsigned long parent_rate)
+ {
+-	struct int3472_gpio_clock *clk = to_int3472_clk(hw);
++	struct int3472_clock *clk = to_int3472_clk(hw);
+ 
+ 	return clk->frequency;
+ }
+@@ -86,8 +117,51 @@ static const struct clk_ops skl_int3472_clock_ops = {
+ 	.recalc_rate = skl_int3472_clk_recalc_rate,
+ };
+ 
+-int skl_int3472_register_clock(struct int3472_discrete_device *int3472,
+-			       struct acpi_resource_gpio *agpio, u32 polarity)
++int skl_int3472_register_dsm_clock(struct int3472_discrete_device *int3472)
++{
++	struct acpi_device *adev = int3472->adev;
++	struct clk_init_data init = {
++		.ops = &skl_int3472_clock_ops,
++		.flags = CLK_GET_RATE_NOCACHE,
++	};
++	int ret;
++
++	if (int3472->clock.cl)
++		return 0; /* A GPIO controlled clk has already been registered */
++
++	if (!acpi_check_dsm(adev->handle, &img_clk_guid, 0, BIT(1)))
++		return 0; /* DSM clock control is not available */
++
++	init.name = kasprintf(GFP_KERNEL, "%s-clk", acpi_dev_name(adev));
++	if (!init.name)
++		return -ENOMEM;
++
++	int3472->clock.frequency = skl_int3472_get_clk_frequency(int3472);
++	int3472->clock.clk_hw.init = &init;
++	int3472->clock.clk = clk_register(&adev->dev, &int3472->clock.clk_hw);
++	if (IS_ERR(int3472->clock.clk)) {
++		ret = PTR_ERR(int3472->clock.clk);
++		goto out_free_init_name;
++	}
++
++	int3472->clock.cl = clkdev_create(int3472->clock.clk, NULL, int3472->sensor_name);
++	if (!int3472->clock.cl) {
++		ret = -ENOMEM;
++		goto err_unregister_clk;
++	}
++
++	kfree(init.name);
++	return 0;
++
++err_unregister_clk:
++	clk_unregister(int3472->clock.clk);
++out_free_init_name:
++	kfree(init.name);
++	return ret;
++}
++
++int skl_int3472_register_gpio_clock(struct int3472_discrete_device *int3472,
++				    struct acpi_resource_gpio *agpio, u32 polarity)
+ {
+ 	char *path = agpio->resource_source.string_ptr;
+ 	struct clk_init_data init = {
+diff --git a/drivers/platform/x86/intel/int3472/common.h b/drivers/platform/x86/intel/int3472/common.h
+index 61688e450ce5..0c9c899e017b 100644
+--- a/drivers/platform/x86/intel/int3472/common.h
++++ b/drivers/platform/x86/intel/int3472/common.h
+@@ -43,7 +43,7 @@
+ 	}
+ 
+ #define to_int3472_clk(hw)					\
+-	container_of(hw, struct int3472_gpio_clock, clk_hw)
++	container_of(hw, struct int3472_clock, clk_hw)
+ 
+ #define to_int3472_device(clk)					\
+ 	container_of(clk, struct int3472_discrete_device, clock)
+@@ -64,7 +64,9 @@ struct int3472_cldb {
+ 	u8 control_logic_type;
+ 	u8 control_logic_id;
+ 	u8 sensor_card_sku;
+-	u8 reserved[28];
++	u8 reserved[10];
++	u8 clock_source;
++	u8 reserved2[17];
+ };
+ 
+ struct int3472_gpio_function_remap {
+@@ -94,12 +96,13 @@ struct int3472_discrete_device {
+ 		struct regulator_desc rdesc;
+ 	} regulator;
+ 
+-	struct int3472_gpio_clock {
++	struct int3472_clock {
+ 		struct clk *clk;
+ 		struct clk_hw clk_hw;
+ 		struct clk_lookup *cl;
+ 		struct gpio_desc *ena_gpio;
+ 		u32 frequency;
++		u8 imgclk_index;
+ 	} clock;
+ 
+ 	struct int3472_pled {
+@@ -121,8 +124,9 @@ int skl_int3472_get_sensor_adev_and_name(struct device *dev,
+ 					 struct acpi_device **sensor_adev_ret,
+ 					 const char **name_ret);
+ 
+-int skl_int3472_register_clock(struct int3472_discrete_device *int3472,
+-			       struct acpi_resource_gpio *agpio, u32 polarity);
++int skl_int3472_register_gpio_clock(struct int3472_discrete_device *int3472,
++				    struct acpi_resource_gpio *agpio, u32 polarity);
++int skl_int3472_register_dsm_clock(struct int3472_discrete_device *int3472);
+ void skl_int3472_unregister_clock(struct int3472_discrete_device *int3472);
+ 
+ int skl_int3472_register_regulator(struct int3472_discrete_device *int3472,
+diff --git a/drivers/platform/x86/intel/int3472/discrete.c b/drivers/platform/x86/intel/int3472/discrete.c
+index ef020e23e596..8111579a59d4 100644
+--- a/drivers/platform/x86/intel/int3472/discrete.c
++++ b/drivers/platform/x86/intel/int3472/discrete.c
+@@ -258,7 +258,7 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
+ 
+ 		break;
+ 	case INT3472_GPIO_TYPE_CLK_ENABLE:
+-		ret = skl_int3472_register_clock(int3472, agpio, polarity);
++		ret = skl_int3472_register_gpio_clock(int3472, agpio, polarity);
+ 		if (ret)
+ 			err_msg = "Failed to register clock\n";
+ 
+@@ -311,6 +311,11 @@ static int skl_int3472_parse_crs(struct int3472_discrete_device *int3472)
+ 
+ 	acpi_dev_free_resource_list(&resource_list);
+ 
++	/* Register _DSM based clock (no-op if a GPIO clock was already registered) */
++	ret = skl_int3472_register_dsm_clock(int3472);
++	if (ret < 0)
++		return ret;
++
+ 	int3472->gpios.dev_id = int3472->sensor_name;
+ 	gpiod_add_lookup_table(&int3472->gpios);
+ 
+@@ -356,6 +361,7 @@ static int skl_int3472_discrete_probe(struct platform_device *pdev)
+ 	int3472->adev = adev;
+ 	int3472->dev = &pdev->dev;
+ 	platform_set_drvdata(pdev, int3472);
++	int3472->clock.imgclk_index = cldb.clock_source;
+ 
+ 	ret = skl_int3472_get_sensor_adev_and_name(&pdev->dev, &int3472->sensor,
+ 						   &int3472->sensor_name);
+-- 
+2.34.1
+
