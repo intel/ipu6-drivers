@@ -4,7 +4,6 @@
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
 #include <linux/delay.h>
-#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
@@ -14,6 +13,11 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+#include <linux/clk.h>
+#include <linux/gpio/consumer.h>
+#endif
 
 #define OV2740_LINK_FREQ_360MHZ		360000000ULL
 #define OV2740_CJFLE23_LINK_FREQ_360MHZ	360000000ULL
@@ -560,10 +564,12 @@ struct ov2740 {
 	/* i2c client */
 	struct i2c_client *client;
 
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	/* GPIO for reset */
 	struct gpio_desc *reset_gpio;
-	/* GPIO for privacy LED */
-	struct gpio_desc *pled_gpio;
+	/* Clock provider */
+	struct clk *clk;
+#endif
 
 	/* Module name index */
 	u8 module_name_index;
@@ -590,54 +596,6 @@ static u64 to_pixels_per_line(u32 hts, u32 f_index)
 	do_div(ppl, OV2740_SCLK);
 
 	return ppl;
-}
-
-static void ov2740_set_power(struct ov2740 *ov2740, int on)
-{
-	gpiod_set_value_cansleep(ov2740->reset_gpio, !on);
-	gpiod_set_value_cansleep(ov2740->pled_gpio, on);
-	msleep(20);
-}
-
-static int ov2740_parse_dt(struct ov2740 *ov2740)
-{
-	struct device *dev = &ov2740->client->dev;
-	int ret;
-	int i = 0;
-	union acpi_object *obj;
-
-	obj = acpi_evaluate_dsm_typed(ACPI_COMPANION(dev)->handle,
-				     &cio2_sensor_module_guid, 0x00,
-				     0x01, NULL, ACPI_TYPE_STRING);
-
-	ov2740->module_name_index = 0;
-	if (obj && obj->string.type == ACPI_TYPE_STRING) {
-		for (i = 1; i < ARRAY_SIZE(ov2740_module_names); i++) {
-			if (!strcmp(ov2740_module_names[i], obj->string.pointer)) {
-				ov2740->module_name_index = i;
-				break;
-			}
-		}
-	}
-	ACPI_FREE(obj);
-
-	if (ov2740->module_name_index == 0)
-		return 0;
-
-	ov2740->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	ret = PTR_ERR_OR_ZERO(ov2740->reset_gpio);
-	if (ret < 0) {
-		dev_err(dev, "error while getting reset gpio: %d\n", ret);
-		return ret;
-	}
-
-	ov2740->pled_gpio = devm_gpiod_get_optional(dev, "pled", GPIOD_OUT_HIGH);
-	ret = PTR_ERR_OR_ZERO(ov2740->pled_gpio);
-	if (ret < 0) {
-		dev_err(dev, "error while getting pled gpio: %d\n", ret);
-		return ret;
-	}
-	return 0;
 }
 
 static int ov2740_read_reg(struct ov2740 *ov2740, u16 reg, u16 len, u32 *val)
@@ -999,7 +957,6 @@ static int ov2740_start_streaming(struct ov2740 *ov2740)
 	int link_freq_index;
 	int ret = 0;
 
-	ov2740_set_power(ov2740, 1);
 	ov2740_load_otp_data(nvm);
 
 	link_freq_index = ov2740->cur_mode->link_freq_index;
@@ -1036,7 +993,6 @@ static void ov2740_stop_streaming(struct ov2740 *ov2740)
 	if (ov2740_write_reg(ov2740, OV2740_REG_MODE_SELECT, 1,
 			     OV2740_MODE_STANDBY))
 		dev_err(&client->dev, "failed to stop streaming");
-	ov2740_set_power(ov2740, 0);
 }
 
 static int ov2740_set_stream(struct v4l2_subdev *sd, int enable)
@@ -1072,6 +1028,34 @@ static int ov2740_set_stream(struct v4l2_subdev *sd, int enable)
 
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+static int ov2740_power_off(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov2740 *ov2740 = to_ov2740(sd);
+	int ret = 0;
+
+	gpiod_set_value_cansleep(ov2740->reset_gpio, 1);
+	clk_disable_unprepare(ov2740->clk);
+	msleep(20);
+
+	return ret;
+}
+
+static int ov2740_power_on(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov2740 *ov2740 = to_ov2740(sd);
+	int ret = 0;
+
+	ret = clk_prepare_enable(ov2740->clk);
+	gpiod_set_value_cansleep(ov2740->reset_gpio, 0);
+	msleep(20);
+
+	return ret;
+}
+#endif
 
 static int __maybe_unused ov2740_suspend(struct device *dev)
 {
@@ -1467,6 +1451,56 @@ static int ov2740_register_nvmem(struct i2c_client *client,
 	return ret;
 }
 
+static int ov2740_read_module_name(struct ov2740 *ov2740)
+{
+	struct device *dev = &ov2740->client->dev;
+	int i = 0;
+	union acpi_object *obj;
+
+	obj = acpi_evaluate_dsm_typed(ACPI_COMPANION(dev)->handle,
+				     &cio2_sensor_module_guid, 0x00,
+				     0x01, NULL, ACPI_TYPE_STRING);
+
+	ov2740->module_name_index = 0;
+	if (obj && obj->string.type == ACPI_TYPE_STRING) {
+		for (i = 1; i < ARRAY_SIZE(ov2740_module_names); i++) {
+			if (!strcmp(ov2740_module_names[i], obj->string.pointer)) {
+				ov2740->module_name_index = i;
+				break;
+			}
+		}
+	}
+	ACPI_FREE(obj);
+
+	return 0;
+}
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+static int ov2740_parse_power(struct ov2740 *ov2740)
+{
+	struct device *dev = &ov2740->client->dev;
+	long ret;
+
+	ov2740->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(ov2740->reset_gpio)) {
+		ret = PTR_ERR(ov2740->reset_gpio);
+		dev_err(dev, "error while getting reset gpio: %ld\n", ret);
+		ov2740->reset_gpio = NULL;
+		return (int)ret;
+	}
+
+	ov2740->clk = devm_clk_get_optional(dev, "clk");
+	if (IS_ERR(ov2740->clk)) {
+		ret = PTR_ERR(ov2740->clk);
+		dev_err(dev, "error while getting clk: %ld\n", ret);
+		ov2740->clk = NULL;
+		return (int)ret;
+	}
+
+	return 0;
+}
+#endif
+
 static int ov2740_probe(struct i2c_client *client)
 {
 	struct ov2740 *ov2740;
@@ -1477,9 +1511,7 @@ static int ov2740_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	ov2740->client = client;
-	ret = ov2740_parse_dt(ov2740);
-	if (ret < 0)
-		return -EINVAL;
+	ov2740_read_module_name(ov2740);
 
 	/* for Thinkpad X1 Yoga, module CJFLE23, skip hardware config check */
 	if (ov2740->module_name_index != 1) {
@@ -1491,8 +1523,16 @@ static int ov2740_probe(struct i2c_client *client)
 		}
 	}
 
-	ov2740_set_power(ov2740, 1);
 	v4l2_i2c_subdev_init(&ov2740->sd, client, &ov2740_subdev_ops);
+
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	ret = ov2740_parse_power(ov2740);
+	if (ret)
+		return ret;
+	gpiod_set_value_cansleep(ov2740->reset_gpio, 0);
+	msleep(20);
+#endif
+
 	ret = ov2740_identify_module(ov2740);
 	if (ret) {
 		dev_err(&client->dev, "failed to find sensor: %d", ret);
@@ -1550,7 +1590,6 @@ static int ov2740_probe(struct i2c_client *client)
 	pm_runtime_enable(&client->dev);
 	pm_runtime_idle(&client->dev);
 
-	ov2740_set_power(ov2740, 0);
 	return 0;
 
 probe_error_media_entity_cleanup:
@@ -1561,13 +1600,18 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov2740->mutex);
 
 probe_error_power_down:
-	ov2740_set_power(ov2740, 0);
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	gpiod_set_value_cansleep(ov2740->reset_gpio, 1);
+#endif
 
 	return ret;
 }
 
 static const struct dev_pm_ops ov2740_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(ov2740_suspend, ov2740_resume)
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	SET_RUNTIME_PM_OPS(ov2740_power_off, ov2740_power_on, NULL)
+#endif
 };
 
 static const struct acpi_device_id ov2740_acpi_ids[] = {

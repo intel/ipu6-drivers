@@ -1,7 +1,7 @@
 # ipu6-drivers
 
-This repository supports MIPI cameras through the IPU6 on Intel Tiger Lake and
-Alder Lake platforms. There are 4 repositories that provide the complete setup:
+This repository supports MIPI cameras through the IPU6 on Intel Tiger Lake, Alder Lake, Raptor Lake and Meteor Lake platforms.
+There are 4 repositories that provide the complete setup:
 
 - https://github.com/intel/ipu6-drivers - kernel drivers for the IPU and sensors
 - https://github.com/intel/ipu6-camera-bins - IPU firmware and proprietary image processing libraries
@@ -11,7 +11,8 @@ Alder Lake platforms. There are 4 repositories that provide the complete setup:
 
 ## Content of this repository:
 - IPU6 kernel driver
-- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10, OV2740, HM2170 and HI556 sensors
+- Kernel patches needed
+- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10, OV2740, HM2170, HM2172 and HI556 sensors
 
 ## Build instructions:
 Three ways are available:
@@ -20,18 +21,24 @@ Three ways are available:
 3. and build with dkms
 
 ### 1. Build with kernel source tree
-- Tested with kernel 6.0
+- Tested with kernel v6.4
 - Check out kernel
 - Apply patches:
 	```sh
-	# For IPU6
-	patch/IOMMU-passthrough-for-intel-ipu.diff
+	# For Meteor Lake B stepping only
+	patch/0002-iommu-Add-passthrough-for-MTL-IPU.patch
 
-	# For 5.15 <= kernel version < 5.17
-	patch/int3472-support-independent-clock-and-LED-gpios.patch
+	# For v5.15 <= kernel version < v5.17 and using INT3472
+	patch/int3472-v5.15/*.patch
 
-	# For kernel version >= 5.17
-	patch/int3472-support-independent-clock-and-LED-gpios-5.17+.patch
+	# For v5.17 <= kernel version < v6.1.7 and using INT3472
+	patch/int3472-v5.17/*.patch
+
+	# For kernel version >= 6.1.7 and using INT3472
+	patch/int3472-v6.1.7/*.patch
+
+	# For kernel version >= 6.3 and using ov13b10
+	patch/ov13b10-v6.3/*.patch
 	```
 - Copy repo content to kernel source **(except Makefile and drivers/media/i2c/{Kconfig,Makefile}, will change manually next)**
 - Modify related Kconfig and Makefile
@@ -117,6 +124,19 @@ Three ways are available:
 			To compile this driver as a module, choose M here: the
 			module will be called hm2170.
 
+	config VIDEO_HM2172
+		tristate "Himax HM2172 sensor support"
+		depends on VIDEO_DEV && I2C
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+			This is a Video4Linux2 sensor driver for the Himax
+			HM2170 camera.
+
+			To compile this driver as a module, choose M here: the
+			module will be called hm2172.
+
 	```
 
 - Add to drivers/media/i2c/Makefile
@@ -127,6 +147,7 @@ Three ways are available:
 	obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
 	obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
 	obj-$(CONFIG_VIDEO_HM2170) += hm2170.o
+	obj-$(CONFIG_VIDEO_HM2170) += hm2172.o
 	```
 
 - Modify drivers/media/pci/Kconfig
@@ -146,7 +167,10 @@ Three ways are available:
 	CONFIG_VIDEO_HM11B1=m
 	CONFIG_VIDEO_OV02C10=m
 	CONFIG_VIDEO_HM2170=m
-	# If your kernel < 5.15 or not set CONFIG_INTEL_SKL_INT3472, please add the line below:
+	CONFIG_VIDEO_HM2172=m
+	# Set this only if you use only 1 camera and don't want too many device nodes in media-ctl
+	# CONFIG_IPU_SINGLE_BE_SOC_DEVICE=y
+	# If your kernel < 5.15 or not set CONFIG_INTEL_SKL_INT3472, please set this
 	# CONFIG_POWER_CTRL_LOGIC=m
 	```
 - LJCA and CVF part as below, please check details at https://github.com/intel/ivsc-driver/blob/main/README.md

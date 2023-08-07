@@ -1,0 +1,45 @@
+From 4118cc61955e7c8d4f88d05d38fe1ea9fa690b8b Mon Sep 17 00:00:00 2001
+From: Bingbu Cao <bingbu.cao@intel.com>
+Date: Fri, 26 May 2023 18:07:24 +0800
+Subject: [PATCH 7/8] MLIST: media: ov13b10: Defer probe if no endpoint found
+
+The ov13b10 need be connected to a CIO2 or IPU device by bridge, sometimes
+the bridge driver was not probed before ov13b10 driver, then the absence
+of the fwnode endpoint for this device is expected, so driver return
+-EPROBE_DEFER in this case to let the probe occur after bridge driver.
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+Signed-off-by: Bingbu Cao <bingbu.cao@intel.com>
+---
+ drivers/media/i2c/ov13b10.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index ede33899248c..2d48c94659a4 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -1331,6 +1331,10 @@ static int ov13b10_check_hwcfg(struct device *dev)
+ 	if (!fwnode)
+ 		return -ENXIO;
+ 
++	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
++	if (!ep)
++		return -EPROBE_DEFER;
++
+ 	ret = fwnode_property_read_u32(dev_fwnode(dev), "clock-frequency",
+ 				       &ext_clk);
+ 	if (ret) {
+@@ -1344,10 +1348,6 @@ static int ov13b10_check_hwcfg(struct device *dev)
+ 		return -EINVAL;
+ 	}
+ 
+-	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+-	if (!ep)
+-		return -ENXIO;
+-
+ 	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
+ 	fwnode_handle_put(ep);
+ 	if (ret)
+-- 
+2.34.1
+

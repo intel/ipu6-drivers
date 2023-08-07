@@ -56,7 +56,11 @@
 #define IPU_ISYS_MAX_WIDTH		16384U
 #define IPU_ISYS_MAX_HEIGHT		16384U
 
+#ifdef CONFIG_IPU_SINGLE_BE_SOC_DEVICE
 #define NR_OF_CSI2_BE_SOC_DEV 1
+#else
+#define NR_OF_CSI2_BE_SOC_DEV 8
+#endif
 
 /* the threshold granularity is 2KB on IPU6 */
 #define IPU6_SRAM_GRANULRITY_SHIFT	11

@@ -652,6 +652,8 @@ struct ov02c10 {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
 #if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
 #endif
 	/* Current mode */
@@ -868,8 +870,10 @@ static int ov02c10_init_controls(struct ov02c10 *ov02c10)
 	if (ov02c10->hblank)
 		ov02c10->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 #if IS_ENABLED(CONFIG_INTEL_VSC)
-	ov02c10->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &ov02c10_ctrl_ops,
-								V4L2_CID_PRIVACY, 0, 1, 1, 0);
+	ov02c10->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr,
+						    &ov02c10_ctrl_ops,
+						    V4L2_CID_PRIVACY, 0, 1, 1,
+						    !(ov02c10->status.status));
 #endif
 
 	v4l2_ctrl_new_std(ctrl_hdlr, &ov02c10_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
@@ -906,37 +910,13 @@ static void ov02c10_update_pad_format(const struct ov02c10_mode *mode,
 	fmt->field = V4L2_FIELD_NONE;
 }
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-static void ov02c10_vsc_privacy_callback(void *handle,
-				       enum vsc_privacy_status status)
-{
-	struct ov02c10 *ov02c10 = handle;
-
-	v4l2_ctrl_s_ctrl(ov02c10->privacy_status, !status);
-}
-#endif
-
 static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02c10->sd);
 	const struct ov02c10_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
 
-	conf.lane_num = ov02c10->mipi_lanes;
-	/* frequency unit 100k */
-	conf.freq = OV02C10_LINK_FREQ_400MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&conf, ov02c10_vsc_privacy_callback,
-					ov02c10, &status);
-	if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed");
-		return ret;
-	}
-	__v4l2_ctrl_s_ctrl(ov02c10->privacy_status, !(status.status));
-#endif
 	link_freq_index = ov02c10->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
 	ret = ov02c10_write_reg_list(ov02c10, reg_list);
@@ -968,19 +948,11 @@ static void ov02c10_stop_streaming(struct ov02c10 *ov02c10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02c10->sd);
 	int ret = 0;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_camera_status status;
-#endif
 
 	ret = ov02c10_write_reg(ov02c10, OV02C10_REG_MODE_SELECT, 1,
 				OV02C10_MODE_STANDBY);
 	if (ret)
 		dev_err(&client->dev, "failed to stop streaming");
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	ret = vsc_release_camera_sensor(&status);
-	if (ret)
-		dev_err(&client->dev, "Release VSC failed");
-#endif
 }
 
 static int ov02c10_set_stream(struct v4l2_subdev *sd, int enable)
@@ -1017,6 +989,50 @@ static int ov02c10_set_stream(struct v4l2_subdev *sd, int enable)
 
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+static void ov02c10_vsc_privacy_callback(void *handle,
+				       enum vsc_privacy_status status)
+{
+	struct ov02c10 *ov02c10 = handle;
+
+	v4l2_ctrl_s_ctrl(ov02c10->privacy_status, !status);
+}
+
+static int ov02c10_power_off(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov02c10 *ov02c10 = to_ov02c10(sd);
+	int ret;
+
+	ret = vsc_release_camera_sensor(&ov02c10->status);
+	if (ret && ret != -EAGAIN)
+		dev_err(dev, "Release VSC failed");
+
+	return ret;
+}
+
+static int ov02c10_power_on(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov02c10 *ov02c10 = to_ov02c10(sd);
+	int ret;
+
+	ov02c10->conf.lane_num = ov02c10->mipi_lanes;
+	/* frequency unit 100k */
+	ov02c10->conf.freq = OV02C10_LINK_FREQ_400MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&ov02c10->conf,
+					ov02c10_vsc_privacy_callback,
+					ov02c10, &ov02c10->status);
+	if (ret && ret != -EAGAIN) {
+		dev_err(dev, "Acquire VSC failed");
+		return ret;
+	}
+	__v4l2_ctrl_s_ctrl(ov02c10->privacy_status, !(ov02c10->status.status));
+
+	return ret;
+}
+#endif
 
 static int __maybe_unused ov02c10_suspend(struct device *dev)
 {
@@ -1222,7 +1238,6 @@ static void ov02c10_read_mipi_lanes(struct ov02c10 *ov02c10)
 	union acpi_object *obj;
 	acpi_status status;
 
-	ov02c10->mipi_lanes = OV02C10_DATA_LANES;
 	if (!adev) {
 		dev_info(&client->dev, "Not ACPI device\n");
 		return;
@@ -1298,31 +1313,27 @@ static int ov02c10_probe(struct i2c_client *client)
 {
 	struct ov02c10 *ov02c10;
 	int ret = 0;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
-#endif
 
+	ov02c10 = devm_kzalloc(&client->dev, sizeof(*ov02c10), GFP_KERNEL);
+	if (!ov02c10)
+		return -ENOMEM;
+
+	v4l2_i2c_subdev_init(&ov02c10->sd, client, &ov02c10_subdev_ops);
 #if IS_ENABLED(CONFIG_INTEL_VSC)
-	conf.lane_num = OV02C10_DATA_LANES;
+	ov02c10->mipi_lanes = OV02C10_DATA_LANES;
+	ov02c10->conf.lane_num = ov02c10->mipi_lanes;
 	/* frequency unit 100k */
-	conf.freq = OV02C10_LINK_FREQ_400MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
+	ov02c10->conf.freq = OV02C10_LINK_FREQ_400MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&ov02c10->conf,
+					ov02c10_vsc_privacy_callback,
+					ov02c10, &ov02c10->status);
 	if (ret == -EAGAIN) {
-		dev_dbg(&client->dev, "VSC not ready, will re-probe");
 		return -EPROBE_DEFER;
 	} else if (ret) {
 		dev_err(&client->dev, "Acquire VSC failed");
 		return ret;
 	}
 #endif
-	ov02c10 = devm_kzalloc(&client->dev, sizeof(*ov02c10), GFP_KERNEL);
-	if (!ov02c10) {
-		ret = -ENOMEM;
-		goto probe_error_ret;
-	}
-
-	v4l2_i2c_subdev_init(&ov02c10->sd, client, &ov02c10_subdev_ops);
 
 	ret = ov02c10_identify_module(ov02c10);
 	if (ret) {
@@ -1359,9 +1370,6 @@ static int ov02c10_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	vsc_release_camera_sensor(&status);
-#endif
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
@@ -1381,13 +1389,17 @@ probe_error_v4l2_ctrl_handler_free:
 
 probe_error_ret:
 #if IS_ENABLED(CONFIG_INTEL_VSC)
-	vsc_release_camera_sensor(&status);
+	ov02c10_power_off(&client->dev);
 #endif
+
 	return ret;
 }
 
 static const struct dev_pm_ops ov02c10_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(ov02c10_suspend, ov02c10_resume)
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	SET_RUNTIME_PM_OPS(ov02c10_power_off, ov02c10_power_on, NULL)
+#endif
 };
 
 #ifdef CONFIG_ACPI

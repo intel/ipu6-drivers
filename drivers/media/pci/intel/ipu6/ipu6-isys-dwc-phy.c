@@ -262,69 +262,69 @@ struct dwc_dphy_freq_range {
 #define DPHY_FREQ_RANGE_NUM		(63)
 #define DPHY_FREQ_RANGE_INVALID_INDEX	(0xff)
 const struct dwc_dphy_freq_range freqranges[DPHY_FREQ_RANGE_NUM] = {
-	{0x00,	80,	97,	80,	448},
-	{0x10,	80,	107,	90,	448},
-	{0x20,	84,	118,	100,	448},
-	{0x30,	93,	128,	110,	448},
-	{0x01,	103,	139,	120,	448},
-	{0x11,	112,	149,	130,	448},
-	{0x21,	122,	160,	140,	448},
-	{0x31,	131,	170,	150,	448},
-	{0x02,	141,	181,	160,	448},
-	{0x12,	150,	191,	170,	448},
-	{0x22,	160,	202,	180,	448},
-	{0x32,	169,	212,	190,	448},
-	{0x03,	183,	228,	205,	448},
-	{0x13,	198,	244,	220,	448},
-	{0x23,	212,	259,	235,	448},
-	{0x33,	226,	275,	250,	448},
-	{0x04,	250,	301,	275,	448},
-	{0x14,	274,	328,	300,	448},
-	{0x25,	297,	354,	325,	448},
-	{0x35,	321,	380,	350,	448},
-	{0x05,	369,	433,	400,	448},
-	{0x16,	416,	485,	450,	448},
-	{0x26,	464,	538,	500,	448},
-	{0x37,	511,	590,	550,	448},
-	{0x07,	559,	643,	600,	448},
-	{0x18,	606,	695,	650,	448},
-	{0x28,	654,	748,	700,	448},
-	{0x39,	701,	800,	750,	448},
-	{0x09,	749,	853,	800,	448},
-	{0x19,	796,	905,	850,	448},
-	{0x29,	844,	958,	900,	448},
-	{0x3a,	891,	1010,	950,	448},
-	{0x0a,	939,	1063,	1000,	448},
-	{0x1a,	986,	1115,	1050,	448},
-	{0x2a,	1034,	1168,	1100,	448},
-	{0x3b,	1081,	1220,	1150,	448},
-	{0x0b,	1129,	1273,	1200,	448},
-	{0x1b,	1176,	1325,	1250,	448},
-	{0x2b,	1224,	1378,	1300,	448},
-	{0x3c,	1271,	1430,	1350,	448},
-	{0x0c,	1319,	1483,	1400,	448},
-	{0x1c,	1366,	1535,	1450,	448},
-	{0x2c,	1414,	1588,	1500,	448},
-	{0x3d,	1461,	1640,	1550,	278},
-	{0x0d,	1509,	1693,	1600,	287},
-	{0x1d,	1556,	1745,	1650,	296},
-	{0x2e,	1604,	1798,	1700,	305},
-	{0x3e,	1651,	1850,	1750,	314},
-	{0x0e,	1699,	1903,	1800,	323},
-	{0x1e,	1746,	1955,	1850,	331},
-	{0x2f,	1794,	2008,	1900,	340},
-	{0x3f,	1841,	2060,	1950,	349},
-	{0x0f,	1889,	2113,	2000,	358},
-	{0x40,	1936,	2165,	2050,	367},
-	{0x41,	1984,	2218,	2100,	376},
-	{0x42,	2031,	2270,	2150,	385},
-	{0x43,	2079,	2323,	2200,	394},
-	{0x44,	2126,	2375,	2250,	403},
-	{0x45,	2174,	2428,	2300,	412},
-	{0x46,	2221,	2480,	2350,	421},
-	{0x47,	2269,	2500,	2400,	430},
-	{0x48,	2316,	2500,	2450,	439},
-	{0x49,	2364,	2500,	2500,	448},
+	{0x00,	80,	97,	80,	335},
+	{0x10,	80,	107,	90,	335},
+	{0x20,	84,	118,	100,	335},
+	{0x30,	93,	128,	110,	335},
+	{0x01,	103,	139,	120,	335},
+	{0x11,	112,	149,	130,	335},
+	{0x21,	122,	160,	140,	335},
+	{0x31,	131,	170,	150,	335},
+	{0x02,	141,	181,	160,	335},
+	{0x12,	150,	191,	170,	335},
+	{0x22,	160,	202,	180,	335},
+	{0x32,	169,	212,	190,	335},
+	{0x03,	183,	228,	205,	335},
+	{0x13,	198,	244,	220,	335},
+	{0x23,	212,	259,	235,	335},
+	{0x33,	226,	275,	250,	335},
+	{0x04,	250,	301,	275,	335},
+	{0x14,	274,	328,	300,	335},
+	{0x25,	297,	354,	325,	335},
+	{0x35,	321,	380,	350,	335},
+	{0x05,	369,	433,	400,	335},
+	{0x16,	416,	485,	450,	335},
+	{0x26,	464,	538,	500,	335},
+	{0x37,	511,	590,	550,	335},
+	{0x07,	559,	643,	600,	335},
+	{0x18,	606,	695,	650,	335},
+	{0x28,	654,	748,	700,	335},
+	{0x39,	701,	800,	750,	335},
+	{0x09,	749,	853,	800,	335},
+	{0x19,	796,	905,	850,	335},
+	{0x29,	844,	958,	900,	335},
+	{0x3a,	891,	1010,	950,	335},
+	{0x0a,	939,	1063,	1000,	335},
+	{0x1a,	986,	1115,	1050,	335},
+	{0x2a,	1034,	1168,	1100,	335},
+	{0x3b,	1081,	1220,	1150,	335},
+	{0x0b,	1129,	1273,	1200,	335},
+	{0x1b,	1176,	1325,	1250,	335},
+	{0x2b,	1224,	1378,	1300,	335},
+	{0x3c,	1271,	1430,	1350,	335},
+	{0x0c,	1319,	1483,	1400,	335},
+	{0x1c,	1366,	1535,	1450,	335},
+	{0x2c,	1414,	1588,	1500,	335},
+	{0x3d,	1461,	1640,	1550,	208},
+	{0x0d,	1509,	1693,	1600,	214},
+	{0x1d,	1556,	1745,	1650,	221},
+	{0x2e,	1604,	1798,	1700,	228},
+	{0x3e,	1651,	1850,	1750,	234},
+	{0x0e,	1699,	1903,	1800,	241},
+	{0x1e,	1746,	1955,	1850,	248},
+	{0x2f,	1794,	2008,	1900,	255},
+	{0x3f,	1841,	2060,	1950,	261},
+	{0x0f,	1889,	2113,	2000,	268},
+	{0x40,	1936,	2165,	2050,	275},
+	{0x41,	1984,	2218,	2100,	281},
+	{0x42,	2031,	2270,	2150,	288},
+	{0x43,	2079,	2323,	2200,	294},
+	{0x44,	2126,	2375,	2250,	302},
+	{0x45,	2174,	2428,	2300,	308},
+	{0x46,	2221,	2480,	2350,	315},
+	{0x47,	2269,	2500,	2400,	321},
+	{0x48,	2316,	2500,	2450,	328},
+	{0x49,	2364,	2500,	2500,	335},
 };
 
 static u32 get_hsfreq_by_mbps(u32 mbps)
@@ -443,9 +443,11 @@ void ipu6_isys_dwc_phy_aggr_setup(struct ipu_isys *isys, u32 master, u32 slave,
 	dwc_dphy_ifc_write_mask(isys, slave, 0x305, 0xa, 0, 5);
 }
 
+#define PHY_E	(4)
 int ipu6_isys_dwc_phy_powerup_ack(struct ipu_isys *isys, u32 phy_id)
 {
 	int rval;
+	u32 rescal_done;
 
 	rval = dwc_dphy_pwr_up(isys, phy_id);
 	if (rval != 0) {
@@ -460,6 +462,18 @@ int ipu6_isys_dwc_phy_powerup_ack(struct ipu_isys *isys, u32 phy_id)
 
 	dev_dbg(&isys->adev->dev, "phy %u is ready!", phy_id);
 
+	if (phy_id != PHY_E || isys->phy_termcal_val)
+		return 0;
+
+	usleep_range(100, 200);
+	rescal_done = dwc_dphy_ifc_read_mask(isys, phy_id, 0x221, 7, 1);
+	if (rescal_done) {
+		isys->phy_termcal_val = dwc_dphy_ifc_read_mask(isys, phy_id,
+							       0x220, 2, 4);
+		dev_dbg(&isys->adev->dev, "termcal done with value = %u",
+			isys->phy_termcal_val);
+	}
+
 	return 0;
 }
 
@@ -473,92 +487,4 @@ void ipu6_isys_dwc_phy_reset(struct ipu_isys *isys, u32 phy_id)
 		       TEST_IFC_ACCESS_MODE_FSM);
 	dwc_dphy_write(isys, phy_id, IPU_DWC_DPHY_TEST_IFC_REQ,
 		       TEST_IFC_REQ_RESET);
-}
-
-#define PHY_E	(4)
-int ipu6_isys_dwc_phy_termcal_rext(struct ipu_isys *isys, u32 mbps)
-{
-	u32 index;
-	u32 osc_freq_target;
-	u32 cfg_clk_freqrange;
-	u32 rescal_done;
-	struct ipu_bus_device *adev = to_ipu_bus_device(&isys->adev->dev);
-	struct ipu_device *isp = adev->isp;
-	int ret;
-	u32 phy_id = PHY_E;
-
-	if (isys->phy_termcal_val) {
-		dev_dbg(&isys->adev->dev, "phy term cal already done, ignore.");
-		return 0;
-	}
-
-	dev_dbg(&isys->adev->dev, "phy %u term calibration with %u mbps",
-		phy_id, mbps);
-
-	ipu6_isys_dwc_phy_reset(isys, phy_id);
-
-	index = get_hsfreq_by_mbps(mbps);
-	if (index == DPHY_FREQ_RANGE_INVALID_INDEX) {
-		dev_err(&isys->adev->dev, "link freq not found for mbps %u",
-			mbps);
-		return -EINVAL;
-	}
-
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_HSFREQRANGE,
-			    freqranges[index].hsfreq, 0, 7);
-
-	/*
-	 * Enable override to configure the DDL target oscillation
-	 * frequency on bit 0 of register 0xe4
-	 */
-	dwc_dphy_ifc_write_mask(isys, phy_id, 0xe4, 0x1, 0, 1);
-	/*
-	 * configure registers 0xe2, 0xe3 with the
-	 * appropriate DDL target oscillation frequency
-	 * 0x1cc(460)
-	 */
-	osc_freq_target = freqranges[index].osc_freq_target;
-	dwc_dphy_ifc_write_mask(isys, phy_id, 0xe2,
-				osc_freq_target & 0xff, 0, 8);
-	dwc_dphy_ifc_write_mask(isys, phy_id, 0xe3,
-				(osc_freq_target >> 8) & 0xff, 0, 4);
-
-	if (mbps < 1500) {
-		/* deskew_polarity_rw, for < 1.5Gbps */
-		dwc_dphy_ifc_write_mask(isys, phy_id, 0x8, 0x1, 5, 1);
-	}
-
-	/*
-	 * Set cfgclkfreqrange[5:0] = round[(Fcfg_clk(MHz)-17)*4]
-	 * (38.4 - 17) * 4 = 84 (0x54)
-	 */
-	cfg_clk_freqrange = (isp->buttress.ref_clk / 10 - 17) * 4;
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_CFGCLKFREQRANGE,
-			    cfg_clk_freqrange, 0, 8);
-
-	/*
-	 * run without external reference resistor for 2Gbps
-	 * dwc_dphy_ifc_write_mask(isys, phy_id, 0x4, 0x0, 4, 1);
-	 */
-
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_DFT_CTRL2, 0x1, 4, 1);
-	dwc_dphy_write_mask(isys, phy_id, IPU_DWC_DPHY_DFT_CTRL2, 0x1, 8, 1);
-
-	ret = ipu6_isys_dwc_phy_powerup_ack(isys, phy_id);
-	if (ret)
-		return ret;
-
-	usleep_range(100, 200);
-	rescal_done = dwc_dphy_ifc_read_mask(isys, phy_id, 0x221, 7, 1);
-	if (rescal_done) {
-		isys->phy_termcal_val = dwc_dphy_ifc_read_mask(isys, phy_id,
-							       0x220, 2, 4);
-		dev_dbg(&isys->adev->dev, "termcal done with value = %u",
-			isys->phy_termcal_val);
-	}
-
-	/* whatever reset the phy E after rext flow */
-	ipu6_isys_dwc_phy_reset(isys, phy_id);
-
-	return 0;
 }

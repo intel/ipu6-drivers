@@ -1,0 +1,29 @@
+From 3c307ed62acf60b55611e7a69eb4c7ec72bf19ed Mon Sep 17 00:00:00 2001
+From: Bingbu Cao <bingbu.cao@intel.com>
+Date: Fri, 26 May 2023 18:07:23 +0800
+Subject: [PATCH 6/8] MLIST: media: ov13b10: support new ACPI HID 'OVTI13B1'
+
+On ACPI systems, the HID of ov13b10 is 'OVTI13B1', add this new
+HID in acpi IDs table to make driver support it.
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+Signed-off-by: Bingbu Cao <bingbu.cao@intel.com>
+---
+ drivers/media/i2c/ov13b10.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index c1430044fb1e..ede33899248c 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -1484,6 +1484,7 @@ static const struct dev_pm_ops ov13b10_pm_ops = {
+ #ifdef CONFIG_ACPI
+ static const struct acpi_device_id ov13b10_acpi_ids[] = {
+ 	{"OVTIDB10"},
++	{"OVTI13B1"},
+ 	{ /* sentinel */ }
+ };
+ 
+-- 
+2.34.1
+

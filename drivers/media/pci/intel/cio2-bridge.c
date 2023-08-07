@@ -44,13 +44,15 @@ static const struct cio2_sensor_config cio2_supported_sensors[] = {
 	CIO2_SENSOR_CONFIG("INT3537", 0, 0),
 	/* Himax hm2170 */
 	CIO2_SENSOR_CONFIG("HIMX2170", 0, 0),
+	/* Himax hm2172 */
+	CIO2_SENSOR_CONFIG("HIMX2172", 0, 0),
 	/* Himax hm11b1 */
 	CIO2_SENSOR_CONFIG("HIMX11B1", 0, 0),
 	/* Omnivision ov13b10 */
-	CIO2_SENSOR_CONFIG("OVTIDB10", 0, 0),
-	CIO2_SENSOR_CONFIG("OVTI13B1", 0, 0),
-        /* galaxycore gc5035 */
-        CIO2_SENSOR_CONFIG("GCTI5035", 0, 0),
+	CIO2_SENSOR_CONFIG("OVTIDB10", 1, 560000000),
+	CIO2_SENSOR_CONFIG("OVTI13B1", 1, 560000000),
+	/* Omnivision ov08a10 */
+	CIO2_SENSOR_CONFIG("OVTI08A1", 0, 0),
 };
 
 static const struct cio2_property_names prop_names = {
@@ -234,7 +236,7 @@ static void cio2_bridge_init_swnode_group(struct cio2_sensor *sensor)
 	sensor->group[SWNODE_CIO2_ENDPOINT] = &nodes[SWNODE_CIO2_ENDPOINT];
 	if (sensor->ssdb.vcmtype &&
 	    sensor->ssdb.vcmtype <= ARRAY_SIZE(cio2_vcm_types))
-		sensor->group[SWNODE_VCM] =  &nodes[SWNODE_VCM];
+		sensor->group[SWNODE_VCM] = &nodes[SWNODE_VCM];
 }
 
 static void cio2_bridge_create_connection_swnodes(struct cio2_bridge *bridge,

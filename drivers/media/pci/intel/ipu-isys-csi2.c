@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2023 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/module.h>
@@ -19,11 +19,13 @@
 #include "ipu-platform-regs.h"
 
 static const u32 csi2_supported_codes_pad_sink[] = {
+	MEDIA_BUS_FMT_Y8_1X8,
 	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
 	MEDIA_BUS_FMT_UYVY8_1X16,
 	MEDIA_BUS_FMT_YUYV8_1X16,
+	MEDIA_BUS_FMT_VYUY8_1X16,
 	MEDIA_BUS_FMT_YUYV10_1X20,
 	MEDIA_BUS_FMT_SBGGR10_1X10,
 	MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -45,11 +47,13 @@ static const u32 csi2_supported_codes_pad_sink[] = {
 };
 
 static const u32 csi2_supported_codes_pad_source[] = {
+	MEDIA_BUS_FMT_Y8_1X8,
 	MEDIA_BUS_FMT_Y10_1X10,
 	MEDIA_BUS_FMT_RGB565_1X16,
 	MEDIA_BUS_FMT_RGB888_1X24,
 	MEDIA_BUS_FMT_UYVY8_1X16,
 	MEDIA_BUS_FMT_YUYV8_1X16,
+	MEDIA_BUS_FMT_VYUY8_1X16,
 	MEDIA_BUS_FMT_YUYV10_1X20,
 	MEDIA_BUS_FMT_SBGGR10_1X10,
 	MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -73,7 +77,7 @@ static struct v4l2_subdev_internal_ops csi2_sd_internal_ops = {
 	.close = ipu_isys_subdev_close,
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 255)
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 {
 	struct ipu_isys_pipeline *pipe =
@@ -107,9 +111,9 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 #else
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
 {
-	struct ipu_isys_pipeline *pipe = container_of(csi2->asd.sd.entity.pipe,
-						      struct ipu_isys_pipeline,
-						      pipe);
+	struct ipu_isys_pipeline *pipe =
+		container_of(media_entity_pipeline(&csi2->asd.sd.entity),
+			     struct ipu_isys_pipeline, pipe);
 	struct v4l2_subdev *ext_sd =
 	    media_entity_to_v4l2_subdev(pipe->external->entity);
 	struct v4l2_ext_control c = {.id = V4L2_CID_LINK_FREQ, };
@@ -258,8 +262,7 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct ipu_isys_csi2 *csi2 = to_ipu_isys_csi2(sd);
 	struct ipu_isys_pipeline *ip =
-		container_of(media_entity_pipeline(&sd->entity),
-			     struct ipu_isys_pipeline, pipe);
+		to_ipu_isys_pipeline(media_entity_pipeline(&sd->entity));
 	struct ipu_isys_csi2_config *cfg;
 	struct v4l2_subdev *ext_sd;
 	struct ipu_isys_csi2_timing timing = {0};
@@ -322,17 +325,16 @@ static int csi2_link_validate(struct media_link *link)
 
 	if (!link->sink->entity || !link->source->entity)
 		return -EINVAL;
-	csi2 =
-	    to_ipu_isys_csi2(media_entity_to_v4l2_subdev(link->sink->entity));
 	media_pipe = media_entity_pipeline(link->sink->entity);
 	if (!media_pipe)
 		return -EINVAL;
+	csi2 =
+	    to_ipu_isys_csi2(media_entity_to_v4l2_subdev(link->sink->entity));
 
 	ip = to_ipu_isys_pipeline(media_pipe);
 	csi2->receiver_errors = 0;
 	ip->csi2 = csi2;
 	ipu_isys_video_add_capture_done(ip, csi2_capture_done);
-
 	rval = v4l2_subdev_link_validate(link);
 	if (rval)
 		return rval;
@@ -399,8 +401,7 @@ static int __subdev_link_validate(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_format *sink_fmt)
 {
 	struct ipu_isys_pipeline *ip =
-		container_of(media_entity_pipeline(&sd->entity),
-			     struct ipu_isys_pipeline, pipe);
+		to_ipu_isys_pipeline(media_entity_pipeline(&sd->entity));
 
 	if (source_fmt->format.field == V4L2_FIELD_ALTERNATE)
 		ip->interlaced = true;
