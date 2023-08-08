@@ -180,6 +180,9 @@ enum ds5_mux_pad {
 #define DS5_START_MAX_TIME	1000
 #define DS5_START_MAX_COUNT	(DS5_START_MAX_TIME / DS5_START_POLL_TIME)
 
+#define MAX_D457_COUNT      4
+#define D457_MAX_SUBSTREAM  6
+
 /* DFU definition section */
 #define DFU_MAGIC_NUMBER "/0x01/0x02/0x03/0x04"
 #define DFU_BLOCK_SIZE 1024
@@ -659,57 +662,54 @@ static int ds5_raw_read(struct ds5 *state, u16 reg, void *val, size_t val_len)
 
 static int pad_to_substream[DS5_MUX_PAD_COUNT];
 
-static s64 d4xx_query_sub_stream[] = {
-	0, 0, 0, 0, 0, 0
-};
+static s64 d4xx_query_sub_stream[MAX_D457_COUNT][D457_MAX_SUBSTREAM] = {0};
 
-static void set_sub_stream_fmt(int index, u32 code)
+static void set_sub_stream_fmt(s64 *query_sub_stream, int index, u32 code)
 {
-	d4xx_query_sub_stream[index] &= 0xFFFFFFFFFFFF0000;
-	d4xx_query_sub_stream[index] |= code;
+	query_sub_stream[index] &= 0xFFFFFFFFFFFF0000;
+	query_sub_stream[index] |= code;
 }
 
-static void set_sub_stream_h(int index, u32 height)
+static void set_sub_stream_h(s64 *query_sub_stream, int index, u32 height)
 {
 	s64 val = height;
 
 	val &= 0xFFFF;
-	d4xx_query_sub_stream[index] &= 0xFFFFFFFF0000FFFF;
-	d4xx_query_sub_stream[index] |= val << 16;
+	query_sub_stream[index] &= 0xFFFFFFFF0000FFFF;
+	query_sub_stream[index] |= val << 16;
 }
 
-static void set_sub_stream_w(int index, u32 width)
+static void set_sub_stream_w(s64 *query_sub_stream, int index, u32 width)
 {
 	s64 val = width;
 
 	val &= 0xFFFF;
-	d4xx_query_sub_stream[index] &= 0xFFFF0000FFFFFFFF;
-	d4xx_query_sub_stream[index] |= val << 32;
+	query_sub_stream[index] &= 0xFFFF0000FFFFFFFF;
+	query_sub_stream[index] |= val << 32;
 }
 
-static void set_sub_stream_dt(int index, u32 dt)
+static void set_sub_stream_dt(s64 *query_sub_stream, int index, u32 dt)
 {
 	s64 val = dt;
 
 	val &= 0xFF;
-	d4xx_query_sub_stream[index] &= 0xFF00FFFFFFFFFFFF;
-	d4xx_query_sub_stream[index] |= val << 48;
+	query_sub_stream[index] &= 0xFF00FFFFFFFFFFFF;
+	query_sub_stream[index] |= val << 48;
 }
 
-static void set_sub_stream_vc_id(int index, u32 vc_id)
+static void set_sub_stream_vc_id(s64 *query_sub_stream, int index, u32 vc_id)
 {
 	s64 val = vc_id;
 
 	val &= 0xFF;
-	d4xx_query_sub_stream[index] &= 0x00FFFFFFFFFFFFFF;
-	d4xx_query_sub_stream[index] |= val << 56;
+	query_sub_stream[index] &= 0x00FFFFFFFFFFFFFF;
+	query_sub_stream[index] |= val << 56;
 }
 
-static int get_sub_stream_vc_id(int index)
+static int get_sub_stream_vc_id(s64 *query_sub_stream, int index)
 {
 	s64 val = 0;
-
-	val = d4xx_query_sub_stream[index] >> 56;
+	val = query_sub_stream[index] >> 56;
 	val &= 0xFF;
 	return (int)val;
 }
@@ -1346,11 +1346,11 @@ static int __ds5_sensor_set_fmt(struct ds5 *state, struct ds5_sensor *sensor,
 {
 	struct v4l2_mbus_framefmt *mf;// = &fmt->format;
 	int substream = -1;
-	//unsigned r;
+	s64 *query_sub_stream = NULL;
 
 	dev_dbg(sensor->sd.dev, "%s(): state %p, "
 		"sensor %p, fmt %p, fmt->format %p\n",
-		__func__, state, sensor, fmt,  &fmt->format);
+		__func__, state, sensor, fmt, &fmt->format);
 
 	mf = &fmt->format;
 
@@ -1385,10 +1385,13 @@ static int __ds5_sensor_set_fmt(struct ds5 *state, struct ds5_sensor *sensor,
 	substream = pad_to_substream[sensor->mux_pad];
 
 	if (substream != -1) {
-		set_sub_stream_fmt(substream, mf->code);
-		set_sub_stream_h(substream, mf->height);
-		set_sub_stream_w(substream, mf->width);
-		set_sub_stream_dt(substream, mbus_code_to_mipi(mf->code));
+		query_sub_stream = state->ctrls.query_sub_stream->qmenu_int;
+		if (query_sub_stream) {
+			set_sub_stream_fmt(query_sub_stream, substream, mf->code);
+			set_sub_stream_h(query_sub_stream, substream, mf->height);
+			set_sub_stream_w(query_sub_stream, substream, mf->width);
+			set_sub_stream_dt(query_sub_stream, substream, mbus_code_to_mipi(mf->code));
+		}
 	}
 
 	dev_info(sensor->sd.dev, "%s(): fmt->pad: %d, sensor->mux_pad: %d, code: 0x%x, %ux%u substream:%d\n", __func__,
@@ -2521,7 +2524,8 @@ static int ds5_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_IPU_QUERY_SUB_STREAM: {
 		if (sensor) {
-			int vc_id = get_sub_stream_vc_id(pad_to_substream[sensor->mux_pad]);
+			int vc_id = get_sub_stream_vc_id(state->ctrls.query_sub_stream->qmenu_int,
+							pad_to_substream[sensor->mux_pad]);
 
 			dev_dbg(sensor->sd.dev,
 				"%s(): V4L2_CID_IPU_QUERY_SUB_STREAM sensor->mux_pad:%d vc:[%d]\n",
@@ -2773,16 +2777,52 @@ static const struct v4l2_ctrl_config d4xx_controls_link_freq = {
 	.qmenu_int = link_freq_menu_items,
 };
 
-static const struct v4l2_ctrl_config d4xx_controls_q_sub_stream = {
+static const struct v4l2_ctrl_config d4xx_controls_q_sub_stream_a = {
 	.ops = &ds5_ctrl_ops,
 	.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
 	.name = "query virtual channel",
 	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
-	.max = ARRAY_SIZE(d4xx_query_sub_stream) - 1,
+	.max = ARRAY_SIZE(d4xx_query_sub_stream[0]) - 1,
 	.min = 0,
 	.def = 0,
 	.menu_skip_mask = 0,
-	.qmenu_int = d4xx_query_sub_stream,
+	.qmenu_int = d4xx_query_sub_stream[0],
+};
+
+static const struct v4l2_ctrl_config d4xx_controls_q_sub_stream_b = {
+	.ops = &ds5_ctrl_ops,
+	.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+	.name = "query virtual channel",
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.max = ARRAY_SIZE(d4xx_query_sub_stream[1]) - 1,
+	.min = 0,
+	.def = 0,
+	.menu_skip_mask = 0,
+	.qmenu_int = d4xx_query_sub_stream[1],
+};
+
+static const struct v4l2_ctrl_config d4xx_controls_q_sub_stream_c = {
+	.ops = &ds5_ctrl_ops,
+	.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+	.name = "query virtual channel",
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.max = ARRAY_SIZE(d4xx_query_sub_stream[2]) - 1,
+	.min = 0,
+	.def = 0,
+	.menu_skip_mask = 0,
+	.qmenu_int = d4xx_query_sub_stream[2],
+};
+
+static const struct v4l2_ctrl_config d4xx_controls_q_sub_stream_d = {
+	.ops = &ds5_ctrl_ops,
+	.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+	.name = "query virtual channel",
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.max = ARRAY_SIZE(d4xx_query_sub_stream[3]) - 1,
+	.min = 0,
+	.def = 0,
+	.menu_skip_mask = 0,
+	.qmenu_int = d4xx_query_sub_stream[3],
 };
 
 static const struct v4l2_ctrl_config d4xx_controls_s_sub_stream = {
@@ -2829,6 +2869,7 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 	struct v4l2_ctrl_handler *hdl = &ctrls->handler;
 	struct v4l2_subdev *sd = &state->mux.sd.subdev;
 	int ret = -1;
+	char d4xx_name;
 	struct ds5_sensor *sensor = NULL;
 
 	switch (sid) {
@@ -2925,7 +2966,31 @@ static int ds5_ctrl_init(struct ds5 *state, int sid)
 	if (ctrls->link_freq)
 	    ctrls->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	ctrls->query_sub_stream = v4l2_ctrl_new_custom(hdl, &d4xx_controls_q_sub_stream, sensor);
+	d4xx_name = (sd->name)[strlen(sd->name)-1];
+	dev_info(sd->dev, "%s(): d4xx_name is %c\n", __func__, d4xx_name);
+	switch (d4xx_name) {
+	case 'a':
+		ctrls->query_sub_stream = v4l2_ctrl_new_custom(hdl, &d4xx_controls_q_sub_stream_a, sensor);
+		break;
+
+	case 'b':
+		ctrls->query_sub_stream = v4l2_ctrl_new_custom(hdl, &d4xx_controls_q_sub_stream_b, sensor);
+		break;
+
+	case 'c':
+		ctrls->query_sub_stream = v4l2_ctrl_new_custom(hdl, &d4xx_controls_q_sub_stream_c, sensor);
+		break;
+
+	case 'd':
+		ctrls->query_sub_stream = v4l2_ctrl_new_custom(hdl, &d4xx_controls_q_sub_stream_d, sensor);
+		break;
+
+	default:
+		dev_err(state->rgb.sensor.sd.dev,
+		"%s():!! can not get d4xx_controls_q_sub_stream: sd->name is %s\n",
+		__func__, __LINE__, sd->name);
+		break;
+	}
 	ctrls->query_sub_stream->flags |=
 				V4L2_CTRL_FLAG_VOLATILE | V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
 
@@ -3333,7 +3398,7 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	struct v4l2_mbus_framefmt *ffmt;
 	struct ds5_sensor *sensor = state->mux.last_set;
 	u32 pad = sensor->mux_pad;
-	// u32 pad = fmt->pad;
+	s64 *query_sub_stream = NULL;
 	int ret = 0;
 	int substream = -1;
 	if (pad != DS5_MUX_PAD_EXTERNAL)
@@ -3365,10 +3430,13 @@ static int ds5_mux_set_fmt(struct v4l2_subdev *sd,
 	substream = pad_to_substream[pad];
 
 	if (substream != -1) {
-		set_sub_stream_fmt(substream, ffmt->code);
-		set_sub_stream_h(substream, ffmt->height);
-		set_sub_stream_w(substream, ffmt->width);
-		set_sub_stream_dt(substream, mbus_code_to_mipi(ffmt->code));
+		query_sub_stream = state->ctrls.query_sub_stream->qmenu_int;
+		if (query_sub_stream) {
+			set_sub_stream_fmt(query_sub_stream, substream, ffmt->code);
+			set_sub_stream_h(query_sub_stream, substream, ffmt->height);
+			set_sub_stream_w(query_sub_stream, substream, ffmt->width);
+			set_sub_stream_dt(query_sub_stream, substream, mbus_code_to_mipi(ffmt->code));
+		}
 	}
 
 	dev_info(sd->dev, "%s(): fmt->pad:%d, sensor->mux_pad: %d, \
@@ -3510,25 +3578,31 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 	unsigned int i = 0;
 	int restore_val = 0;
 	u16 config_status_base, stream_status_base, stream_id, vc_id;
+	struct ds5_sensor *sensor;
+
 	// spare duplicate calls
 	if (state->mux.last_set->streaming == on)
 		return 0;
 	if (state->is_depth) {
+		sensor = &state->depth.sensor;
 		config_status_base = DS5_DEPTH_CONFIG_STATUS;
 		stream_status_base = DS5_DEPTH_STREAM_STATUS;
 		stream_id = DS5_STREAM_DEPTH;
 		vc_id = 0;
 	} else if (state->is_rgb) {
+		sensor = &state->rgb.sensor;
 		config_status_base = DS5_RGB_CONFIG_STATUS;
 		stream_status_base = DS5_RGB_STREAM_STATUS;
 		stream_id = DS5_STREAM_RGB;
 		vc_id = 1;
 	} else if (state->is_y8) {
+		sensor = &state->motion_t.sensor;
 		config_status_base = DS5_IR_CONFIG_STATUS;
 		stream_status_base = DS5_IR_STREAM_STATUS;
 		stream_id = DS5_STREAM_IR;
 		vc_id = 2;
 	} else if (state->is_imu) {
+		sensor = &state->imu.sensor;
 		config_status_base = DS5_IMU_CONFIG_STATUS;
 		stream_status_base = DS5_IMU_STREAM_STATUS;
 		stream_id = DS5_STREAM_IMU;
@@ -3542,6 +3616,7 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 
 	restore_val = state->mux.last_set->streaming;
 	state->mux.last_set->streaming = on;
+	sensor->streaming = on;
 
 	if (on) {
 
@@ -3583,7 +3658,11 @@ static int ds5_mux_s_stream(struct v4l2_subdev *sd, int on)
 		if (ret < 0)
 			goto restore_s_state;
 
-		d4xx_reset_oneshot(state);
+		if (!state->depth.sensor.streaming
+			&& !state->rgb.sensor.streaming
+			&& !state->motion_t.sensor.streaming
+			&& !state->imu.sensor.streaming)
+			d4xx_reset_oneshot(state);
 	}
 
 	ds5_read(state, config_status_base, &status);
@@ -3605,6 +3684,7 @@ restore_s_state:
 			ds5_get_sensor_name(state), restore_val, status);
 
 	state->mux.last_set->streaming = restore_val;
+	sensor->streaming = restore_val;
 
 	return ret;
 }
@@ -4485,7 +4565,7 @@ static int ds5_chrdev_remove(struct ds5 *state)
 
 static void ds5_substream_init(void)
 {
-	int i;
+	int i, j;
 
 	/*
 	 * 0, vc 0, depth
@@ -4495,42 +4575,44 @@ static void ds5_substream_init(void)
 	 * 4, vc 2, IR
 	 * 5, vc 3, IMU
 	 */
-	set_sub_stream_fmt(0, MEDIA_BUS_FMT_UYVY8_1X16);
-	set_sub_stream_h(0, 480);
-	set_sub_stream_w(0, 640);
-	set_sub_stream_dt(0, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
-	set_sub_stream_vc_id(0, 0);
+	for (j = 0; j < MAX_D457_COUNT; j++) {
+		set_sub_stream_fmt(d4xx_query_sub_stream[j], 0, MEDIA_BUS_FMT_UYVY8_1X16);
+		set_sub_stream_h(d4xx_query_sub_stream[j], 0, 480);
+		set_sub_stream_w(d4xx_query_sub_stream[j], 0, 640);
+		set_sub_stream_dt(d4xx_query_sub_stream[j], 0, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
+		set_sub_stream_vc_id(d4xx_query_sub_stream[j], 0, 0);
 
-	set_sub_stream_fmt(1, MEDIA_BUS_FMT_SGRBG8_1X8);
-	set_sub_stream_h(1, 1);
-	set_sub_stream_w(1, 68);
-	set_sub_stream_dt(1, MIPI_CSI2_TYPE_EMBEDDED8);
-	set_sub_stream_vc_id(1, 0);
+		set_sub_stream_fmt(d4xx_query_sub_stream[j], 1, MEDIA_BUS_FMT_SGRBG8_1X8);
+		set_sub_stream_h(d4xx_query_sub_stream[j], 1, 1);
+		set_sub_stream_w(d4xx_query_sub_stream[j], 1, 68);
+		set_sub_stream_dt(d4xx_query_sub_stream[j], 1, MIPI_CSI2_TYPE_EMBEDDED8);
+		set_sub_stream_vc_id(d4xx_query_sub_stream[j], 1, 0);
 
-	/*RGB*/
-	set_sub_stream_fmt(2, MEDIA_BUS_FMT_YUYV8_1X16);
-	set_sub_stream_h(2, 640);
-	set_sub_stream_w(2, 480);
-	set_sub_stream_dt(2, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
-	set_sub_stream_vc_id(2, 1);
+		/*RGB*/
+		set_sub_stream_fmt(d4xx_query_sub_stream[j], 2, MEDIA_BUS_FMT_YUYV8_1X16);
+		set_sub_stream_h(d4xx_query_sub_stream[j], 2, 640);
+		set_sub_stream_w(d4xx_query_sub_stream[j], 2, 480);
+		set_sub_stream_dt(d4xx_query_sub_stream[j], 2, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
+		set_sub_stream_vc_id(d4xx_query_sub_stream[j], 2, 1);
 
-	set_sub_stream_fmt(3, MEDIA_BUS_FMT_SGRBG8_1X8);
-	set_sub_stream_h(3, 1);
-	set_sub_stream_w(3, 68);
-	set_sub_stream_dt(3, MIPI_CSI2_TYPE_EMBEDDED8);
-	set_sub_stream_vc_id(3, 1);
-	/*IR*/
-	set_sub_stream_fmt(4, MEDIA_BUS_FMT_UYVY8_1X16);
-	set_sub_stream_h(4, 640);
-	set_sub_stream_w(4, 480);
-	set_sub_stream_dt(4, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
-	set_sub_stream_vc_id(4, 2);
+		set_sub_stream_fmt(d4xx_query_sub_stream[j], 3, MEDIA_BUS_FMT_SGRBG8_1X8);
+		set_sub_stream_h(d4xx_query_sub_stream[j], 3, 1);
+		set_sub_stream_w(d4xx_query_sub_stream[j], 3, 68);
+		set_sub_stream_dt(d4xx_query_sub_stream[j], 3, MIPI_CSI2_TYPE_EMBEDDED8);
+		set_sub_stream_vc_id(d4xx_query_sub_stream[j], 3, 1);
+		/*IR*/
+		set_sub_stream_fmt(d4xx_query_sub_stream[j], 4, MEDIA_BUS_FMT_UYVY8_1X16);
+		set_sub_stream_h(d4xx_query_sub_stream[j], 4, 640);
+		set_sub_stream_w(d4xx_query_sub_stream[j], 4, 480);
+		set_sub_stream_dt(d4xx_query_sub_stream[j], 4, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
+		set_sub_stream_vc_id(d4xx_query_sub_stream[j], 4, 2);
 
-	set_sub_stream_fmt(5, MEDIA_BUS_FMT_UYVY8_1X16);
-	set_sub_stream_h(5, 640);
-	set_sub_stream_w(5, 480);
-	set_sub_stream_dt(5, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
-	set_sub_stream_vc_id(5, 3);
+		set_sub_stream_fmt(d4xx_query_sub_stream[j], 5, MEDIA_BUS_FMT_UYVY8_1X16);
+		set_sub_stream_h(d4xx_query_sub_stream[j], 5, 640);
+		set_sub_stream_w(d4xx_query_sub_stream[j], 5, 480);
+		set_sub_stream_dt(d4xx_query_sub_stream[j], 5, mbus_code_to_mipi(MEDIA_BUS_FMT_UYVY8_1X16));
+		set_sub_stream_vc_id(d4xx_query_sub_stream[j], 5, 3);
+	}
 
 	for (i = 0; i < DS5_MUX_PAD_COUNT; i++)
 		pad_to_substream[i] = -1;
