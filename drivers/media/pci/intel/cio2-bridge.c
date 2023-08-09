@@ -44,11 +44,15 @@ static const struct cio2_sensor_config cio2_supported_sensors[] = {
 	CIO2_SENSOR_CONFIG("INT3537", 0, 0),
 	/* Himax hm2170 */
 	CIO2_SENSOR_CONFIG("HIMX2170", 0, 0),
+	/* Himax hm2172 */
+	CIO2_SENSOR_CONFIG("HIMX2172", 0, 0),
 	/* Himax hm11b1 */
 	CIO2_SENSOR_CONFIG("HIMX11B1", 0, 0),
 	/* Omnivision ov13b10 */
-	CIO2_SENSOR_CONFIG("OVTIDB10", 0, 0),
-	CIO2_SENSOR_CONFIG("OVTI13B1", 0, 0),
+	CIO2_SENSOR_CONFIG("OVTIDB10", 1, 560000000),
+	CIO2_SENSOR_CONFIG("OVTI13B1", 1, 560000000),
+	/* Omnivision ov08a10 */
+	CIO2_SENSOR_CONFIG("OVTI08A1", 0, 0),
 };
 
 static const struct cio2_property_names prop_names = {
@@ -221,6 +225,20 @@ static void cio2_bridge_init_swnode_names(struct cio2_sensor *sensor)
 		 SWNODE_GRAPH_ENDPOINT_NAME_FMT, 0); /* And endpoint 0 */
 }
 
+static void cio2_bridge_init_swnode_group(struct cio2_sensor *sensor)
+{
+	struct software_node *nodes = sensor->swnodes;
+
+	sensor->group[SWNODE_SENSOR_HID] = &nodes[SWNODE_SENSOR_HID];
+	sensor->group[SWNODE_SENSOR_PORT] = &nodes[SWNODE_SENSOR_PORT];
+	sensor->group[SWNODE_SENSOR_ENDPOINT] = &nodes[SWNODE_SENSOR_ENDPOINT];
+	sensor->group[SWNODE_CIO2_PORT] = &nodes[SWNODE_CIO2_PORT];
+	sensor->group[SWNODE_CIO2_ENDPOINT] = &nodes[SWNODE_CIO2_ENDPOINT];
+	if (sensor->ssdb.vcmtype &&
+	    sensor->ssdb.vcmtype <= ARRAY_SIZE(cio2_vcm_types))
+		sensor->group[SWNODE_VCM] = &nodes[SWNODE_VCM];
+}
+
 static void cio2_bridge_create_connection_swnodes(struct cio2_bridge *bridge,
 						  struct cio2_sensor *sensor)
 {
@@ -254,6 +272,8 @@ static void cio2_bridge_create_connection_swnodes(struct cio2_bridge *bridge,
 			 sensor->ssdb.link);
 		nodes[SWNODE_VCM] = NODE_VCM(vcm_node_name);
 	}
+
+	cio2_bridge_init_swnode_group(sensor);
 }
 
 static void cio2_bridge_instantiate_vcm_i2c_client(struct cio2_sensor *sensor)
@@ -293,7 +313,7 @@ static void cio2_bridge_unregister_sensors(struct cio2_bridge *bridge)
 
 	for (i = 0; i < bridge->n_sensors; i++) {
 		sensor = &bridge->sensors[i];
-		software_node_unregister_nodes(sensor->swnodes);
+		software_node_unregister_node_group(sensor->group);
 		ACPI_FREE(sensor->pld);
 		acpi_dev_put(sensor->adev);
 		i2c_unregister_device(sensor->vcm_i2c_client);
@@ -352,7 +372,7 @@ static int cio2_bridge_connect_sensor(const struct cio2_sensor_config *cfg,
 		cio2_bridge_create_fwnode_properties(sensor, bridge, cfg);
 		cio2_bridge_create_connection_swnodes(bridge, sensor);
 
-		ret = software_node_register_nodes(sensor->swnodes);
+		ret = software_node_register_node_group(sensor->group);
 		if (ret)
 			goto err_free_pld;
 
@@ -379,7 +399,7 @@ static int cio2_bridge_connect_sensor(const struct cio2_sensor_config *cfg,
 	return 0;
 
 err_free_swnodes:
-	software_node_unregister_nodes(sensor->swnodes);
+	software_node_unregister_node_group(sensor->group);
 err_free_pld:
 	ACPI_FREE(sensor->pld);
 err_put_adev:
