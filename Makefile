@@ -36,6 +36,7 @@ export CONFIG_INTEL_VSC = y
 
 export CONFIG_VIDEO_INTEL_IPU6 = m
 export CONFIG_IPU_ISYS_BRIDGE = y
+export CONFIG_IPU_SINGLE_BE_SOC_DEVICE = n
 export CONFIG_INTEL_SKL_INT3472 = m
 obj-y += drivers/media/pci/intel/
 
@@ -46,6 +47,7 @@ export CONFIG_VIDEO_OV01A10 = m
 export CONFIG_VIDEO_OV02C10 = m
 export CONFIG_VIDEO_OV2740 = m
 export CONFIG_VIDEO_HM2170 = m
+export CONFIG_VIDEO_HM2172 = m
 export CONFIG_VIDEO_HI556 = m
 # export CONFIG_POWER_CTRL_LOGIC = m
 obj-y += drivers/media/i2c/
@@ -56,12 +58,15 @@ MODSRC := $(shell pwd)
 
 ccflags-y += -I$(src)/backport-include/drivers/misc/mei/
 
-subdir-ccflags-y += -I$(src)/include/
+subdir-ccflags-y += -I$(src)/include/ \
+	-DCONFIG_VIDEO_V4L2_SUBDEV_API
 
 subdir-ccflags-$(CONFIG_INTEL_VSC) += \
         -DCONFIG_INTEL_VSC
 subdir-ccflags-$(CONFIG_IPU_ISYS_BRIDGE) += \
 	-DCONFIG_IPU_ISYS_BRIDGE
+subdir-ccflags-$(CONFIG_IPU_SINGLE_BE_SOC_DEVICE) += \
+	-DCONFIG_IPU_SINGLE_BE_SOC_DEVICE
 subdir-ccflags-$(CONFIG_INTEL_SKL_INT3472) += \
 	-DCONFIG_INTEL_SKL_INT3472
 subdir-ccflags-$(CONFIG_POWER_CTRL_LOGIC) += \

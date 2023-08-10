@@ -615,6 +615,8 @@ struct hm2170 {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
 #if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
 #endif
 	/* Current mode */
@@ -860,7 +862,8 @@ static int hm2170_init_controls(struct hm2170 *hm2170)
 		hm2170->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 	hm2170->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &hm2170_ctrl_ops,
-								V4L2_CID_PRIVACY, 0, 1, 1, 0);
+						   V4L2_CID_PRIVACY, 0, 1, 1,
+						   !(hm2170->status.status));
 #endif
 
 	v4l2_ctrl_new_std(ctrl_hdlr, &hm2170_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
@@ -911,21 +914,7 @@ static int hm2170_start_streaming(struct hm2170 *hm2170)
 	struct i2c_client *client = v4l2_get_subdevdata(&hm2170->sd);
 	const struct hm2170_reg_list *reg_list;
 	int ret = 0;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
 
-	conf.lane_num = HM2170_DATA_LANES;
-	/* frequency unit 100k */
-	conf.freq = HM2170_LINK_FREQ_384MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&conf, hm2170_vsc_privacy_callback,
-					hm2170, &status);
-	if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed");
-		return ret;
-	}
-	__v4l2_ctrl_s_ctrl(hm2170->privacy_status, !(status.status));
-#endif
 	reg_list = &hm2170->cur_mode->reg_list;
 	ret = hm2170_write_reg_list(hm2170, reg_list);
 	if (ret) {
@@ -948,17 +937,10 @@ static int hm2170_start_streaming(struct hm2170 *hm2170)
 static void hm2170_stop_streaming(struct hm2170 *hm2170)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&hm2170->sd);
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_camera_status status;
-#endif
 
 	if (hm2170_write_reg(hm2170, HM2170_REG_MODE_SELECT, 1,
 			     HM2170_MODE_STANDBY))
 		dev_err(&client->dev, "failed to stop streaming");
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	if (vsc_release_camera_sensor(&status))
-		dev_err(&client->dev, "Release VSC failed");
-#endif
 }
 
 static int hm2170_set_stream(struct v4l2_subdev *sd, int enable)
@@ -995,6 +977,42 @@ static int hm2170_set_stream(struct v4l2_subdev *sd, int enable)
 
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+static int hm2170_power_off(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct hm2170 *hm2170 = to_hm2170(sd);
+	int ret;
+
+	ret = vsc_release_camera_sensor(&hm2170->status);
+	if (ret && ret != -EAGAIN)
+		dev_err(dev, "Release VSC failed");
+
+	return ret;
+}
+
+static int hm2170_power_on(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct hm2170 *hm2170 = to_hm2170(sd);
+	int ret;
+
+	hm2170->conf.lane_num = HM2170_DATA_LANES;
+	/* frequency unit 100k */
+	hm2170->conf.freq = HM2170_LINK_FREQ_384MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&hm2170->conf,
+					hm2170_vsc_privacy_callback,
+					hm2170, &hm2170->status);
+	if (ret && ret != -EAGAIN) {
+		dev_err(dev, "Acquire VSC failed");
+		return ret;
+	}
+	__v4l2_ctrl_s_ctrl(hm2170->privacy_status, !(hm2170->status.status));
+
+	return ret;
+}
+#endif
 
 static int __maybe_unused hm2170_suspend(struct device *dev)
 {
@@ -1206,24 +1224,7 @@ static int hm2170_probe(struct i2c_client *client)
 {
 	struct hm2170 *hm2170;
 	int ret = 0;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
-#endif
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	conf.lane_num = HM2170_DATA_LANES;
-	/* frequency unit 100k */
-	conf.freq = HM2170_LINK_FREQ_384MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
-	if (ret == -EAGAIN) {
-		dev_dbg(&client->dev, "VSC not ready, will re-probe");
-		return -EPROBE_DEFER;
-	} else if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed");
-		return ret;
-	}
-#endif
 	hm2170 = devm_kzalloc(&client->dev, sizeof(*hm2170), GFP_KERNEL);
 	if (!hm2170) {
 		ret = -ENOMEM;
@@ -1231,6 +1232,21 @@ static int hm2170_probe(struct i2c_client *client)
 	}
 
 	v4l2_i2c_subdev_init(&hm2170->sd, client, &hm2170_subdev_ops);
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	hm2170->conf.lane_num = HM2170_DATA_LANES;
+	/* frequency unit 100k */
+	hm2170->conf.freq = HM2170_LINK_FREQ_384MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&hm2170->conf,
+					hm2170_vsc_privacy_callback,
+					hm2170, &hm2170->status);
+	if (ret == -EAGAIN) {
+		return -EPROBE_DEFER;
+	} else if (ret) {
+		dev_err(&client->dev, "Acquire VSC failed");
+		return ret;
+	}
+#endif
+
 	ret = hm2170_identify_module(hm2170);
 	if (ret) {
 		dev_err(&client->dev, "failed to find sensor: %d", ret);
@@ -1263,9 +1279,6 @@ static int hm2170_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	vsc_release_camera_sensor(&status);
-#endif
 	/*
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
@@ -1285,13 +1298,17 @@ probe_error_v4l2_ctrl_handler_free:
 
 probe_error_ret:
 #if IS_ENABLED(CONFIG_INTEL_VSC)
-	vsc_release_camera_sensor(&status);
+	hm2170_power_off(&client->dev);
 #endif
+
 	return ret;
 }
 
 static const struct dev_pm_ops hm2170_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(hm2170_suspend, hm2170_resume)
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	SET_RUNTIME_PM_OPS(hm2170_power_off, hm2170_power_on, NULL)
+#endif
 };
 
 static const struct acpi_device_id hm2170_acpi_ids[] = {

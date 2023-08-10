@@ -113,9 +113,9 @@ void ipu_internal_pdata_init(void);
 int cio2_bridge_init(struct pci_dev *cio2);
 #endif
 
-/* Helpers for building against various kernel versions */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 #include <media/media-entity.h>
+/* Helpers for building against various kernel versions */
 static inline struct media_pipeline *media_entity_pipeline(struct media_entity *entity)
 {
 	return entity->pipe;

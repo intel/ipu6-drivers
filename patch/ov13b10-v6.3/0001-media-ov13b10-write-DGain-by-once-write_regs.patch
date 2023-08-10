@@ -1,0 +1,77 @@
+From b45b3d5d34a201c4d866bc1fe577eade3d790b2f Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Wed, 19 Apr 2023 14:21:04 +0800
+Subject: [PATCH 1/2] media: ov13b10: write DGain by once write_regs
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/i2c/ov13b10.c | 39 +++----------------------------------
+ 1 file changed, 3 insertions(+), 36 deletions(-)
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index a6ac53e4fd89..d7317e1e7f3f 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -59,13 +59,6 @@
+ #define OV13B10_DGTL_GAIN_DEFAULT	2560	     /* Default gain = 2.5 X */
+ #define OV13B10_DGTL_GAIN_STEP		1	     /* Each step = 1/1024 */
+ 
+-#define OV13B10_DGTL_GAIN_L_SHIFT	6
+-#define OV13B10_DGTL_GAIN_L_MASK	0x3
+-#define OV13B10_DGTL_GAIN_M_SHIFT	2
+-#define OV13B10_DGTL_GAIN_M_MASK	0xff
+-#define OV13B10_DGTL_GAIN_H_SHIFT	10
+-#define OV13B10_DGTL_GAIN_H_MASK	0x3
+-
+ /* Test Pattern Control */
+ #define OV13B10_REG_TEST_PATTERN	0x5080
+ #define OV13B10_TEST_PATTERN_ENABLE	BIT(7)
+@@ -720,34 +713,6 @@ static int ov13b10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
+ 	return 0;
+ }
+ 
+-static int ov13b10_update_digital_gain(struct ov13b10 *ov13b, u32 d_gain)
+-{
+-	int ret;
+-	u32 val;
+-
+-	/*
+-	 * 0x350C[7:6], 0x350B[7:0], 0x350A[1:0]
+-	 */
+-
+-	val = (d_gain & OV13B10_DGTL_GAIN_L_MASK) << OV13B10_DGTL_GAIN_L_SHIFT;
+-	ret = ov13b10_write_reg(ov13b, OV13B10_REG_DGTL_GAIN_L,
+-				OV13B10_REG_VALUE_08BIT, val);
+-	if (ret)
+-		return ret;
+-
+-	val = (d_gain >> OV13B10_DGTL_GAIN_M_SHIFT) & OV13B10_DGTL_GAIN_M_MASK;
+-	ret = ov13b10_write_reg(ov13b, OV13B10_REG_DGTL_GAIN_M,
+-				OV13B10_REG_VALUE_08BIT, val);
+-	if (ret)
+-		return ret;
+-
+-	val = (d_gain >> OV13B10_DGTL_GAIN_H_SHIFT) & OV13B10_DGTL_GAIN_H_MASK;
+-	ret = ov13b10_write_reg(ov13b, OV13B10_REG_DGTL_GAIN_H,
+-				OV13B10_REG_VALUE_08BIT, val);
+-
+-	return ret;
+-}
+-
+ static int ov13b10_enable_test_pattern(struct ov13b10 *ov13b, u32 pattern)
+ {
+ 	int ret;
+@@ -866,7 +831,9 @@ static int ov13b10_set_ctrl(struct v4l2_ctrl *ctrl)
+ 					ctrl->val << 1);
+ 		break;
+ 	case V4L2_CID_DIGITAL_GAIN:
+-		ret = ov13b10_update_digital_gain(ov13b, ctrl->val);
++		ret = ov13b10_write_reg(ov13b, OV13B10_REG_DGTL_GAIN_H,
++					OV13B10_REG_VALUE_24BIT,
++					ctrl->val << 6);
+ 		break;
+ 	case V4L2_CID_EXPOSURE:
+ 		ret = ov13b10_write_reg(ov13b, OV13B10_REG_EXPOSURE,
+-- 
+2.34.1
+

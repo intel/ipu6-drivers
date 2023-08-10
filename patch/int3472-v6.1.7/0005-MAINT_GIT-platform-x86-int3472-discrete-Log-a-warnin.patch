@@ -1,0 +1,54 @@
+From f317447e42b2f6c664d4799725beb0d32bbca39b Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 16 Jun 2023 19:21:32 +0200
+Subject: [PATCH 5/8] MAINT_GIT: platform/x86: int3472: discrete: Log a warning
+ if the pin-numbers don't match
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The INT3472 discrete code assumes that the ACPI GPIO resources are
+in the same order as the pin-info _DSM entries.
+
+The returned pin-info includes the pin-number in bits 15-8. Add a check
+that this matches with the ACPI GPIO resource pin-number in case
+the assumption is not true with some ACPI tables.
+
+Reviewed-by: Daniel Scally <dan.scally@ideasonboard.com>
+Reviewed-by: Ilpo Järvinen <ilpo.jarvinen@linux.intel.com>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Link: https://lore.kernel.org/r/20230616172132.37859-7-hdegoede@redhat.com
+---
+ drivers/platform/x86/intel/int3472/discrete.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/platform/x86/intel/int3472/discrete.c b/drivers/platform/x86/intel/int3472/discrete.c
+index 557517f43ede..e33c2d75975c 100644
+--- a/drivers/platform/x86/intel/int3472/discrete.c
++++ b/drivers/platform/x86/intel/int3472/discrete.c
+@@ -154,8 +154,8 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
+ {
+ 	struct int3472_discrete_device *int3472 = data;
+ 	struct acpi_resource_gpio *agpio;
++	u8 active_value, pin, type;
+ 	union acpi_object *obj;
+-	u8 active_value, type;
+ 	const char *err_msg;
+ 	const char *func;
+ 	u32 polarity;
+@@ -183,6 +183,12 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
+ 
+ 	int3472_get_func_and_polarity(type, &func, &polarity);
+ 
++	pin = FIELD_GET(INT3472_GPIO_DSM_PIN, obj->integer.value);
++	if (pin != agpio->pin_table[0])
++		dev_warn(int3472->dev, "%s %s pin number mismatch _DSM %d resource %d\n",
++			 func, agpio->resource_source.string_ptr, pin,
++			 agpio->pin_table[0]);
++
+ 	active_value = FIELD_GET(INT3472_GPIO_DSM_SENSOR_ON_VAL, obj->integer.value);
+ 	if (!active_value)
+ 		polarity ^= GPIO_ACTIVE_LOW;
+-- 
+2.34.1
+

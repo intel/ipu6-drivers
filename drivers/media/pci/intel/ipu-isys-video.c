@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2023 Intel Corporation
 
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -35,6 +35,11 @@
 #include "ipu-fw-isys.h"
 #include "ipu-fw-com.h"
 
+#define IPU_IS_DEFAULT_FREQ	\
+	(IPU_IS_FREQ_RATIO_BASE * IPU_IS_FREQ_CTL_DEFAULT_RATIO)
+#define IPU6SE_IS_DEFAULT_FREQ	\
+	(IPU_IS_FREQ_RATIO_BASE * IPU6SE_IS_FREQ_CTL_DEFAULT_RATIO)
+
 /* use max resolution pixel rate by default */
 #define DEFAULT_PIXEL_RATE	(360000000ULL * 2 * 4 / 10)
 
@@ -59,6 +64,8 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_NV16, 16, 16, 8, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_NV16},
 	{V4L2_PIX_FMT_XRGB32, 32, 32, 0, MEDIA_BUS_FMT_RGB565_1X16,
+	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
+	{V4L2_PIX_FMT_Y12I, 24, 24, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
 	{V4L2_PIX_FMT_XBGR32, 32, 32, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
@@ -642,6 +649,21 @@ static int link_validate(struct media_link *link)
 	return 0;
 }
 
+static void set_buttress_isys_freq(struct ipu_isys_video *av, bool max)
+{
+	struct ipu_device *isp = av->isys->adev->isp;
+
+	if (max) {
+		ipu_buttress_isys_freq_set(isp, BUTTRESS_MAX_FORCE_IS_FREQ);
+	} else {
+		if (ipu_ver == IPU_VER_6SE)
+			ipu_buttress_isys_freq_set(isp, IPU6SE_IS_DEFAULT_FREQ);
+		else
+			ipu_buttress_isys_freq_set(isp, IPU_IS_DEFAULT_FREQ);
+	}
+
+}
+
 static void get_stream_opened(struct ipu_isys_video *av)
 {
 	unsigned long flags;
@@ -650,6 +672,8 @@ static void get_stream_opened(struct ipu_isys_video *av)
 	av->isys->stream_opened++;
 	spin_unlock_irqrestore(&av->isys->lock, flags);
 
+	if (av->isys->stream_opened > 1)
+		set_buttress_isys_freq(av, true);
 }
 
 static void put_stream_opened(struct ipu_isys_video *av)
@@ -660,6 +684,8 @@ static void put_stream_opened(struct ipu_isys_video *av)
 	av->isys->stream_opened--;
 	spin_unlock_irqrestore(&av->isys->lock, flags);
 
+	if (av->isys->stream_opened <= 1)
+		set_buttress_isys_freq(av, false);
 }
 
 static int get_stream_handle(struct ipu_isys_video *av)
@@ -1076,7 +1102,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	struct media_pad *source_pad = media_pad_remote_pad_first(&av->pad);
 #endif
 	struct ipu_fw_isys_cropping_abi *crop;
-	enum ipu_fw_isys_send_type send_type;
 	int rval, rvalout, tout;
 
 	rval = get_external_facing_format(ip, &source_fmt);
@@ -1227,22 +1252,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	if (bl) {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
-		ipu_fw_isys_dump_frame_buff_set(dev, buf,
-						stream_cfg->nof_output_pins);
-		rval = ipu_fw_isys_complex_cmd(av->isys,
-					       ip->stream_handle,
-					       buf, to_dma_addr(msg),
-					       sizeof(*buf),
-					       send_type);
-	} else {
-		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
-		rval = ipu_fw_isys_simple_cmd(av->isys,
-					      ip->stream_handle,
-					      send_type);
-	}
-
+	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
+				      IPU_FW_ISYS_SEND_TYPE_STREAM_START);
 	if (rval < 0) {
 		dev_err(dev, "can't start streaming (%d)\n", rval);
 		goto out_stream_close;
@@ -1260,7 +1271,18 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		rval = -EIO;
 		goto out_stream_close;
 	}
-	dev_dbg(dev, "start stream: complete\n");
+
+	if (!bl)
+		return 0;
+
+	ipu_fw_isys_dump_frame_buff_set(dev, buf, stream_cfg->nof_output_pins);
+	rval = ipu_fw_isys_complex_cmd(av->isys, ip->stream_handle, buf,
+				       to_dma_addr(msg), sizeof(*buf),
+				       IPU_FW_ISYS_SEND_TYPE_STREAM_CAPTURE);
+	if (rval < 0) {
+		dev_err(dev, "can't queue buffers (%d)\n", rval);
+		goto out_stream_close;
+	}
 
 	return 0;
 
@@ -1402,10 +1424,10 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 		if (ip->interlaced && isys->short_packet_source ==
 		    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 			short_packet_queue_destroy(ip);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-		media_pipeline_stop(av->vdev.entity.pads);
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 		media_pipeline_stop(&av->vdev.entity);
+#else
+		media_pipeline_stop(av->vdev.entity.pads);
 #endif
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;
@@ -1432,18 +1454,16 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->interlaced = false;
 
 	rval = media_entity_enum_init(&ip->entity_enum, mdev);
-	if (rval) {
-		dev_err(dev, "entity enum init failed\n");
+	if (rval)
 		return rval;
-	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-	rval = media_pipeline_start(av->vdev.entity.pads, &ip->pipe);
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	rval = media_pipeline_start(&av->vdev.entity, &ip->pipe);
+#else
+	rval = media_pipeline_start(av->vdev.entity.pads, &ip->pipe);
 #endif
 	if (rval < 0) {
-		dev_err(dev, "pipeline start failed\n");
+		dev_dbg(dev, "pipeline start failed\n");
 		goto out_enum_cleanup;
 	}
 
@@ -1454,10 +1474,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	rval = media_graph_walk_init(&graph, mdev);
-	if (rval) {
-		dev_err(dev, "graph walk init failed\n");
+	if (rval)
 		goto out_pipeline_stop;
-	}
 
 	/* Gather all entities in the graph. */
 	mutex_lock(&mdev->graph_mutex);
@@ -1484,10 +1502,10 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	return 0;
 
 out_pipeline_stop:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-	media_pipeline_stop(av->vdev.entity.pads);
-#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	media_pipeline_stop(&av->vdev.entity);
+#else
+	media_pipeline_stop(av->vdev.entity.pads);
 #endif
 
 out_enum_cleanup:

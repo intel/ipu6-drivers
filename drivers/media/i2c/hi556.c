@@ -491,6 +491,8 @@ struct hi556 {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
 #if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
 #endif
 
@@ -745,7 +747,8 @@ static int hi556_init_controls(struct hi556 *hi556)
 		hi556->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 	hi556->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &hi556_ctrl_ops,
-								V4L2_CID_PRIVACY, 0, 1, 1, 0);
+						  V4L2_CID_PRIVACY, 0, 1, 1,
+						  !(hi556->status.status));
 #endif
 
 	v4l2_ctrl_new_std(ctrl_hdlr, &hi556_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
@@ -808,7 +811,7 @@ static int hi556_identify_module(struct hi556 *hi556)
 
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 static void hi556_vsc_privacy_callback(void *handle,
-				        enum vsc_privacy_status status)
+				       enum vsc_privacy_status status)
 {
 	struct hi556 *hi556 = handle;
 
@@ -821,21 +824,6 @@ static int hi556_start_streaming(struct hi556 *hi556)
 	struct i2c_client *client = v4l2_get_subdevdata(&hi556->sd);
 	const struct hi556_reg_list *reg_list;
 	int link_freq_index, ret;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
-
-	conf.lane_num = HI556_DATA_LANES;
-	/* frequency unit 100k */
-	conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&conf, hi556_vsc_privacy_callback,
-					hi556, &status);
-	if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed");
-		return ret;
-	}
-	__v4l2_ctrl_s_ctrl(hi556->privacy_status, !(status.status));
-#endif
 
 	ret = hi556_identify_module(hi556);
 	if (ret)
@@ -874,17 +862,10 @@ static int hi556_start_streaming(struct hi556 *hi556)
 static void hi556_stop_streaming(struct hi556 *hi556)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&hi556->sd);
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_camera_status status;
-#endif
 
 	if (hi556_write_reg(hi556, HI556_REG_MODE_SELECT,
 			    HI556_REG_VALUE_16BIT, HI556_MODE_STANDBY))
 		dev_err(&client->dev, "failed to set stream");
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	if (vsc_release_camera_sensor(&status))
-		dev_err(&client->dev, "Release VSC failed");
-#endif
 }
 
 static int hi556_set_stream(struct v4l2_subdev *sd, int enable)
@@ -920,6 +901,42 @@ static int hi556_set_stream(struct v4l2_subdev *sd, int enable)
 
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+static int hi556_power_off(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct hi556 *hi556 = to_hi556(sd);
+	int ret;
+
+	ret = vsc_release_camera_sensor(&hi556->status);
+	if (ret && ret != -EAGAIN)
+		dev_err(dev, "Release VSC failed");
+
+	return ret;
+}
+
+static int hi556_power_on(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct hi556 *hi556 = to_hi556(sd);
+	int ret;
+
+	hi556->conf.lane_num = HI556_DATA_LANES;
+	/* frequency unit 100k */
+	hi556->conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&hi556->conf,
+					hi556_vsc_privacy_callback,
+					hi556, &hi556->status);
+	if (ret && ret != -EAGAIN) {
+		dev_err(dev, "Acquire VSC failed");
+		return ret;
+	}
+	__v4l2_ctrl_s_ctrl(hi556->privacy_status, !(hi556->status.status));
+
+	return ret;
+}
+#endif
 
 static int __maybe_unused hi556_suspend(struct device *dev)
 {
@@ -960,8 +977,12 @@ error:
 }
 
 static int hi556_set_format(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_state *sd_state,
-			    struct v4l2_subdev_format *fmt)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			      struct v4l2_subdev_pad_config *cfg,
+#else
+			      struct v4l2_subdev_state *sd_state,
+#endif
+			      struct v4l2_subdev_format *fmt)
 {
 	struct hi556 *hi556 = to_hi556(sd);
 	const struct hi556_mode *mode;
@@ -975,7 +996,11 @@ static int hi556_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&hi556->mutex);
 	hi556_assign_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#else
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		hi556->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(hi556->link_freq, mode->link_freq_index);
@@ -1002,16 +1027,25 @@ static int hi556_set_format(struct v4l2_subdev *sd,
 }
 
 static int hi556_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			    struct v4l2_subdev_pad_config *cfg,
+#else
 			    struct v4l2_subdev_state *sd_state,
+#endif
 			    struct v4l2_subdev_format *fmt)
 {
 	struct hi556 *hi556 = to_hi556(sd);
 
 	mutex_lock(&hi556->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		fmt->format =
+			*v4l2_subdev_get_try_format(&hi556->sd, cfg, fmt->pad);
+#else
 		fmt->format = *v4l2_subdev_get_try_format(&hi556->sd,
 							  sd_state,
 							  fmt->pad);
+#endif
 	else
 		hi556_assign_pad_format(hi556->cur_mode, &fmt->format);
 
@@ -1021,7 +1055,11 @@ static int hi556_get_format(struct v4l2_subdev *sd,
 }
 
 static int hi556_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				struct v4l2_subdev_pad_config *cfg,
+#else
 				struct v4l2_subdev_state *sd_state,
+#endif
 				struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index > 0)
@@ -1033,7 +1071,11 @@ static int hi556_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int hi556_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				 struct v4l2_subdev_pad_config *cfg,
+#else
 				 struct v4l2_subdev_state *sd_state,
+#endif
 				 struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1055,8 +1097,13 @@ static int hi556_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct hi556 *hi556 = to_hi556(sd);
 
 	mutex_lock(&hi556->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	hi556_assign_pad_format(&supported_modes[0],
+				v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#else
 	hi556_assign_pad_format(&supported_modes[0],
 				v4l2_subdev_get_try_format(sd, fh->state, 0));
+#endif
 	mutex_unlock(&hi556->mutex);
 
 	return 0;
@@ -1086,7 +1133,78 @@ static const struct v4l2_subdev_internal_ops hi556_internal_ops = {
 	.open = hi556_open,
 };
 
+static int __maybe_unused hi556_check_hwcfg(struct device *dev)
+{
+	struct fwnode_handle *ep;
+	struct fwnode_handle *fwnode = dev_fwnode(dev);
+	struct v4l2_fwnode_endpoint bus_cfg = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY
+	};
+	u32 mclk;
+	int ret = 0;
+	unsigned int i, j;
+
+	if (!fwnode)
+		return -ENXIO;
+
+	ret = fwnode_property_read_u32(fwnode, "clock-frequency", &mclk);
+	if (ret) {
+		dev_err(dev, "can't get clock frequency");
+		return ret;
+	}
+
+	if (mclk != HI556_MCLK) {
+		dev_err(dev, "external clock %d is not supported", mclk);
+		return -EINVAL;
+	}
+
+	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (!ep)
+		return -ENXIO;
+
+	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
+	fwnode_handle_put(ep);
+	if (ret)
+		return ret;
+
+	if (bus_cfg.bus.mipi_csi2.num_data_lanes != 2) {
+		dev_err(dev, "number of CSI2 data lanes %d is not supported",
+			bus_cfg.bus.mipi_csi2.num_data_lanes);
+		ret = -EINVAL;
+		goto check_hwcfg_error;
+	}
+
+	if (!bus_cfg.nr_of_link_frequencies) {
+		dev_err(dev, "no link frequencies defined");
+		ret = -EINVAL;
+		goto check_hwcfg_error;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); i++) {
+		for (j = 0; j < bus_cfg.nr_of_link_frequencies; j++) {
+			if (link_freq_menu_items[i] ==
+				bus_cfg.link_frequencies[j])
+				break;
+		}
+
+		if (j == bus_cfg.nr_of_link_frequencies) {
+			dev_err(dev, "no link frequency %lld supported",
+				link_freq_menu_items[i]);
+			ret = -EINVAL;
+			goto check_hwcfg_error;
+		}
+	}
+
+check_hwcfg_error:
+	v4l2_fwnode_endpoint_free(&bus_cfg);
+
+	return ret;
+}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int hi556_remove(struct i2c_client *client)
+#else
 static void hi556_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct hi556 *hi556 = to_hi556(sd);
@@ -1096,36 +1214,23 @@ static void hi556_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&hi556->mutex);
-}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-static int hi556_remove_bp(struct i2c_client *client)
-{
-	hi556_remove(client);
 	return 0;
-}
 #endif
+}
 
 static int hi556_probe(struct i2c_client *client)
 {
 	struct hi556 *hi556;
 	bool full_power;
 	int ret;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	struct vsc_mipi_config conf;
-	struct vsc_camera_status status;
-#endif
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	conf.lane_num = HI556_DATA_LANES;
-	/* frequency unit 100k */
-	conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&conf, NULL, NULL, &status);
-	if (ret == -EAGAIN) {
-		dev_dbg(&client->dev, "VSC not ready, will re-probe");
-		return -EPROBE_DEFER;
-	} else if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed");
+#if !IS_ENABLED(CONFIG_INTEL_VSC)
+	ret = hi556_check_hwcfg(&client->dev);
+	if (ret) {
+		dev_err(&client->dev, "failed to check HW configuration: %d",
+			ret);
 		return ret;
 	}
 #endif
@@ -1137,6 +1242,21 @@ static int hi556_probe(struct i2c_client *client)
 	}
 
 	v4l2_i2c_subdev_init(&hi556->sd, client, &hi556_subdev_ops);
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	hi556->conf.lane_num = HI556_DATA_LANES;
+	/* frequency unit 100k */
+	hi556->conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
+	ret = vsc_acquire_camera_sensor(&hi556->conf,
+					hi556_vsc_privacy_callback,
+					hi556, &hi556->status);
+	if (ret == -EAGAIN) {
+		return -EPROBE_DEFER;
+	} else if (ret) {
+		dev_err(&client->dev, "Acquire VSC failed");
+		return ret;
+	}
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 	full_power = acpi_dev_state_d0(&client->dev);
 #else
@@ -1176,9 +1296,6 @@ static int hi556_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	vsc_release_camera_sensor(&status);
-#endif
 	/* Set the device's state to active if it's in D0 state. */
 	if (full_power)
 		pm_runtime_set_active(&client->dev);
@@ -1196,13 +1313,16 @@ probe_error_v4l2_ctrl_handler_free:
 
 probe_error_ret:
 #if IS_ENABLED(CONFIG_INTEL_VSC)
-	vsc_release_camera_sensor(&status);
+	hi556_power_off(&client->dev);
 #endif
 	return ret;
 }
 
 static const struct dev_pm_ops hi556_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(hi556_suspend, hi556_resume)
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	SET_RUNTIME_PM_OPS(hi556_power_off, hi556_power_on, NULL)
+#endif
 };
 
 #ifdef CONFIG_ACPI
@@ -1221,11 +1341,7 @@ static struct i2c_driver hi556_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(hi556_acpi_ids),
 	},
 	.probe_new = hi556_probe,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-	.remove = hi556_remove_bp,
-#else
 	.remove = hi556_remove,
-#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 	.flags = I2C_DRV_ACPI_WAIVE_D0_PROBE,
 #endif

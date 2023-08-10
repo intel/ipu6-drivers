@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2023 Intel Corporation
 
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -46,9 +46,11 @@
 #define GDA_MEMOPEN_THRESHOLD_INDEX		3
 
 #define DEFAULT_DID_RATIO			90
-#define DEFAULT_LTR_VALUE			1023
+#define IPU6EP_LTR_VALUE			200
+#define IPU6EP_MTL_LTR_VALUE			1023
 #define DEFAULT_IWAKE_THRESHOLD			0x42
-#define MINIMUM_MEM_OPEN_THRESHOLD		0xc
+#define IPU6EP_MIN_MEMOPEN_TH			0x4
+#define IPU6EP_MTL_MIN_MEMOPEN_TH		0xc
 #define DEFAULT_MEM_OPEN_TIME			10
 #define ONE_THOUSAND_MICROSECOND		1000
 /* One page is 2KB, 8 x 16 x 16 = 2048B = 2KB */
@@ -562,7 +564,7 @@ void update_watermark_setting(struct ipu_isys *isys)
 	struct ltr_did ltrdid;
 	u16 calc_fill_time_us = 0, ltr = 0, did = 0;
 	enum ltr_did_type ltr_did_type;
-	u32 iwake_threshold, iwake_critical_threshold, page_num;
+	u32 iwake_threshold, iwake_critical_threshold, page_num, mem_threshold;
 	u32 mem_open_threshold = 0;
 	u64 threshold_bytes;
 	u64 isys_pb_datarate_mbs = 0;
@@ -610,8 +612,9 @@ void update_watermark_setting(struct ipu_isys *isys)
 	enable_iwake(isys, true);
 	calc_fill_time_us = (u16)(max_sram_size / isys_pb_datarate_mbs);
 
-	if (ipu_ver == IPU_VER_6EP_MTL) {
-		ltr = DEFAULT_LTR_VALUE;
+	if (ipu_ver == IPU_VER_6EP_MTL || ipu_ver == IPU_VER_6EP) {
+		ltr = (ipu_ver == IPU_VER_6EP_MTL) ?
+			IPU6EP_MTL_LTR_VALUE : IPU6EP_LTR_VALUE;
 		did = calc_fill_time_us * DEFAULT_DID_RATIO / 100;
 		ltr_did_type = LTR_ENHANNCE_IWAKE;
 	} else {
@@ -640,21 +643,23 @@ void update_watermark_setting(struct ipu_isys *isys)
 
 	set_iwake_ltrdid(isys, ltr, did, ltr_did_type);
 	mutex_lock(&iwake_watermark->mutex);
-	if (ipu_ver == IPU_VER_6EP_MTL)
+	if (ipu_ver == IPU_VER_6EP_MTL || ipu_ver == IPU_VER_6EP)
 		set_iwake_register(isys, GDA_IWAKE_THRESHOLD_INDEX,
 				   DEFAULT_IWAKE_THRESHOLD);
 	else
 		set_iwake_register(isys, GDA_IWAKE_THRESHOLD_INDEX,
 				   iwake_threshold);
 
-	if (ipu_ver == IPU_VER_6EP_MTL) {
+	if (ipu_ver == IPU_VER_6EP_MTL || ipu_ver == IPU_VER_6EP) {
 		/* Calculate number of pages that will be filled in 10 usec */
 		page_num = (DEFAULT_MEM_OPEN_TIME * isys_pb_datarate_mbs) /
 			    ISF_DMA_TOP_GDA_PROFERTY_PAGE_SIZE;
 		page_num += ((DEFAULT_MEM_OPEN_TIME * isys_pb_datarate_mbs) %
 			     ISF_DMA_TOP_GDA_PROFERTY_PAGE_SIZE) ? 1 : 0;
-		mem_open_threshold = max_t(u32, MINIMUM_MEM_OPEN_THRESHOLD,
-					   page_num);
+
+		mem_threshold = (ipu_ver == IPU_VER_6EP_MTL) ?
+			IPU6EP_MTL_MIN_MEMOPEN_TH : IPU6EP_MIN_MEMOPEN_TH;
+		mem_open_threshold = max_t(u32, mem_threshold, page_num);
 
 		dev_dbg(&isys->adev->dev, "%s mem_open_threshold: %u\n",
 			__func__, mem_open_threshold);

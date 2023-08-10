@@ -527,7 +527,7 @@ out_requeue:
 	return rval;
 }
 
-static void __buf_queue(struct vb2_buffer *vb, bool force)
+static void buf_queue(struct vb2_buffer *vb)
 {
 	struct ipu_isys_queue *aq = vb2_queue_to_ipu_isys_queue(vb->vb2_queue);
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
@@ -566,8 +566,9 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	if (ib->req)
 		return;
 
-	if (!pipe_av || !media_pipe || !vb->vb2_queue->streaming) {
-		dev_info(&av->isys->adev->dev,
+	if (!pipe_av || !media_pipe ||
+	    !vb->vb2_queue->start_streaming_called) {
+		dev_dbg(&av->isys->adev->dev,
 			"no pipe or streaming, adding to incoming\n");
 		return;
 	}
@@ -575,8 +576,8 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	mutex_unlock(&av->mutex);
 	mutex_lock(&pipe_av->mutex);
 
-	if (!force && ip->nr_streaming != ip->nr_queues) {
-		dev_info(&av->isys->adev->dev,
+	if (ip->nr_streaming != ip->nr_queues) {
+		dev_dbg(&av->isys->adev->dev,
 			"not streaming yet, adding to incoming\n");
 		goto out;
 	}
@@ -593,7 +594,7 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 				"error: buffer list get failed\n");
 			WARN_ON(1);
 		} else {
-			dev_info(&av->isys->adev->dev,
+			dev_dbg(&av->isys->adev->dev,
 				"not enough buffers available\n");
 		}
 		goto out;
@@ -602,8 +603,6 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 	msg = ipu_get_fw_msg_buf(ip);
 	if (!msg) {
 		rval = -ENOMEM;
-		dev_err(&av->isys->adev->dev,
-			"failed to get fw msg buf\n");
 		goto out;
 	}
 	buf = to_frame_msg_buf(msg);
@@ -614,7 +613,7 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 					ip->nr_output_pins);
 
 	if (!ip->streaming) {
-		dev_info(&av->isys->adev->dev,
+		dev_dbg(&av->isys->adev->dev,
 			"got a buffer to start streaming!\n");
 		rval = ipu_isys_stream_start(ip, &bl, true);
 		if (rval)
@@ -642,11 +641,6 @@ static void __buf_queue(struct vb2_buffer *vb, bool force)
 out:
 	mutex_unlock(&pipe_av->mutex);
 	mutex_lock(&av->mutex);
-}
-
-static void buf_queue(struct vb2_buffer *vb)
-{
-	__buf_queue(vb, false);
 }
 
 int ipu_isys_link_fmt_validate(struct ipu_isys_queue *aq)
