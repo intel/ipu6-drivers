@@ -49,6 +49,6 @@ There are 4 repositories:
                         CONFIG_VIDEO_D4XX=m 
                         CONFIG_VIDEO_TI960=m
                         CONFIG_VIDEO_IMX390=m
-	e.	Follow GSG to build kernel driver.
+	d.	Follow GSG to build kernel driver.
 
 ```
