@@ -1,0 +1,20 @@
+From 8ea8a9294e07aef0099c3f09f2d76d86ab2585d1 Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Fri, 25 Aug 2023 11:59:08 +0800
+Subject: [PATCH] media: intel-ipu6: import DMA_BUF for DRM_I915_HAS_SRIOV
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+---
+
+diff --git a/drivers/media/pci/intel/ipu-psys.c b/drivers/media/pci/intel/ipu-psys.c
+index cefa60e..abd0eb6 100644
+--- a/drivers/media/pci/intel/ipu-psys.c
++++ b/drivers/media/pci/intel/ipu-psys.c
+@@ -1942,6 +1942,6 @@
+ MODULE_AUTHOR("Yunliang Ding <yunliang.ding@intel.com>");
+ MODULE_LICENSE("GPL");
+ MODULE_DESCRIPTION("Intel ipu processing system driver");
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0) || IS_ENABLED(CONFIG_DRM_I915_HAS_SRIOV)
+ MODULE_IMPORT_NS(DMA_BUF);
+ #endif

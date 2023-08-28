@@ -1,0 +1,32 @@
+From 852be4222a9e1b63d997b00ad5da3c16ac62cc02 Mon Sep 17 00:00:00 2001
+From: Pan, Kris <kris.pan@intel.com>
+Date: Wed, 09 Aug 2023 01:53:01 +0000
+Subject: [PATCH] drm/i915/gt: add SR-IOV feature config
+
+Define one "DRM_I915_HAS_SRIOV" for others to distinguish
+or identify if i915 driver integrated SRIOV feature.
+
+This will be only requried on LTS2021 due to dma-buf interface doesn't
+align with upstream version. With this change, customer can use it to
+identify different kernel codebase easier.
+
+Signed-off-by: Pan, Kris <kris.pan@intel.com>
+Signed-off-by: Chang, Junxiao <junxiao.chang@intel.com>
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+---
+
+diff --git a/drivers/gpu/drm/i915/Kconfig b/drivers/gpu/drm/i915/Kconfig
+index cfd9325..58b165f 100644
+--- a/drivers/gpu/drm/i915/Kconfig
++++ b/drivers/gpu/drm/i915/Kconfig
+@@ -144,6 +144,10 @@
+ 	  protected session and manage the status of the alive software session,
+ 	  as well as its life cycle.
+ 
++config DRM_I915_HAS_SRIOV
++	def_bool y
++	depends on DRM_I915
++
+ menu "drm/i915 Debugging"
+ depends on DRM_I915
+ depends on EXPERT
