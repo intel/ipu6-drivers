@@ -51,5 +51,6 @@ There are 4 repositories:
                         CONFIG_VIDEO_IMX390=m
 	d.	Follow GSG to build kernel driver.
 
-	NOTE: Build with iot LTS kernel 5.15, should apply the patches in "ipu6-drivers/kernel_patches/patch_5.15_x_iot/".
+	NOTE: Build with iot LTS kernel 5.15, should apply the patches under
+              "ipu6-drivers/kernel_patches/patch_5.15_x_iot/".
 ```
