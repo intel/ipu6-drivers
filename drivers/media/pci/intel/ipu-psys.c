@@ -208,17 +208,18 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 		}
 	} else {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
-		nr = get_user_pages(current, current->mm,
-				    start & PAGE_MASK, npages,
+		nr = get_user_pages(current, current->mm, start & PAGE_MASK,
+				    npages, 1, 0, pages, NULL);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+		nr = get_user_pages(start & PAGE_MASK, npages,
+				    1, 0, pages, NULL);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
+		nr = get_user_pages(start & PAGE_MASK, npages,
+				    FOLL_WRITE, pages, NULL);
 #else
 		nr = get_user_pages(start & PAGE_MASK, npages,
+				    FOLL_WRITE, pages);
 #endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
-				    1, 0,
-#else
-				    FOLL_WRITE,
-#endif
-				    pages, NULL);
 		if (nr < npages)
 			goto error_up_read;
 	}
