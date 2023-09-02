@@ -1529,8 +1529,10 @@ static int ov2740_probe(struct i2c_client *client)
 	ret = ov2740_parse_power(ov2740);
 	if (ret)
 		return ret;
-	gpiod_set_value_cansleep(ov2740->reset_gpio, 0);
-	msleep(20);
+
+	ret = ov2740_power_on(&client->dev);
+	if (ret)
+		return ret;
 #endif
 
 	ret = ov2740_identify_module(ov2740);
