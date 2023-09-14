@@ -763,6 +763,7 @@ static void ov08a10_stop_streaming(struct ov08a10 *ov08a10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov08a10->sd);
 
+
 	if (ov08a10_write_reg(ov08a10, OV08A10_REG_MODE_SELECT,
 			      OV08A10_REG_VALUE_08BIT, OV08A10_MODE_STANDBY))
 		dev_err(&client->dev, "failed to set stream");
