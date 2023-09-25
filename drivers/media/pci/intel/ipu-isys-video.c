@@ -53,7 +53,7 @@ MODULE_PARM_DESC(video_nr,
 const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW16},
-	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_VYUY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
@@ -96,6 +96,10 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
 	{V4L2_PIX_FMT_GREY, 8, 8, 0, MEDIA_BUS_FMT_Y8_1X8,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW8},
+#ifdef V4L2_PIX_FMT_Y210
+	{V4L2_PIX_FMT_Y210, 20, 20, 0, MEDIA_BUS_FMT_YUYV10_1X20,
+	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
+#endif
 	{}
 };
 
@@ -106,7 +110,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	{V4L2_PIX_FMT_Y210, 20, 20, 0, MEDIA_BUS_FMT_YUYV10_1X20,
 	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
 #endif
-	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
+	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_VYUY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
@@ -1367,7 +1371,6 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 		dev_err(dev, "stream close error: %d\n", ip->error);
 	else
 		dev_dbg(dev, "close stream: complete\n");
-
 	put_stream_opened(av);
 	put_stream_handle(av);
 }

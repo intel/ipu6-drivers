@@ -46,6 +46,8 @@ static const struct cio2_sensor_config cio2_supported_sensors[] = {
 	CIO2_SENSOR_CONFIG("HIMX2170", 0, 0),
 	/* Himax hm2172 */
 	CIO2_SENSOR_CONFIG("HIMX2172", 0, 0),
+	/* Omnivision ov02e10 */
+	CIO2_SENSOR_CONFIG("OVTI02E1", 0, 0),
 	/* Himax hm11b1 */
 	CIO2_SENSOR_CONFIG("HIMX11B1", 0, 0),
 	/* Omnivision ov13b10 */
