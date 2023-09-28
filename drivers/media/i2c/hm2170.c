@@ -1324,7 +1324,11 @@ static struct i2c_driver hm2170_i2c_driver = {
 		.pm = &hm2170_pm_ops,
 		.acpi_match_table = hm2170_acpi_ids,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = hm2170_probe,
+#else
+	.probe = hm2170_probe,
+#endif
 	.remove = hm2170_remove,
 };
 
