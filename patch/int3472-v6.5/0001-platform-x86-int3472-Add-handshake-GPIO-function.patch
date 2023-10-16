@@ -1,0 +1,53 @@
+From 8b3c29ef041a410e303d553ca019b42c2e2765e6 Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Thu, 28 Sep 2023 14:17:25 +0800
+Subject: [PATCH] platform/x86: int3472: Add handshake GPIO function
+
+Handshake pin is used for Lattice MIPI aggregator to enable the
+camera sensor. After pulled up, recommend to wail ~250ms to get
+everything ready.
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/platform/x86/intel/int3472/common.h   | 1 +
+ drivers/platform/x86/intel/int3472/discrete.c | 5 +++++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/drivers/platform/x86/intel/int3472/common.h b/drivers/platform/x86/intel/int3472/common.h
+index 655ae3ec0593..3ad4c72afb45 100644
+--- a/drivers/platform/x86/intel/int3472/common.h
++++ b/drivers/platform/x86/intel/int3472/common.h
+@@ -23,6 +23,7 @@
+ #define INT3472_GPIO_TYPE_POWER_ENABLE				0x0b
+ #define INT3472_GPIO_TYPE_CLK_ENABLE				0x0c
+ #define INT3472_GPIO_TYPE_PRIVACY_LED				0x0d
++#define INT3472_GPIO_TYPE_HANDSHAKE				0x12
+ 
+ #define INT3472_PDEV_MAX_NAME_LEN				23
+ #define INT3472_MAX_SENSOR_GPIOS				3
+diff --git a/drivers/platform/x86/intel/int3472/discrete.c b/drivers/platform/x86/intel/int3472/discrete.c
+index b644ce65c990..4753161b4080 100644
+--- a/drivers/platform/x86/intel/int3472/discrete.c
++++ b/drivers/platform/x86/intel/int3472/discrete.c
+@@ -111,6 +111,10 @@ static void int3472_get_func_and_polarity(u8 type, const char **func, u32 *polar
+ 		*func = "power-enable";
+ 		*polarity = GPIO_ACTIVE_HIGH;
+ 		break;
++	case INT3472_GPIO_TYPE_HANDSHAKE:
++		*func = "handshake";
++		*polarity = GPIO_ACTIVE_HIGH;
++		break;
+ 	default:
+ 		*func = "unknown";
+ 		*polarity = GPIO_ACTIVE_HIGH;
+@@ -201,6 +205,7 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
+ 	switch (type) {
+ 	case INT3472_GPIO_TYPE_RESET:
+ 	case INT3472_GPIO_TYPE_POWERDOWN:
++	case INT3472_GPIO_TYPE_HANDSHAKE:
+ 		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, func, polarity);
+ 		if (ret)
+ 			err_msg = "Failed to map GPIO pin to sensor\n";
+-- 
+2.34.1
+
