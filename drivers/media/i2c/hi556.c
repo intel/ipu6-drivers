@@ -3,6 +3,7 @@
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
@@ -13,6 +14,14 @@
 #include <media/v4l2-fwnode.h>
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
+
+static const struct acpi_device_id cvfd_ids[] = {
+	{ "INTC1059", 0 },
+	{ "INTC1095", 0 },
+	{ "INTC100A", 0 },
+	{ "INTC10CF", 0 },
+	{}
+};
 #endif
 
 #define HI556_REG_VALUE_08BIT		1
@@ -490,12 +499,21 @@ struct hi556 {
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
+
+	/* GPIO for reset */
+	struct gpio_desc *reset;
+	/* GPIO for Lattice handshake */
+	struct gpio_desc *handshake;
+	/* regulator */
+	struct regulator *avdd;
+	/* Clock provider */
+	struct clk *img_clk;
+
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
 #endif
-
 	/* Current mode */
 	const struct hi556_mode *cur_mode;
 
@@ -507,6 +525,9 @@ struct hi556 {
 
 	/* True if the device has been identified */
 	bool identified;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	bool use_intel_vsc;
+#endif
 };
 
 static u64 to_pixel_rate(u32 f_index)
@@ -902,16 +923,26 @@ static int hi556_set_stream(struct v4l2_subdev *sd, int enable)
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
 static int hi556_power_off(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct hi556 *hi556 = to_hi556(sd);
 	int ret;
 
-	ret = vsc_release_camera_sensor(&hi556->status);
-	if (ret && ret != -EAGAIN)
-		dev_err(dev, "Release VSC failed");
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	if (hi556->use_intel_vsc) {
+		ret = vsc_release_camera_sensor(&hi556->status);
+		if (ret && ret != -EAGAIN)
+			dev_err(dev, "Release VSC failed");
+
+		return ret;
+	}
+#endif
+	gpiod_set_value_cansleep(hi556->reset, 1);
+	gpiod_set_value_cansleep(hi556->handshake, 0);
+	if (hi556->avdd)
+		ret = regulator_disable(hi556->avdd);
+	clk_disable_unprepare(hi556->img_clk);
 
 	return ret;
 }
@@ -920,23 +951,49 @@ static int hi556_power_on(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct hi556 *hi556 = to_hi556(sd);
-	int ret;
+	int ret = 0;
 
-	hi556->conf.lane_num = HI556_DATA_LANES;
-	/* frequency unit 100k */
-	hi556->conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&hi556->conf,
-					hi556_vsc_privacy_callback,
-					hi556, &hi556->status);
-	if (ret && ret != -EAGAIN) {
-		dev_err(dev, "Acquire VSC failed");
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	if (hi556->use_intel_vsc) {
+		hi556->conf.lane_num = HI556_DATA_LANES;
+		/* frequency unit 100k */
+		hi556->conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
+		ret = vsc_acquire_camera_sensor(&hi556->conf,
+						hi556_vsc_privacy_callback,
+						hi556, &hi556->status);
+		if (ret == -EAGAIN)
+			return -EPROBE_DEFER;
+		if (ret) {
+			dev_err(dev, "Acquire VSC failed");
+			return ret;
+		}
+		if (hi556->privacy_status)
+			__v4l2_ctrl_s_ctrl(hi556->privacy_status,
+					   !(hi556->status.status));
+
 		return ret;
 	}
-	__v4l2_ctrl_s_ctrl(hi556->privacy_status, !(hi556->status.status));
+#endif
+	ret = clk_prepare_enable(hi556->img_clk);
+	if (ret < 0) {
+		dev_err(dev, "failed to enable imaging clock: %d", ret);
+		return ret;
+	}
+	if (hi556->avdd) {
+		ret = regulator_enable(hi556->avdd);
+		if (ret < 0) {
+			dev_err(dev, "failed to enable avdd: %d", ret);
+			clk_disable_unprepare(hi556->img_clk);
+			return ret;
+		}
+	}
+	gpiod_set_value_cansleep(hi556->handshake, 1);
+	gpiod_set_value_cansleep(hi556->reset, 0);
+	/* TODO: Test delay 2400 * MCLK */
+	usleep_range(5000, 5500);
 
 	return ret;
 }
-#endif
 
 static int __maybe_unused hi556_suspend(struct device *dev)
 {
@@ -978,11 +1035,11 @@ error:
 
 static int hi556_set_format(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-			      struct v4l2_subdev_pad_config *cfg,
+			    struct v4l2_subdev_pad_config *cfg,
 #else
-			      struct v4l2_subdev_state *sd_state,
+			    struct v4l2_subdev_state *sd_state,
 #endif
-			      struct v4l2_subdev_format *fmt)
+			    struct v4l2_subdev_format *fmt)
 {
 	struct hi556 *hi556 = to_hi556(sd);
 	const struct hi556_mode *mode;
@@ -1133,6 +1190,68 @@ static const struct v4l2_subdev_internal_ops hi556_internal_ops = {
 	.open = hi556_open,
 };
 
+static int hi556_get_pm_resources(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct hi556 *hi556 = to_hi556(sd);
+	int ret;
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	acpi_handle handle = ACPI_HANDLE(dev);
+	struct acpi_handle_list dep_devices;
+	acpi_status status;
+	int i = 0;
+
+	hi556->use_intel_vsc = false;
+	if (!acpi_has_method(handle, "_DEP"))
+		return false;
+
+	status = acpi_evaluate_reference(handle, "_DEP", NULL, &dep_devices);
+	if (ACPI_FAILURE(status)) {
+		acpi_handle_debug(handle, "Failed to evaluate _DEP.\n");
+		return false;
+	}
+	for (i = 0; i < dep_devices.count; i++) {
+		struct acpi_device *dep_device = NULL;
+
+		if (dep_devices.handles[i])
+			dep_device =
+				acpi_fetch_acpi_dev(dep_devices.handles[i]);
+
+		if (dep_device && acpi_match_device_ids(dep_device, cvfd_ids) == 0) {
+			hi556->use_intel_vsc = true;
+			return 0;
+		}
+	}
+#endif
+	hi556->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(hi556->reset))
+		return dev_err_probe(dev, PTR_ERR(hi556->reset),
+				     "failed to get reset gpio\n");
+
+	hi556->handshake = devm_gpiod_get_optional(dev, "handshake",
+						   GPIOD_OUT_LOW);
+	if (IS_ERR(hi556->handshake))
+		return dev_err_probe(dev, PTR_ERR(hi556->handshake),
+				     "failed to get handshake gpio\n");
+
+	hi556->img_clk = devm_clk_get_optional(dev, NULL);
+	if (IS_ERR(hi556->img_clk))
+		return dev_err_probe(dev, PTR_ERR(hi556->img_clk),
+				     "failed to get imaging clock\n");
+
+	hi556->avdd = devm_regulator_get_optional(dev, "avdd");
+	if (IS_ERR(hi556->avdd)) {
+		ret = PTR_ERR(hi556->avdd);
+		hi556->avdd = NULL;
+		if (ret != -ENODEV)
+			return dev_err_probe(dev, ret,
+					     "failed to get avdd regulator\n");
+	}
+
+	return 0;
+}
+
 static int __maybe_unused hi556_check_hwcfg(struct device *dev)
 {
 	struct fwnode_handle *ep;
@@ -1144,8 +1263,9 @@ static int __maybe_unused hi556_check_hwcfg(struct device *dev)
 	int ret = 0;
 	unsigned int i, j;
 
-	if (!fwnode)
-		return -ENXIO;
+	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (!ep)
+		return -EPROBE_DEFER;
 
 	ret = fwnode_property_read_u32(fwnode, "clock-frequency", &mclk);
 	if (ret) {
@@ -1157,10 +1277,6 @@ static int __maybe_unused hi556_check_hwcfg(struct device *dev)
 		dev_err(dev, "external clock %d is not supported", mclk);
 		return -EINVAL;
 	}
-
-	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
-	if (!ep)
-		return -ENXIO;
 
 	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
 	fwnode_handle_put(ep);
@@ -1200,6 +1316,7 @@ check_hwcfg_error:
 
 	return ret;
 }
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int hi556_remove(struct i2c_client *client)
 #else
@@ -1226,14 +1343,11 @@ static int hi556_probe(struct i2c_client *client)
 	bool full_power;
 	int ret;
 
-#if !IS_ENABLED(CONFIG_INTEL_VSC)
 	ret = hi556_check_hwcfg(&client->dev);
-	if (ret) {
-		dev_err(&client->dev, "failed to check HW configuration: %d",
-			ret);
-		return ret;
-	}
-#endif
+	if (ret)
+		return dev_err_probe(&client->dev, ret,
+				     "failed to check HW configuration: %d",
+				     ret);
 
 	hi556 = devm_kzalloc(&client->dev, sizeof(*hi556), GFP_KERNEL);
 	if (!hi556) {
@@ -1242,20 +1356,6 @@ static int hi556_probe(struct i2c_client *client)
 	}
 
 	v4l2_i2c_subdev_init(&hi556->sd, client, &hi556_subdev_ops);
-#if IS_ENABLED(CONFIG_INTEL_VSC)
-	hi556->conf.lane_num = HI556_DATA_LANES;
-	/* frequency unit 100k */
-	hi556->conf.freq = HI556_LINK_FREQ_437MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&hi556->conf,
-					hi556_vsc_privacy_callback,
-					hi556, &hi556->status);
-	if (ret == -EAGAIN) {
-		return -EPROBE_DEFER;
-	} else if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed");
-		return ret;
-	}
-#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 	full_power = acpi_dev_state_d0(&client->dev);
@@ -1263,6 +1363,15 @@ static int hi556_probe(struct i2c_client *client)
 	full_power = true;
 #endif
 	if (full_power) {
+		ret = hi556_get_pm_resources(&client->dev);
+		if (ret)
+			return ret;
+		ret = hi556_power_on(&client->dev);
+		if (ret) {
+			dev_err_probe(&client->dev, ret,
+				      "failed to power on\n");
+			goto probe_error_ret;
+		}
 		ret = hi556_identify_module(hi556);
 		if (ret) {
 			dev_err(&client->dev, "failed to find sensor: %d", ret);
@@ -1312,17 +1421,13 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&hi556->mutex);
 
 probe_error_ret:
-#if IS_ENABLED(CONFIG_INTEL_VSC)
 	hi556_power_off(&client->dev);
-#endif
 	return ret;
 }
 
 static const struct dev_pm_ops hi556_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(hi556_suspend, hi556_resume)
-#if IS_ENABLED(CONFIG_INTEL_VSC)
 	SET_RUNTIME_PM_OPS(hi556_power_off, hi556_power_on, NULL)
-#endif
 };
 
 #ifdef CONFIG_ACPI

@@ -913,6 +913,8 @@ struct hm2172 {
 	struct clk *img_clk;
 	struct regulator *avdd;
 	struct gpio_desc *reset;
+	struct gpio_desc *handshake;
+
 	/* Current mode */
 	const struct hm2172_mode *cur_mode;
 
@@ -1254,8 +1256,8 @@ static int hm2172_power_off(struct device *dev)
 	struct hm2172 *hm2172 = to_hm2172(sd);
 	int ret = 0;
 
-	if (hm2172->reset)
-		gpiod_set_value_cansleep(hm2172->reset, 1);
+	gpiod_set_value_cansleep(hm2172->reset, 1);
+	gpiod_set_value_cansleep(hm2172->handshake, 0);
 
 	if (hm2172->avdd)
 		ret = regulator_disable(hm2172->avdd);
@@ -1286,11 +1288,10 @@ static int hm2172_power_on(struct device *dev)
 		}
 	}
 
-	if (hm2172->reset) {
-		gpiod_set_value_cansleep(hm2172->reset, 0);
-		/* 5ms to wait ready after XSHUTDN assert */
-		usleep_range(5000, 5500);
-	}
+	gpiod_set_value_cansleep(hm2172->handshake, 1);
+	gpiod_set_value_cansleep(hm2172->reset, 0);
+	/* 5ms to wait ready after XSHUTDN assert */
+	usleep_range(5000, 5500);
 
 	return ret;
 }
@@ -1306,6 +1307,12 @@ static int hm2172_get_pm_resources(struct device *dev)
 	if (IS_ERR(hm2172->reset))
 		return dev_err_probe(dev, PTR_ERR(hm2172->reset),
 				     "failed to get reset gpio\n");
+
+	hm2172->handshake = devm_gpiod_get_optional(dev, "handshake",
+						   GPIOD_OUT_LOW);
+	if (IS_ERR(hm2172->handshake))
+		return dev_err_probe(dev, PTR_ERR(hm2172->handshake),
+				     "failed to get handshake gpio\n");
 
 	hm2172->img_clk = devm_clk_get_optional(dev, NULL);
 	if (IS_ERR(hm2172->img_clk))
@@ -1433,8 +1440,6 @@ static int hm2172_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
-	struct hm2172 *hm2172 = to_hm2172(sd);
-
 	if (fse->index >= ARRAY_SIZE(supported_modes))
 		return -EINVAL;
 

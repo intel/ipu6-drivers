@@ -474,31 +474,6 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 	WARN_ON(1);
 }
 
-static const struct ipu_isys_pixelformat *
-csi2_try_fmt(struct ipu_isys_video *av,
-	     struct v4l2_pix_format_mplane *mpix)
-{
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
-	struct v4l2_subdev *sd =
-	    media_entity_to_v4l2_subdev(av->vdev.entity.links[0].source->
-					entity);
-#else
-	struct media_link *link = list_first_entry(&av->vdev.entity.links,
-						   struct media_link, list);
-	struct v4l2_subdev *sd =
-	    media_entity_to_v4l2_subdev(link->source->entity);
-#endif
-	struct ipu_isys_csi2 *csi2;
-
-	if (!sd)
-		return NULL;
-
-	csi2 = to_ipu_isys_csi2(sd);
-
-	return ipu_isys_video_try_fmt_vid_mplane(av, mpix,
-				v4l2_ctrl_g_ctrl(csi2->store_csi2_header));
-}
-
 void ipu_isys_csi2_cleanup(struct ipu_isys_csi2 *csi2)
 {
 	if (!csi2->isys)

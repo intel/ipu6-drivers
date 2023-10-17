@@ -14,13 +14,11 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
 
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 #include <linux/clk.h>
 #include <linux/gpio/consumer.h>
-#endif
 
 #define OV2740_LINK_FREQ_360MHZ		360000000ULL
-#define OV2740_CJFLE23_LINK_FREQ_360MHZ	360000000ULL
+#define OV2740_LINK_FREQ_180MHZ		180000000ULL
 #define OV2740_SCLK			72000000LL
 #define OV2740_MCLK			19200000
 #define OV2740_DATA_LANES		2
@@ -91,7 +89,7 @@ struct nvm_data {
 
 enum {
 	OV2740_LINK_FREQ_360MHZ_INDEX,
-	OV2740_CJFLE23_LINK_FREQ_360MHZ_INDEX,
+	OV2740_LINK_FREQ_180MHZ_INDEX,
 };
 
 struct ov2740_reg {
@@ -153,7 +151,7 @@ static const struct ov2740_reg mipi_data_rate_720mbps[] = {
 	{0x0312, 0x11},
 };
 
-static const struct ov2740_reg mipi_data_rate_cjfle23_720mbps[] = {
+static const struct ov2740_reg mipi_data_rate_360mbps[] = {
 	{0x0103, 0x01},
 	{0xffff, 0x10},
 	{0x0302, 0x4b},
@@ -486,7 +484,7 @@ static const char * const ov2740_module_names[] = {
 
 static const s64 link_freq_menu_items[] = {
 	OV2740_LINK_FREQ_360MHZ,
-	OV2740_CJFLE23_LINK_FREQ_360MHZ,
+	OV2740_LINK_FREQ_180MHZ,
 };
 
 static const struct ov2740_link_freq_config link_freq_configs[] = {
@@ -497,10 +495,10 @@ static const struct ov2740_link_freq_config link_freq_configs[] = {
 		}
 	},
 
-	[OV2740_CJFLE23_LINK_FREQ_360MHZ_INDEX] = {
+	[OV2740_LINK_FREQ_180MHZ_INDEX] = {
 		.reg_list = {
-			.num_of_regs = ARRAY_SIZE(mipi_data_rate_cjfle23_720mbps),
-			.regs = mipi_data_rate_cjfle23_720mbps,
+			.num_of_regs = ARRAY_SIZE(mipi_data_rate_360mbps),
+			.regs = mipi_data_rate_360mbps,
 		}
 	},
 };
@@ -521,7 +519,7 @@ static const struct ov2740_mode supported_modes[] = {
 	},
 };
 
-static const struct ov2740_mode cjfle23_supported_modes[] = {
+static const struct ov2740_mode supported_modes_360mbps[] = {
 	{
 		.width = 1932,
 		.height = 1092,
@@ -533,7 +531,7 @@ static const struct ov2740_mode cjfle23_supported_modes[] = {
 			.num_of_regs = ARRAY_SIZE(mode_cjfle23_1932x1092_regs),
 			.regs = mode_cjfle23_1932x1092_regs,
 		},
-		.link_freq_index = OV2740_CJFLE23_LINK_FREQ_360MHZ_INDEX,
+		.link_freq_index = OV2740_LINK_FREQ_180MHZ_INDEX,
 	},
 };
 
@@ -564,12 +562,10 @@ struct ov2740 {
 	/* i2c client */
 	struct i2c_client *client;
 
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	/* GPIO for reset */
 	struct gpio_desc *reset_gpio;
 	/* Clock provider */
 	struct clk *clk;
-#endif
 
 	/* Module name index */
 	u8 module_name_index;
@@ -1029,7 +1025,6 @@ static int ov2740_set_stream(struct v4l2_subdev *sd, int enable)
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 static int ov2740_power_off(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
@@ -1055,7 +1050,6 @@ static int ov2740_power_on(struct device *dev)
 
 	return ret;
 }
-#endif
 
 static int __maybe_unused ov2740_suspend(struct device *dev)
 {
@@ -1105,8 +1099,8 @@ static int ov2740_set_format(struct v4l2_subdev *sd,
 	s32 vblank_def, h_blank;
 
 	if (ov2740->module_name_index == 1) {
-		mode = v4l2_find_nearest_size(cjfle23_supported_modes,
-					      ARRAY_SIZE(cjfle23_supported_modes),
+		mode = v4l2_find_nearest_size(supported_modes_360mbps,
+					      ARRAY_SIZE(supported_modes_360mbps),
 					      width, height, fmt->format.width,
 					      fmt->format.height);
 	} else {
@@ -1202,15 +1196,15 @@ static int ov2740_enum_frame_size(struct v4l2_subdev *sd,
 {
 	struct ov2740 *ov2740 = to_ov2740(sd);
 	if (ov2740->module_name_index == 1) {
-		if (fse->index >= ARRAY_SIZE(cjfle23_supported_modes))
+		if (fse->index >= ARRAY_SIZE(supported_modes_360mbps))
 			return -EINVAL;
 
 		if (fse->code != MEDIA_BUS_FMT_SGRBG10_1X10)
 			return -EINVAL;
 
-		fse->min_width = cjfle23_supported_modes[fse->index].width;
+		fse->min_width = supported_modes_360mbps[fse->index].width;
 		fse->max_width = fse->min_width;
-		fse->min_height = cjfle23_supported_modes[fse->index].height;
+		fse->min_height = supported_modes_360mbps[fse->index].height;
 		fse->max_height = fse->min_height;
 	} else {
 		if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1299,8 +1293,9 @@ static int ov2740_check_hwcfg(struct device *dev)
 	int ret;
 	unsigned int i, j;
 
-	if (!fwnode)
-		return -ENXIO;
+	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (!ep)
+		return -EPROBE_DEFER;
 
 	ret = fwnode_property_read_u32(fwnode, "clock-frequency", &mclk);
 	if (ret)
@@ -1310,10 +1305,6 @@ static int ov2740_check_hwcfg(struct device *dev)
 		dev_err(dev, "external clock %d is not supported", mclk);
 		return -EINVAL;
 	}
-
-	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
-	if (!ep)
-		return -ENXIO;
 
 	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
 	fwnode_handle_put(ep);
@@ -1456,12 +1447,16 @@ static int ov2740_read_module_name(struct ov2740 *ov2740)
 	struct device *dev = &ov2740->client->dev;
 	int i = 0;
 	union acpi_object *obj;
-
-	obj = acpi_evaluate_dsm_typed(ACPI_COMPANION(dev)->handle,
-				     &cio2_sensor_module_guid, 0x00,
-				     0x01, NULL, ACPI_TYPE_STRING);
+	struct acpi_device *adev = ACPI_COMPANION(dev);
 
 	ov2740->module_name_index = 0;
+	if (!adev)
+		return 0;
+
+	obj = acpi_evaluate_dsm_typed(adev->handle,
+				      &cio2_sensor_module_guid, 0x00,
+				      0x01, NULL, ACPI_TYPE_STRING);
+
 	if (obj && obj->string.type == ACPI_TYPE_STRING) {
 		for (i = 1; i < ARRAY_SIZE(ov2740_module_names); i++) {
 			if (!strcmp(ov2740_module_names[i], obj->string.pointer)) {
@@ -1475,13 +1470,13 @@ static int ov2740_read_module_name(struct ov2740 *ov2740)
 	return 0;
 }
 
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 static int ov2740_parse_power(struct ov2740 *ov2740)
 {
 	struct device *dev = &ov2740->client->dev;
 	long ret;
 
-	ov2740->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	ov2740->reset_gpio =
+		devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(ov2740->reset_gpio)) {
 		ret = PTR_ERR(ov2740->reset_gpio);
 		dev_err(dev, "error while getting reset gpio: %ld\n", ret);
@@ -1499,7 +1494,6 @@ static int ov2740_parse_power(struct ov2740 *ov2740)
 
 	return 0;
 }
-#endif
 
 static int ov2740_probe(struct i2c_client *client)
 {
@@ -1513,27 +1507,19 @@ static int ov2740_probe(struct i2c_client *client)
 	ov2740->client = client;
 	ov2740_read_module_name(ov2740);
 
-	/* for Thinkpad X1 Yoga, module CJFLE23, skip hardware config check */
-	if (ov2740->module_name_index != 1) {
-		ret = ov2740_check_hwcfg(&client->dev);
-		if (ret) {
-			dev_err(&client->dev, "failed to check HW configuration: %d",
-				ret);
-			return ret;
-		}
-	}
+	ret = ov2740_check_hwcfg(&client->dev);
+	if (ret)
+		return dev_err_probe(&client->dev, ret,
+				     "failed to check HW configuration: %d",
+				     ret);
 
 	v4l2_i2c_subdev_init(&ov2740->sd, client, &ov2740_subdev_ops);
 
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	ret = ov2740_parse_power(ov2740);
 	if (ret)
 		return ret;
 
-	ret = ov2740_power_on(&client->dev);
-	if (ret)
-		return ret;
-#endif
+	ov2740_power_on(&client->dev);
 
 	ret = ov2740_identify_module(ov2740);
 	if (ret) {
@@ -1548,7 +1534,7 @@ static int ov2740_probe(struct i2c_client *client)
 			ov2740->module_name_index);
 	}
 	if (ov2740->module_name_index == 1)
-		ov2740->cur_mode = &cjfle23_supported_modes[0];
+		ov2740->cur_mode = &supported_modes_360mbps[0];
 	else
 		ov2740->cur_mode = &supported_modes[0];
 
@@ -1602,18 +1588,14 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov2740->mutex);
 
 probe_error_power_down:
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-	gpiod_set_value_cansleep(ov2740->reset_gpio, 1);
-#endif
+	ov2740_power_off(&client->dev);
 
 	return ret;
 }
 
 static const struct dev_pm_ops ov2740_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(ov2740_suspend, ov2740_resume)
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	SET_RUNTIME_PM_OPS(ov2740_power_off, ov2740_power_on, NULL)
-#endif
 };
 
 static const struct acpi_device_id ov2740_acpi_ids[] = {

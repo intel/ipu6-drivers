@@ -39,9 +39,9 @@ static const struct cio2_sensor_config cio2_supported_sensors[] = {
 	/* Omnivision ov8856 */
 	CIO2_SENSOR_CONFIG("OVTI8856", 0, 0),
 	/* Omnivision ov2740 */
-	CIO2_SENSOR_CONFIG("INT3474", 0, 0),
+	CIO2_SENSOR_CONFIG("INT3474", 2, 360000000, 180000000),
 	/* Hynix hi556 */
-	CIO2_SENSOR_CONFIG("INT3537", 0, 0),
+	CIO2_SENSOR_CONFIG("INT3537", 1, 437000000),
 	/* Himax hm2170 */
 	CIO2_SENSOR_CONFIG("HIMX2170", 0, 0),
 	/* Himax hm2172 */

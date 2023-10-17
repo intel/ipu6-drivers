@@ -12,7 +12,7 @@ There are 4 repositories that provide the complete setup:
 ## Content of this repository:
 - IPU6 kernel driver
 - Kernel patches needed
-- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10, OV2740, HM2170, HM2172 and HI556 sensors
+- Drivers for HM11B1, OV01A1S, OV01A10, OV02C10, OV02E10, OV2740, HM2170, HM2172 and HI556 sensors
 
 ## Build instructions:
 Three ways are available:
@@ -111,6 +111,20 @@ Three ways are available:
 		  To compile this driver as a module, choose M here: the
 		  module will be called ov02c10.
 
+	config VIDEO_OV02E10
+		tristate "OmniVision OV02E10 sensor support"
+		depends on VIDEO_DEV && I2C
+		depends on ACPI || COMPILE_TEST
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+		  This is a Video4Linux2 sensor driver for the OmniVision
+		  OV02E10 camera.
+
+		  To compile this driver as a module, choose M here: the
+		  module will be called ov02e10.
+
 	config VIDEO_HM2170
 		tristate "Himax HM2170 sensor support"
 		depends on VIDEO_DEV && I2C
@@ -146,6 +160,7 @@ Three ways are available:
 	obj-$(CONFIG_VIDEO_HM11B1)  += hm11b1.o
 	obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
 	obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
+	obj-$(CONFIG_VIDEO_OV02E10) += ov02e10.o
 	obj-$(CONFIG_VIDEO_HM2170) += hm2170.o
 	obj-$(CONFIG_VIDEO_HM2170) += hm2172.o
 	```
@@ -166,6 +181,7 @@ Three ways are available:
 	CONFIG_VIDEO_OV01A10=m
 	CONFIG_VIDEO_HM11B1=m
 	CONFIG_VIDEO_OV02C10=m
+	CONFIG_VIDEO_OV02E10=m
 	CONFIG_VIDEO_HM2170=m
 	CONFIG_VIDEO_HM2172=m
 	# Set this only if you use only 1 camera and don't want too many device nodes in media-ctl

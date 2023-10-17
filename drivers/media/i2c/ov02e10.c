@@ -280,6 +280,7 @@ struct ov02e10 {
 	struct clk *img_clk;
 	struct regulator *avdd;
 	struct gpio_desc *reset;
+	struct gpio_desc *handshake;
 
 	/* Current mode */
 	const struct ov02e10_mode *cur_mode;
@@ -387,9 +388,6 @@ static int ov02e10_write_reg_list(struct ov02e10 *ov02e10,
 					    r_list->regs[i].address, ret);
 			return ret;
 		}
-
-		ret =
-		    ov02e10_read_reg(ov02e10, r_list->regs[i].address, 1, &val);
 	}
 
 	return 0;
@@ -650,16 +648,23 @@ static int ov02e10_get_pm_resources(struct device *dev)
 	struct ov02e10 *ov02e10 = to_ov02e10(sd);
 	int ret;
 
-	ov02e10->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	ov02e10->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(ov02e10->reset))
 		return dev_err_probe(dev, PTR_ERR(ov02e10->reset),
 				     "failed to get reset gpio\n");
-	ov02e10->img_clk = devm_clk_get(dev, NULL);
+
+	ov02e10->handshake = devm_gpiod_get_optional(dev, "handshake",
+						   GPIOD_OUT_LOW);
+	if (IS_ERR(ov02e10->handshake))
+		return dev_err_probe(dev, PTR_ERR(ov02e10->handshake),
+				     "failed to get handshake gpio\n");
+
+	ov02e10->img_clk = devm_clk_get_optional(dev, NULL);
 	if (IS_ERR(ov02e10->img_clk))
 		return dev_err_probe(dev, PTR_ERR(ov02e10->img_clk),
 				     "failed to get imaging clock\n");
 
-	ov02e10->avdd = devm_regulator_get(dev, "avdd");
+	ov02e10->avdd = devm_regulator_get_optional(dev, "avdd");
 	if (IS_ERR(ov02e10->avdd)) {
 		ret = PTR_ERR(ov02e10->avdd);
 		ov02e10->avdd = NULL;
@@ -677,8 +682,8 @@ static int ov02e10_power_off(struct device *dev)
 	struct ov02e10 *ov02e10 = to_ov02e10(sd);
 	int ret = 0;
 
-	if (ov02e10->reset)
-		gpiod_set_value_cansleep(ov02e10->reset, 1);
+	gpiod_set_value_cansleep(ov02e10->reset, 1);
+	gpiod_set_value_cansleep(ov02e10->handshake, 0);
 
 	if (ov02e10->avdd)
 		regulator_disable(ov02e10->avdd);
@@ -708,12 +713,10 @@ static int ov02e10_power_on(struct device *dev)
 			return ret;
 		}
 	}
-
-	if (ov02e10->reset) {
-		gpiod_set_value_cansleep(ov02e10->reset, 0);
-		/* 5ms to wait ready after XSHUTDN assert */
-		usleep_range(5000, 5500);
-	}
+	gpiod_set_value_cansleep(ov02e10->handshake, 1);
+	gpiod_set_value_cansleep(ov02e10->reset, 0);
+	/* 5ms to wait ready after XSHUTDN assert */
+	usleep_range(5000, 5500);
 
 	return ret;
 }
@@ -890,13 +893,14 @@ static int ov02e10_identify_module(struct ov02e10 *ov02e10)
 		return ret;
 
 	ret = ov02e10_read_reg(ov02e10, OV02E10_REG_CHIP_ID, 4, &val);
+	if (ret)
+		return ret;
+
 	if (val != OV02E10_CHIP_ID) {
 		dev_err(&client->dev, "chip id mismatch: %x!=%x",
 			OV02E10_CHIP_ID, val);
 		return -ENXIO;
 	}
-	dev_dbg(&client->dev, "chip id match PASS: %x==%x",
-		OV02E10_CHIP_ID, val);
 
 	return 0;
 }
