@@ -1215,8 +1215,12 @@ static int hi556_get_pm_resources(struct device *dev)
 		struct acpi_device *dep_device = NULL;
 
 		if (dep_devices.handles[i])
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+			acpi_bus_get_device(dep_devices.handles[i], &dep_device);
+#else
 			dep_device =
 				acpi_fetch_acpi_dev(dep_devices.handles[i]);
+#endif
 
 		if (dep_device && acpi_match_device_ids(dep_device, cvfd_ids) == 0) {
 			hi556->use_intel_vsc = true;

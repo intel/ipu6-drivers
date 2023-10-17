@@ -953,7 +953,7 @@ static const s64 gc5035_link_freqs[] = {
 	438000000,
 };
 
-static u64 gc5035_link_to_pixel_rate(u32 f_index)
+static u64 __maybe_unused gc5035_link_to_pixel_rate(u32 f_index)
 {
 	u64 pixel_rate = gc5035_link_freqs[f_index] * 2 * GC5035_DATA_LANES;
 
@@ -1773,7 +1773,6 @@ static u32 GC5035_AGC_Param[17][2] = {
 
 static int gc5035_set_analogue_gain(struct gc5035 *gc5035, u32 a_gain)
 {
-	struct device *dev = &gc5035->client->dev;
 	int ret = 0, i = 0;
 	u32 temp_gain = 0;
 
@@ -1999,7 +1998,7 @@ static int gc5035_check_sensor_id(struct gc5035 *gc5035,
 	return 0;
 }
 
-static int gc5035_get_hwcfg(struct gc5035 *gc5035)
+static int __maybe_unused gc5035_get_hwcfg(struct gc5035 *gc5035)
 {
 	struct device *dev = &gc5035->client->dev;
 	struct v4l2_fwnode_endpoint bus_cfg = {
