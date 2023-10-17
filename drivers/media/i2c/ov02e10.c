@@ -377,7 +377,6 @@ static int ov02e10_write_reg_list(struct ov02e10 *ov02e10,
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02e10->sd);
 	unsigned int i;
 	int ret = 0;
-	u32 val;
 
 	for (i = 0; i < r_list->num_of_regs; i++) {
 		ret = ov02e10_write_reg(ov02e10, r_list->regs[i].address, 1,
