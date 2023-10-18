@@ -714,8 +714,11 @@ static int ov02e10_power_on(struct device *dev)
 	}
 	gpiod_set_value_cansleep(ov02e10->handshake, 1);
 	gpiod_set_value_cansleep(ov02e10->reset, 0);
-	/* 5ms to wait ready after XSHUTDN assert */
-	usleep_range(5000, 5500);
+
+	/* Lattice MIPI aggregator with some version FW needs longer delay
+	   after handshake triggered. We set 25ms as a safe value and wait
+	   for a stable version FW. */
+	msleep_interruptible(25);
 
 	return ret;
 }
