@@ -47,7 +47,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_be_soc[] = {
 	{V4L2_PIX_FMT_Y10, 16, 10, 0, MEDIA_BUS_FMT_Y10_1X10,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW16},
 	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_VYUY8_1X16,
-	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
+	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_UYVY, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
@@ -105,7 +105,7 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
 #endif
 	{V4L2_PIX_FMT_Y8I, 16, 16, 0, MEDIA_BUS_FMT_VYUY8_1X16,
-	 IPU_FW_ISYS_FRAME_FORMAT_YUYV},
+	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_Z16, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
 	 IPU_FW_ISYS_FRAME_FORMAT_UYVY},
 	{V4L2_PIX_FMT_UYVY, 16, 16, 0, MEDIA_BUS_FMT_UYVY8_1X16,
@@ -1836,8 +1836,6 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 		csi_short_packet_prepare_fw_cfg(ip, stream_cfg);
 
-	ipu_fw_isys_dump_stream_cfg(dev, stream_cfg);
-
 	ip->nr_output_pins = stream_cfg->nof_output_pins;
 
 	rval = get_stream_handle(av);
@@ -1849,6 +1847,8 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	reinit_completion(&ip->stream_open_completion);
 
 	ipu_fw_isys_set_params(stream_cfg);
+
+	ipu_fw_isys_dump_stream_cfg(dev, stream_cfg);
 
 	rval = ipu_fw_isys_complex_cmd(av->isys,
 				       ip->stream_handle,
@@ -2013,7 +2013,8 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 		dev_err(dev, "stream close error: %d\n", ip->error);
 	else
 		dev_dbg(dev, "close stream: complete\n");
-
+	ip->last_sequence = atomic_read(&ip->sequence);
+	dev_dbg(dev, "IPU_ISYS_RESET: ip->last_sequence = %d\n", ip->last_sequence);
 	put_stream_opened(av);
 	put_stream_handle(av);
 }
@@ -2087,7 +2088,11 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->has_sof = false;
 	ip->nr_queues = 0;
 	ip->external = NULL;
-	atomic_set(&ip->sequence, 0);
+	if (av->isys->in_reset) {
+		atomic_set(&ip->sequence, ip->last_sequence);
+		dev_dbg(dev, "atomic_set : ip->last_sequence = %d\n", ip->last_sequence);
+	} else
+		atomic_set(&ip->sequence, 0);
 	ip->isl_mode = IPU_ISL_OFF;
 
 	for (i = 0; i < IPU_NUM_CAPTURE_DONE; i++)

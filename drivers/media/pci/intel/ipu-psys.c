@@ -777,7 +777,9 @@ int ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh,
 	struct dma_buf *dbuf;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
 	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
-	struct iosys_map dmap;
+	struct iosys_map dmap = {
+		.is_iomem = false,
+	};
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
 	struct dma_buf_map dmap;
 #endif
@@ -1843,6 +1845,6 @@ MODULE_AUTHOR("Zaikuo Wang <zaikuo.wang@intel.com>");
 MODULE_AUTHOR("Yunliang Ding <yunliang.ding@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel ipu processing system driver");
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0) || IS_ENABLED(CONFIG_DRM_I915_HAS_SRIOV)
 MODULE_IMPORT_NS(DMA_BUF);
 #endif
