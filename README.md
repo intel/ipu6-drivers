@@ -14,6 +14,11 @@ There are 4 repositories that provide the complete setup:
 - Kernel patches needed
 - Drivers for HM11B1, OV01A1S, OV01A10, OV02C10, OV02E10, OV2740, HM2170, HM2172 and HI556 sensors
 
+## Dependencies
+- intel-vsc driver and LJCA USB driver (use https://github.com/intel/ivsc-driver.git for kernel version < 6.6)
+- intel USB-IO driver (https://github.com/intel/usbio-drivers.git)
+- INTEL_SKL_INT3472 should be enabled
+
 ## Build instructions:
 Three ways are available:
 1. build with kernel source tree
