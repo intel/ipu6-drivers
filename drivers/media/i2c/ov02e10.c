@@ -12,6 +12,17 @@
 #include <media/v4l2-device.h>
 #include <linux/clk.h>
 #include <linux/gpio/consumer.h>
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+#include <linux/vsc.h>
+
+static const struct acpi_device_id cvfd_ids[] = {
+	{ "INTC1059", 0 },
+	{ "INTC1095", 0 },
+	{ "INTC100A", 0 },
+	{ "INTC10CF", 0 },
+	{}
+};
+#endif
 
 #define OV02E10_LINK_FREQ_360MHZ         360000000ULL
 #define OV02E10_SCLK                     36000000LL
@@ -282,6 +293,12 @@ struct ov02e10 {
 	struct gpio_desc *reset;
 	struct gpio_desc *handshake;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
+	struct v4l2_ctrl *privacy_status;
+#endif
+
 	/* Current mode */
 	const struct ov02e10_mode *cur_mode;
 
@@ -290,6 +307,9 @@ struct ov02e10 {
 
 	/* Streaming on/off */
 	bool streaming;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	bool use_intel_vsc;
+#endif
 };
 
 static inline struct ov02e10 *to_ov02e10(struct v4l2_subdev *subdev)
@@ -468,6 +488,12 @@ static int ov02e10_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = ov02e10_test_pattern(ov02e10, ctrl->val);
 		break;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	case V4L2_CID_PRIVACY:
+		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
+		break;
+#endif
+
 	default:
 		ret = -EINVAL;
 		break;
@@ -495,7 +521,11 @@ static int ov02e10_init_controls(struct ov02e10 *ov02e10)
 	int ret = 0;
 
 	ctrl_hdlr = &ov02e10->ctrl_handler;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
+#else
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
+#endif
 
 	if (ret)
 		return ret;
@@ -531,6 +561,12 @@ static int ov02e10_init_controls(struct ov02e10 *ov02e10)
 	if (ov02e10->hblank)
 		ov02e10->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	ov02e10->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &ov02e10_ctrl_ops,
+						    V4L2_CID_PRIVACY, 0, 1, 1,
+						    !(ov02e10->status.status));
+#endif
+
 	v4l2_ctrl_new_std(ctrl_hdlr, &ov02e10_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
 			  OV02E10_ANAL_GAIN_MIN, OV02E10_ANAL_GAIN_MAX,
 			  OV02E10_ANAL_GAIN_STEP, OV02E10_ANAL_GAIN_MIN);
@@ -564,6 +600,16 @@ static void ov02e10_update_pad_format(const struct ov02e10_mode *mode,
 	fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10;
 	fmt->field = V4L2_FIELD_NONE;
 }
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+static void ov02e10_vsc_privacy_callback(void *handle,
+				       enum vsc_privacy_status status)
+{
+	struct ov02e10 *ov02e10 = handle;
+
+	v4l2_ctrl_s_ctrl(ov02e10->privacy_status, !status);
+}
+#endif
 
 static int ov02e10_start_streaming(struct ov02e10 *ov02e10)
 {
@@ -647,6 +693,38 @@ static int ov02e10_get_pm_resources(struct device *dev)
 	struct ov02e10 *ov02e10 = to_ov02e10(sd);
 	int ret;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	acpi_handle handle = ACPI_HANDLE(dev);
+	struct acpi_handle_list dep_devices;
+	acpi_status status;
+	int i = 0;
+
+	ov02e10->use_intel_vsc = false;
+	if (!acpi_has_method(handle, "_DEP"))
+		return false;
+
+	status = acpi_evaluate_reference(handle, "_DEP", NULL, &dep_devices);
+	if (ACPI_FAILURE(status)) {
+		acpi_handle_debug(handle, "Failed to evaluate _DEP.\n");
+		return false;
+	}
+	for (i = 0; i < dep_devices.count; i++) {
+		struct acpi_device *dep_device = NULL;
+
+		if (dep_devices.handles[i])
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+			acpi_bus_get_device(dep_devices.handles[i], &dep_device);
+#else
+			dep_device =
+				acpi_fetch_acpi_dev(dep_devices.handles[i]);
+#endif
+
+		if (dep_device && acpi_match_device_ids(dep_device, cvfd_ids) == 0) {
+			ov02e10->use_intel_vsc = true;
+			return 0;
+		}
+	}
+#endif
 	ov02e10->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(ov02e10->reset))
 		return dev_err_probe(dev, PTR_ERR(ov02e10->reset),
@@ -681,6 +759,15 @@ static int ov02e10_power_off(struct device *dev)
 	struct ov02e10 *ov02e10 = to_ov02e10(sd);
 	int ret = 0;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	if (ov02e10->use_intel_vsc) {
+		ret = vsc_release_camera_sensor(&ov02e10->status);
+		if (ret && ret != -EAGAIN)
+			dev_err(dev, "Release VSC failed");
+
+		return ret;
+	}
+#endif
 	gpiod_set_value_cansleep(ov02e10->reset, 1);
 	gpiod_set_value_cansleep(ov02e10->handshake, 0);
 
@@ -698,6 +785,27 @@ static int ov02e10_power_on(struct device *dev)
 	struct ov02e10 *ov02e10 = to_ov02e10(sd);
 	int ret;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	if (ov02e10->use_intel_vsc) {
+		ov02e10->conf.lane_num = OV02E10_DATA_LANES;
+		/* frequency unit 100k */
+		ov02e10->conf.freq = OV02E10_LINK_FREQ_360MHZ / 100000;
+		ret = vsc_acquire_camera_sensor(&ov02e10->conf,
+						ov02e10_vsc_privacy_callback,
+						ov02e10, &ov02e10->status);
+		if (ret == -EAGAIN)
+			return -EPROBE_DEFER;
+		if (ret) {
+			dev_err(dev, "Acquire VSC failed");
+			return ret;
+		}
+		if (ov02e10->privacy_status)
+			__v4l2_ctrl_s_ctrl(ov02e10->privacy_status,
+					!(ov02e10->status.status));
+
+		return ret;
+	}
+#endif
 	ret = clk_prepare_enable(ov02e10->img_clk);
 	if (ret < 0) {
 		dev_err(dev, "failed to enable imaging clock: %d", ret);
@@ -942,9 +1050,9 @@ static int ov02e10_probe(struct i2c_client *client)
 	v4l2_i2c_subdev_init(&ov02e->sd, client, &ov02e10_subdev_ops);
 	ov02e10_get_pm_resources(&client->dev);
 
-	ov02e10_power_on(&client->dev);
+	ret = ov02e10_power_on(&client->dev);
 	if (ret) {
-		dev_err(&client->dev, "failed to power on\n");
+		dev_err_probe(&client->dev, ret, "failed to power on\n");
 		goto error_power_off;
 	}
 
