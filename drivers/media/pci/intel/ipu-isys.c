@@ -723,6 +723,7 @@ static int isys_iwake_watermark_cleanup(struct ipu_isys *isys)
 }
 
 /* The .bound() notifier callback when a match is found */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
 			       struct v4l2_subdev *sd,
 			       struct v4l2_async_subdev *asd)
@@ -748,6 +749,33 @@ static void isys_notifier_unbind(struct v4l2_async_notifier *notifier,
 
 	dev_info(&isys->adev->dev, "unbind %s\n", sd->name);
 }
+#else
+static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
+			       struct v4l2_subdev *sd,
+			       struct v4l2_async_connection *asc)
+{
+	struct ipu_isys *isys = container_of(notifier,
+					struct ipu_isys, notifier);
+	struct sensor_async_sd *s_asd = container_of(asc,
+					struct sensor_async_sd, asc);
+
+	dev_info(&isys->adev->dev, "bind %s nlanes is %d port is %d\n",
+		 sd->name, s_asd->csi2.nlanes, s_asd->csi2.port);
+	isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
+
+	return v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
+}
+
+static void isys_notifier_unbind(struct v4l2_async_notifier *notifier,
+				 struct v4l2_subdev *sd,
+				 struct v4l2_async_connection *asc)
+{
+	struct ipu_isys *isys = container_of(notifier,
+					struct ipu_isys, notifier);
+
+	dev_info(&isys->adev->dev, "unbind %s\n", sd->name);
+}
+#endif
 
 static int isys_notifier_complete(struct v4l2_async_notifier *notifier)
 {
@@ -765,6 +793,7 @@ static const struct v4l2_async_notifier_operations isys_async_ops = {
 	.complete = isys_notifier_complete,
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 static int isys_fwnode_parse(struct device *dev,
 			     struct v4l2_fwnode_endpoint *vep,
 			     struct v4l2_async_subdev *asd)
@@ -777,6 +806,7 @@ static int isys_fwnode_parse(struct device *dev,
 
 	return 0;
 }
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 15, 71)
 static int isys_notifier_init(struct ipu_isys *isys)
@@ -813,13 +843,7 @@ static int isys_notifier_init(struct ipu_isys *isys)
 
 	return ret;
 }
-
-static void isys_notifier_cleanup(struct ipu_isys *isys)
-{
-	v4l2_async_notifier_unregister(&isys->notifier);
-	v4l2_async_notifier_cleanup(&isys->notifier);
-}
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 static int isys_notifier_init(struct ipu_isys *isys)
 {
 	struct ipu_device *isp = isys->adev->isp;
@@ -852,7 +876,79 @@ static int isys_notifier_init(struct ipu_isys *isys)
 
 	return ret;
 }
+#else
+static int isys_notifier_init(struct ipu_isys *isys)
+{
+	const struct ipu_isys_internal_csi2_pdata *csi2 =
+	    &isys->pdata->ipdata->csi2;
+	struct ipu_device *isp = isys->adev->isp;
+	struct device *dev = &isp->pdev->dev;
+	unsigned int i;
+	int ret;
 
+	v4l2_async_nf_init(&isys->notifier, &isys->v4l2_dev);
+
+	for (i = 0; i < csi2->nports; i++) {
+		struct v4l2_fwnode_endpoint vep = {
+			.bus_type = V4L2_MBUS_CSI2_DPHY
+		};
+		struct sensor_async_sd *s_asd;
+		struct fwnode_handle *ep;
+
+		ep = fwnode_graph_get_endpoint_by_id(dev_fwnode(dev), i, 0,
+						FWNODE_GRAPH_ENDPOINT_NEXT);
+		if (!ep)
+			continue;
+
+		ret = v4l2_fwnode_endpoint_parse(ep, &vep);
+		if (ret)
+			goto err_parse;
+
+		s_asd = v4l2_async_nf_add_fwnode_remote(&isys->notifier, ep,
+							struct
+							sensor_async_sd);
+		if (IS_ERR(s_asd)) {
+			ret = PTR_ERR(s_asd);
+			goto err_parse;
+		}
+
+		s_asd->csi2.port = vep.base.port;
+		s_asd->csi2.nlanes = vep.bus.mipi_csi2.num_data_lanes;
+
+		fwnode_handle_put(ep);
+
+		continue;
+
+err_parse:
+		fwnode_handle_put(ep);
+		return ret;
+	}
+
+	if (list_empty(&isys->notifier.waiting_list)) {
+		/* isys probe could continue with async subdevs missing */
+		dev_warn(&isys->adev->dev, "no subdev found in graph\n");
+		return 0;
+	}
+
+	isys->notifier.ops = &isys_async_ops;
+	ret = v4l2_async_nf_register(&isys->notifier);
+	if (ret) {
+		dev_err(&isys->adev->dev,
+			"failed to register async notifier : %d\n", ret);
+		v4l2_async_nf_cleanup(&isys->notifier);
+	}
+
+	return ret;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 15, 71)
+static void isys_notifier_cleanup(struct ipu_isys *isys)
+{
+	v4l2_async_notifier_unregister(&isys->notifier);
+	v4l2_async_notifier_cleanup(&isys->notifier);
+}
+#else
 static void isys_notifier_cleanup(struct ipu_isys *isys)
 {
 	v4l2_async_nf_unregister(&isys->notifier);
