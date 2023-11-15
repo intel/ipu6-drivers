@@ -1452,7 +1452,11 @@ static struct i2c_driver hi556_i2c_driver = {
 		.pm = &hi556_pm_ops,
 		.acpi_match_table = ACPI_PTR(hi556_acpi_ids),
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = hi556_probe,
+#else
+	.probe = hi556_probe,
+#endif
 	.remove = hi556_remove,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 	.flags = I2C_DRV_ACPI_WAIVE_D0_PROBE,

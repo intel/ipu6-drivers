@@ -1611,7 +1611,11 @@ static struct i2c_driver ov2740_i2c_driver = {
 		.pm = &ov2740_pm_ops,
 		.acpi_match_table = ov2740_acpi_ids,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = ov2740_probe,
+#else
+	.probe = ov2740_probe,
+#endif
 	.remove = ov2740_remove,
 };
 

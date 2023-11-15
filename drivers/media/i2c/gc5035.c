@@ -2187,7 +2187,11 @@ static struct i2c_driver gc5035_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(gc5035_acpi_ids),
 		.of_match_table = gc5035_of_match,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new	= gc5035_probe,
+#else
+	.probe		= gc5035_probe,
+#endif
 	.remove		= gc5035_remove,
 };
 module_i2c_driver(gc5035_i2c_driver);
