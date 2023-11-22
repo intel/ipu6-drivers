@@ -942,7 +942,11 @@ static struct i2c_driver ov01a10_i2c_driver = {
 		.pm = &ov01a10_pm_ops,
 		.acpi_match_table = ACPI_PTR(ov01a10_acpi_ids),
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = ov01a10_probe,
+#else
+	.probe = ov01a10_probe,
+#endif
 	.remove = ov01a10_remove,
 };
 

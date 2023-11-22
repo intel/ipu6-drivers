@@ -1229,7 +1229,11 @@ static struct i2c_driver hm11b1_i2c_driver = {
 		.pm = &hm11b1_pm_ops,
 		.acpi_match_table = ACPI_PTR(hm11b1_acpi_ids),
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = hm11b1_probe,
+#else
+	.probe = hm11b1_probe,
+#endif
 	.remove = hm11b1_remove,
 };
 

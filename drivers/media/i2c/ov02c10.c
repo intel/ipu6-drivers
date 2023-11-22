@@ -1324,12 +1324,16 @@ static int ov02c10_read_module_name(struct ov02c10 *ov02c10)
 	struct device *dev = &client->dev;
 	int i = 0;
 	union acpi_object *obj;
-
-	obj = acpi_evaluate_dsm_typed(ACPI_COMPANION(dev)->handle,
-				     &cio2_sensor_module_guid, 0x00,
-				     0x01, NULL, ACPI_TYPE_STRING);
+	struct acpi_device *adev = ACPI_COMPANION(dev);
 
 	ov02c10->module_name_index = 0;
+	if (!adev)
+		return 0;
+
+	obj = acpi_evaluate_dsm_typed(adev->handle,
+				      &cio2_sensor_module_guid, 0x00,
+				      0x01, NULL, ACPI_TYPE_STRING);
+
 	if (obj && obj->string.type == ACPI_TYPE_STRING) {
 		for (i = 1; i < ARRAY_SIZE(ov02c10_module_names); i++) {
 			if (!strcmp(ov02c10_module_names[i], obj->string.pointer)) {
@@ -1431,7 +1435,11 @@ static struct i2c_driver ov02c10_i2c_driver = {
 		.pm = &ov02c10_pm_ops,
 		.acpi_match_table = ACPI_PTR(ov02c10_acpi_ids),
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = ov02c10_probe,
+#else
+	.probe = ov02c10_probe,
+#endif
 	.remove = ov02c10_remove,
 };
 
