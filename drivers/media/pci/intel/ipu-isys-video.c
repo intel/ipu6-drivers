@@ -513,6 +513,7 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 	/* overwrite bpl/height with compression alignment */
 	if (av->compression) {
 		u32 planar_tile_status_size, tile_status_size;
+		u64 planar_bytes;
 
 		mpix->plane_fmt[0].bytesperline =
 		    ALIGN(mpix->plane_fmt[0].bytesperline,
@@ -525,10 +526,11 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 			  IPU_ISYS_COMPRESSION_PAGE_ALIGN);
 
 		/* ISYS compression only for RAW and single plannar */
+		planar_bytes =
+		    mul_u32_u32(mpix->plane_fmt[0].bytesperline, mpix->height);
 		planar_tile_status_size =
-		    DIV_ROUND_UP_ULL((mpix->plane_fmt[0].bytesperline *
-				      mpix->height /
-				      IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
+		    DIV_ROUND_UP_ULL((planar_bytes /
+				     IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
 				     IPU_ISYS_COMPRESSION_TILE_STATUS_BITS,
 				     BITS_PER_BYTE);
 		tile_status_size = ALIGN(planar_tile_status_size,
@@ -2014,7 +2016,8 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	else
 		dev_dbg(dev, "close stream: complete\n");
 	ip->last_sequence = atomic_read(&ip->sequence);
-	dev_dbg(dev, "IPU_ISYS_RESET: ip->last_sequence = %d\n", ip->last_sequence);
+	dev_dbg(dev, "IPU_ISYS_RESET: ip->last_sequence = %d\n",
+		ip->last_sequence);
 	put_stream_opened(av);
 	put_stream_handle(av);
 }
@@ -2090,9 +2093,11 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	ip->external = NULL;
 	if (av->isys->in_reset) {
 		atomic_set(&ip->sequence, ip->last_sequence);
-		dev_dbg(dev, "atomic_set : ip->last_sequence = %d\n", ip->last_sequence);
-	} else
+		dev_dbg(dev, "atomic_set : ip->last_sequence = %d\n",
+			ip->last_sequence);
+	} else {
 		atomic_set(&ip->sequence, 0);
+	}
 	ip->isl_mode = IPU_ISL_OFF;
 
 	for (i = 0; i < IPU_NUM_CAPTURE_DONE; i++)

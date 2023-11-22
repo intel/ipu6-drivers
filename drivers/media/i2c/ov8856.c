@@ -1308,7 +1308,11 @@ static struct i2c_driver ov8856_i2c_driver = {
 		.pm = &ov8856_pm_ops,
 		.acpi_match_table = ACPI_PTR(ov8856_acpi_ids),
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = ov8856_probe,
+#else
+	.probe = ov8856_probe,
+#endif
 	.remove = ov8856_remove,
 	.id_table = ov8856_id_table,
 };
