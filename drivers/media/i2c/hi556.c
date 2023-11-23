@@ -927,7 +927,7 @@ static int hi556_power_off(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct hi556 *hi556 = to_hi556(sd);
-	int ret;
+	int ret = 0;
 
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 	if (hi556->use_intel_vsc) {
@@ -951,7 +951,7 @@ static int hi556_power_on(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct hi556 *hi556 = to_hi556(sd);
-	int ret = 0;
+	int ret;
 
 #if IS_ENABLED(CONFIG_INTEL_VSC)
 	if (hi556->use_intel_vsc) {

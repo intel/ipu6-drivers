@@ -30,7 +30,7 @@ static const struct acpi_device_id cvfd_ids[] = {
 #define OV02E10_DATA_LANES               2
 #define OV02E10_RGB_DEPTH                10
 
-#define OV02E10_REG_DELAY                0xffff
+#define OV02E10_REG_DELAY                0xff
 
 #define OV02E10_REG_PAGE_FLAG            0xfd
 #define OV02E10_PAGE_0                   0x0
@@ -47,10 +47,6 @@ static const struct acpi_device_id cvfd_ids[] = {
 
 #define OV02E10_REG_CHIP_ID              0x00
 #define OV02E10_CHIP_ID                  0x45025610
-
-#define OV02E10_REG_MODE_SELECT          0x0100
-#define OV02E10_MODE_STANDBY             0x00
-#define OV02E10_MODE_STREAMING           0x01
 
 /* vertical-timings from sensor */
 #define OV02E10_REG_VTS                  0x35
@@ -243,10 +239,8 @@ static const struct ov02e10_reg mode_1928x1088_30fps_2lane[] = {
 	{ 0x49, 0xad },
 	{ 0xfd, 0x00 },
 	{ 0xc4, 0x01 },
-	{ 0xa0, 0x01 },
 	{ 0xfd, 0x01 },
 	{ 0x33, 0x03 },
-	{ 0x01, 0x02 },
 	{ 0xfd, 0x00 },
 	{ 0x20, 0x1f },
 };
@@ -340,7 +334,7 @@ static int ov02e10_read_reg(struct ov02e10 *ov02e10, u8 reg, u16 len, u32 *val)
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02e10->sd);
 	struct i2c_msg msgs[2];
 	u8 data_buf[4] = { 0 };
-	int ret = 0;
+	int ret;
 
 	if (len > sizeof(data_buf))
 		return -EINVAL;
@@ -367,7 +361,7 @@ static int ov02e10_write_reg(struct ov02e10 *ov02e10, u8 reg, u16 len, u32 val)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02e10->sd);
 	u8 buf[5];
-	int ret = 0;
+	int ret;
 
 	if (len > 4)
 		return -EINVAL;
@@ -396,7 +390,7 @@ static int ov02e10_write_reg_list(struct ov02e10 *ov02e10,
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02e10->sd);
 	unsigned int i;
-	int ret = 0;
+	int ret;
 
 	for (i = 0; i < r_list->num_of_regs; i++) {
 		ret = ov02e10_write_reg(ov02e10, r_list->regs[i].address, 1,
@@ -428,7 +422,7 @@ static int ov02e10_set_ctrl(struct v4l2_ctrl *ctrl)
 					       struct ov02e10, ctrl_handler);
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02e10->sd);
 	s64 exposure_max;
-	int ret = 0;
+	int ret;
 
 	/* Propagate change of current control to all related controls */
 	if (ctrl->id == V4L2_CID_VBLANK) {
@@ -518,7 +512,7 @@ static int ov02e10_init_controls(struct ov02e10 *ov02e10)
 	s64 exposure_max, h_blank, pixel_rate;
 	u32 vblank_min, vblank_max, vblank_default;
 	int size;
-	int ret = 0;
+	int ret;
 
 	ctrl_hdlr = &ov02e10->ctrl_handler;
 #if IS_ENABLED(CONFIG_INTEL_VSC)
@@ -615,7 +609,7 @@ static int ov02e10_start_streaming(struct ov02e10 *ov02e10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02e10->sd);
 	const struct ov02e10_reg_list *reg_list;
-	int ret = 0;
+	int ret;
 
 	dev_dbg(&client->dev, "start to set sensor settings\n");
 	reg_list = &ov02e10->cur_mode->reg_list;
@@ -626,9 +620,10 @@ static int ov02e10_start_streaming(struct ov02e10 *ov02e10)
 	}
 	dev_dbg(&client->dev, "start to set ctrl_handler\n");
 	ret = __v4l2_ctrl_handler_setup(ov02e10->sd.ctrl_handler);
-	if (ret)
+	if (ret) {
 		dev_err(&client->dev, "setup V4L2 ctrl handler fail\n");
-	return ret;
+		return ret;
+	}
 
 	dev_dbg(&client->dev, "start to streaming\n");
 	ret = ov02e10_write_reg_list(ov02e10, &ov02e10_streaming_list);
@@ -637,17 +632,17 @@ static int ov02e10_start_streaming(struct ov02e10 *ov02e10)
 		return ret;
 	}
 
-	return ret;
+	return 0;
 }
 
 static void ov02e10_stop_streaming(struct ov02e10 *ov02e10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02e10->sd);
-	int ret = 0;
+	int ret;
 
 	ret = ov02e10_write_reg_list(ov02e10, &ov02e10_standby_list);
 	if (ret)
-		dev_err(&client->dev, "failed to stop streaming");
+		dev_err(&client->dev, "failed to stop streaming: %d", ret);
 }
 
 static int ov02e10_set_stream(struct v4l2_subdev *sd, int enable)
@@ -772,7 +767,7 @@ static int ov02e10_power_off(struct device *dev)
 	gpiod_set_value_cansleep(ov02e10->handshake, 0);
 
 	if (ov02e10->avdd)
-		regulator_disable(ov02e10->avdd);
+		ret = regulator_disable(ov02e10->avdd);
 
 	clk_disable_unprepare(ov02e10->img_clk);
 
