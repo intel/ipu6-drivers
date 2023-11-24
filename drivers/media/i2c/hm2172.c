@@ -15,6 +15,17 @@
 #include <media/v4l2-fwnode.h>
 #include <linux/clk.h>
 #include <linux/gpio/consumer.h>
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+#include <linux/vsc.h>
+
+static const struct acpi_device_id cvfd_ids[] = {
+	{ "INTC1059", 0 },
+	{ "INTC1095", 0 },
+	{ "INTC100A", 0 },
+	{ "INTC10CF", 0 },
+	{}
+};
+#endif
 
 #define HM2172_LINK_FREQ_384MHZ		384000000ULL
 #define HM2172_SCLK			76000000LL
@@ -915,6 +926,12 @@ struct hm2172 {
 	struct gpio_desc *reset;
 	struct gpio_desc *handshake;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	struct vsc_mipi_config conf;
+	struct vsc_camera_status status;
+	struct v4l2_ctrl *privacy_status;
+#endif
+
 	/* Current mode */
 	const struct hm2172_mode *cur_mode;
 
@@ -923,6 +940,9 @@ struct hm2172 {
 
 	/* Streaming on/off */
 	bool streaming;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	bool use_intel_vsc;
+#endif
 };
 
 static inline struct hm2172 *to_hm2172(struct v4l2_subdev *subdev)
@@ -1086,6 +1106,12 @@ static int hm2172_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = hm2172_test_pattern(hm2172, ctrl->val);
 		break;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	case V4L2_CID_PRIVACY:
+		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
+		break;
+#endif
+
 	default:
 		ret = -EINVAL;
 		break;
@@ -1112,7 +1138,11 @@ static int hm2172_init_controls(struct hm2172 *hm2172)
 	int ret = 0;
 
 	ctrl_hdlr = &hm2172->ctrl_handler;
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
+#else
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
+#endif
 
 	if (ret)
 		return ret;
@@ -1148,6 +1178,12 @@ static int hm2172_init_controls(struct hm2172 *hm2172)
 	if (hm2172->hblank)
 		hm2172->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	hm2172->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &hm2172_ctrl_ops,
+						   V4L2_CID_PRIVACY, 0, 1, 1,
+						   !(hm2172->status.status));
+#endif
+
 	v4l2_ctrl_new_std(ctrl_hdlr, &hm2172_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
 			  HM2172_ANAL_GAIN_MIN, HM2172_ANAL_GAIN_MAX,
 			  HM2172_ANAL_GAIN_STEP, HM2172_ANAL_GAIN_MIN);
@@ -1180,6 +1216,16 @@ static void hm2172_update_pad_format(const struct hm2172_mode *mode,
 	fmt->code = MEDIA_BUS_FMT_SGRBG10_1X10;
 	fmt->field = V4L2_FIELD_NONE;
 }
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+static void hm2172_vsc_privacy_callback(void *handle,
+				       enum vsc_privacy_status status)
+{
+	struct hm2172 *hm2172 = handle;
+
+	v4l2_ctrl_s_ctrl(hm2172->privacy_status, !status);
+}
+#endif
 
 static int hm2172_start_streaming(struct hm2172 *hm2172)
 {
@@ -1256,6 +1302,15 @@ static int hm2172_power_off(struct device *dev)
 	struct hm2172 *hm2172 = to_hm2172(sd);
 	int ret = 0;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	if (hm2172->use_intel_vsc) {
+		ret = vsc_release_camera_sensor(&hm2172->status);
+		if (ret && ret != -EAGAIN)
+			dev_err(dev, "Release VSC failed");
+
+		return ret;
+	}
+#endif
 	gpiod_set_value_cansleep(hm2172->reset, 1);
 	gpiod_set_value_cansleep(hm2172->handshake, 0);
 
@@ -1272,6 +1327,28 @@ static int hm2172_power_on(struct device *dev)
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct hm2172 *hm2172 = to_hm2172(sd);
 	int ret;
+
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	if (hm2172->use_intel_vsc) {
+		hm2172->conf.lane_num = HM2172_DATA_LANES;
+		/* frequency unit 100k */
+		hm2172->conf.freq = HM2172_LINK_FREQ_384MHZ / 100000;
+		ret = vsc_acquire_camera_sensor(&hm2172->conf,
+						hm2172_vsc_privacy_callback,
+						hm2172, &hm2172->status);
+		if (ret == -EAGAIN)
+			return -EPROBE_DEFER;
+		if (ret) {
+			dev_err(dev, "Acquire VSC failed");
+			return ret;
+		}
+		if (hm2172->privacy_status)
+			__v4l2_ctrl_s_ctrl(hm2172->privacy_status,
+						!(hm2172->status.status));
+
+		return ret;
+	}
+#endif
 
 	ret = clk_prepare_enable(hm2172->img_clk);
 	if (ret < 0) {
@@ -1306,6 +1383,38 @@ static int hm2172_get_pm_resources(struct device *dev)
 	struct hm2172 *hm2172 = to_hm2172(sd);
 	int ret = 0;
 
+#if IS_ENABLED(CONFIG_INTEL_VSC)
+	acpi_handle handle = ACPI_HANDLE(dev);
+	struct acpi_handle_list dep_devices;
+	acpi_status status;
+	int i = 0;
+
+	hm2172->use_intel_vsc = false;
+	if (!acpi_has_method(handle, "_DEP"))
+		return false;
+
+	status = acpi_evaluate_reference(handle, "_DEP", NULL, &dep_devices);
+	if (ACPI_FAILURE(status)) {
+		acpi_handle_debug(handle, "Failed to evaluate _DEP.\n");
+		return false;
+	}
+	for (i = 0; i < dep_devices.count; i++) {
+		struct acpi_device *dep_device = NULL;
+
+		if (dep_devices.handles[i])
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+			acpi_bus_get_device(dep_devices.handles[i], &dep_device);
+#else
+			dep_device =
+				acpi_fetch_acpi_dev(dep_devices.handles[i]);
+#endif
+
+		if (dep_device && acpi_match_device_ids(dep_device, cvfd_ids) == 0) {
+			hm2172->use_intel_vsc = true;
+			return 0;
+		}
+	}
+#endif
 	hm2172->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(hm2172->reset))
 		return dev_err_probe(dev, PTR_ERR(hm2172->reset),
@@ -1551,7 +1660,7 @@ static int hm2172_probe(struct i2c_client *client)
 
 	ret = hm2172_power_on(&client->dev);
 	if (ret) {
-		dev_err(&client->dev, "failed to power on\n");
+		dev_err_probe(&client->dev, ret, "failed to power on\n");
 		goto error_power_off;
 	}
 
