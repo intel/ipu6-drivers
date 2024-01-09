@@ -54,3 +54,10 @@ There are 4 repositories:
 	NOTE: Build with iot LTS kernel 5.15, should apply the patches under
               "ipu6-drivers/kernel_patches/patch_5.15_x_iot/".
 ```
+### Build with dkms
+```sh
+	cd ipu6-drivers
+	git clone https://github.com/intel/ivsc-driver.git
+	cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include .
+	rm -rf ivsc-driver
+```
