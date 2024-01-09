@@ -56,8 +56,8 @@ There are 4 repositories:
 ```
 ### Build with dkms
 ```sh
-	cd ipu6-drivers
-	git clone https://github.com/intel/ivsc-driver.git
-	cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include .
-	rm -rf ivsc-driver
+	Install kernel header src.
+	sudo dkms add .
+	sudo dkms build -m ipu6-drivers -v 0.0.1
+	sudo dkms autoinstall ipu6-drivers/0.0.1
 ```
