@@ -1,0 +1,68 @@
+From 86d0b67f0551111ef554cd1d8e7976d9e697f6bb Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Mon, 21 Aug 2023 17:28:39 +0800
+Subject: [PATCH 01/22] media: intel: Enable LT6911UXC, LT6911UXE and Intel
+ IPU6
+
+Change Description:
+Message for Open Source:
+Enable LT6911UXC, LT6911UXE and Intel IPU6
+
+Message for Internal:
+Enable LT6911UXC, LT6911UXE and Intel IPU6
+
+Test Platform:
+ASL
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/i2c/Kconfig  | 22 ++++++++++++++++++++++
+ drivers/media/i2c/Makefile |  2 ++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 74ff833ff48c..4d9477c4e152 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -1440,6 +1440,28 @@ config VIDEO_THS7303
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called ths7303.
+ 
++config VIDEO_LT6911UXC
++	tristate "Lontium LT6911UXC decoder"
++	depends on VIDEO_DEV && I2C
++	select VIDEO_V4L2_SUBDEV_API
++	help
++	This is a Video4Linux2 sensor-level driver for the Lontium
++	LT6911UXC HDMI to MIPI CSI-2 bridge.
++
++	To compile this driver as a module, choose M here: the
++	module will be called lt6911uxc.
++
++config VIDEO_LT6911UXE
++	tristate "Lontium LT6911UXE decoder"
++	depends on VIDEO_DEV && I2C
++	select VIDEO_V4L2_SUBDEV_API
++	help
++	This is a Video4Linux2 sensor-level driver for the Lontium
++	LT6911UXE HDMI to MIPI CSI-2 bridge.
++
++	To compile this driver as a module, choose M here: the
++	module will be called lt6911uxe.
++
+ endmenu
+ 
+ #
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 80b00d39b48f..aeb26c95caea 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -145,3 +145,5 @@ obj-$(CONFIG_VIDEO_VP27SMPX) += vp27smpx.o
+ obj-$(CONFIG_VIDEO_VPX3220) += vpx3220.o
+ obj-$(CONFIG_VIDEO_WM8739) += wm8739.o
+ obj-$(CONFIG_VIDEO_WM8775) += wm8775.o
++obj-$(CONFIG_VIDEO_LT6911UXC) += lt6911uxc.o
++obj-$(CONFIG_VIDEO_LT6911UXE) += lt6911uxe.o
+-- 
+2.34.1
+

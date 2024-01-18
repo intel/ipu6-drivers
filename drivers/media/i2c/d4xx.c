@@ -5248,7 +5248,11 @@ static int ds5_i2c_addr_setting(struct i2c_client *c, struct ds5 *state)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int ds5_probe(struct i2c_client *c)
+#else
 static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
+#endif
 {
 	struct ds5 *state = devm_kzalloc(&c->dev, sizeof(*state), GFP_KERNEL);
 	u16 rec_state;
@@ -5264,8 +5268,12 @@ static int ds5_probe(struct i2c_client *c, const struct i2c_device_id *id)
 
 	state->client = c;
 	dev_warn(&c->dev, "Probing new driver for D45x\n");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	state->variant = ds5_variants;
+#else
 	dev_warn(&c->dev, "Driver data NAEL %d\n", (int)id->driver_data);
 	state->variant = ds5_variants + id->driver_data;
+#endif
 
 	state->vcc = devm_regulator_get(&c->dev, "vcc");
 	if (IS_ERR(state->vcc)) {
@@ -5436,9 +5444,9 @@ static struct i2c_driver ds5_i2c_driver = {
 		.owner = THIS_MODULE,
 		.name = DS5_DRIVER_NAME
 	},
-	.probe		= ds5_probe,
-	.remove		= ds5_remove,
-	.id_table	= ds5_id,
+	.probe          = ds5_probe,
+	.remove         = ds5_remove,
+	.id_table       = ds5_id,
 };
 
 module_i2c_driver(ds5_i2c_driver);
