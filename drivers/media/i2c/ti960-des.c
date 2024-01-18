@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2022 Intel Corporation
+// Copyright (C) 2023 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/gpio.h>
@@ -654,6 +654,8 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 	struct i2c_client *client = v4l2_get_subdevdata(subdev);
 	int i, j, k, l, m, rval;
 	bool port_registered[NR_OF_TI960_SINK_PADS];
+	bool speed_detect_fail;
+	unsigned char val;
 
 	for (i = 0 ; i < NR_OF_TI960_SINK_PADS; i++)
 		port_registered[i] = false;
@@ -750,6 +752,28 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 				info->board_info.addr << 1);
 		if (rval)
 			return rval;
+
+		ti953_bus_speed(&va->sd, info->rx_port, info->ser_alias,
+				TI953_I2C_SPEED_FAST_PLUS);
+		speed_detect_fail =
+			ti953_reg_read(&va->sd, info->rx_port,
+				       info->board_info.addr, 0, &val);
+		if (speed_detect_fail) {
+			ti953_bus_speed(&va->sd, info->rx_port, info->ser_alias,
+					TI953_I2C_SPEED_FAST);
+			speed_detect_fail =
+				ti953_reg_read(&va->sd, info->rx_port,
+					       info->board_info.addr, 0, &val);
+		}
+		if (speed_detect_fail) {
+			ti953_bus_speed(&va->sd, info->rx_port, info->ser_alias,
+					TI953_I2C_SPEED_STANDARD);
+			speed_detect_fail =
+				ti953_reg_read(&va->sd, info->rx_port,
+					       info->board_info.addr, 0, &val);
+		}
+		if (speed_detect_fail)
+			dev_err(va->sd.dev, "i2c bus speed standard failed!");
 
 		va->sub_devs[k].sd = v4l2_i2c_new_subdev_board(
 			va->sd.v4l2_dev, client->adapter,
@@ -1494,8 +1518,12 @@ static int ti960_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int ti960_probe(struct i2c_client *client)
+#else
 static int ti960_probe(struct i2c_client *client,
 			const struct i2c_device_id *devid)
+#endif
 {
 	struct ti960 *va;
 	int i, j, k, l, rval = 0;
@@ -1689,7 +1717,7 @@ static struct i2c_driver ti960_i2c_driver = {
 		.name = TI960_NAME,
 		.pm = &ti960_pm_ops,
 	},
-	.probe	= ti960_probe,
+	.probe = ti960_probe,
 	.remove	= ti960_remove,
 	.id_table = ti960_id_table,
 };

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2016 - 2022 Intel Corporation
+// Copyright (C) 2016 - 2023 Intel Corporation
 
 #include <linux/device.h>
 #include <linux/gpio.h>
@@ -1212,8 +1212,12 @@ static int ti964_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int ti964_probe(struct i2c_client *client)
+#else
 static int ti964_probe(struct i2c_client *client,
 			const struct i2c_device_id *devid)
+#endif
 {
 	struct ti964 *va;
 	int i, rval = 0;
@@ -1395,8 +1399,8 @@ static struct i2c_driver ti964_i2c_driver = {
 		.name = TI964_NAME,
 		.pm = &ti964_pm_ops,
 	},
-	.probe	= ti964_probe,
-	.remove	= ti964_remove,
+	.probe = ti964_probe,
+	.remove = ti964_remove,
 	.id_table = ti964_id_table,
 };
 module_i2c_driver(ti964_i2c_driver);
