@@ -2087,11 +2087,7 @@ static struct i2c_driver imx390_i2c_driver = {
 		.name = "imx390",
 		.pm = &imx390_pm_ops,
 	},
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = imx390_probe,
-#else
-	.probe = imx390_probe,
-#endif
 	.remove = imx390_remove,
 	.id_table = imx390_id_table,
 };

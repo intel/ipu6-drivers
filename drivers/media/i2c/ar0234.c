@@ -2321,11 +2321,7 @@ static struct i2c_driver ar0234_i2c_driver = {
 		.name = "ar0234",
 		.pm = &ar0234_pm_ops,
 	},
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = ar0234_probe,
-#else
-	.probe = ar0234_probe,
-#endif
 	.remove = ar0234_remove,
 	.id_table = ar0234_id_table,
 };

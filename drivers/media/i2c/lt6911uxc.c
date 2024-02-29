@@ -1406,8 +1406,6 @@ static int lt6911uxc_probe(struct i2c_client *client)
 		if (!gpio_get_value(lt6911uxc->platform_data->reset_pin))
 			gpio_set_value(lt6911uxc->platform_data->reset_pin, 1);
 
-	msleep(50);
-
 	if (-1 != lt6911uxc->platform_data->irq_pin) {
 		lt6911uxc->auxiliary_port = false;
 		dev_info(&client->dev, "Probing lt6911uxc chip...\n");
@@ -1596,11 +1594,7 @@ static struct i2c_driver lt6911uxc_i2c_driver = {
 		.name = "lt6911uxc",
 		.pm = &lt6911uxc_pm_ops,
 	},
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = lt6911uxc_probe,
-#else
-	.probe = lt6911uxc_probe,
-#endif
 	.remove = lt6911uxc_remove,
 	.id_table = lt6911uxc_id_table,
 };
