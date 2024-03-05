@@ -1217,6 +1217,7 @@ static void isys_remove(struct ipu_bus_device *adev)
 
 	mutex_destroy(&isys->stream_mutex);
 	mutex_destroy(&isys->mutex);
+	mutex_destroy(&isys->lib_mutex);
 
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT) {
 		u32 trace_size = IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE;
@@ -1587,6 +1588,16 @@ out_unregister_devices:
 	isys_iwake_watermark_cleanup(isys);
 	isys_unregister_devices(isys);
 out_remove_pkg_dir_shared_buffer:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+	cpu_latency_qos_remove_request(&isys->pm_qos);
+#else
+	pm_qos_remove_request(&isys->pm_qos);
+#endif
+	ipu_trace_uninit(&adev->dev);
+#ifdef CONFIG_DEBUG_FS
+	if (isp->ipu_dir)
+		debugfs_remove_recursive(isys->debugfsdir);
+#endif
 	if (!isp->secure_mode)
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
 				     isys->pkg_dir_dma_addr,
@@ -1597,10 +1608,10 @@ remove_shared_buffer:
 release_firmware:
 	if (!isp->secure_mode)
 		release_firmware(isys->fw);
-	ipu_trace_uninit(&adev->dev);
 
 	mutex_destroy(&isys->mutex);
 	mutex_destroy(&isys->stream_mutex);
+	mutex_destroy(&isys->lib_mutex);
 
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT)
 		mutex_destroy(&isys->short_packet_tracing_mutex);
