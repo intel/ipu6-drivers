@@ -787,7 +787,12 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 			 unsigned int num_sink,
 			 unsigned int sd_flags)
 {
-	int rval = -EINVAL;
+	int i, rval = -EINVAL;
+
+	if ((num_source + num_sink) != num_pads) {
+		dev_err(&asd->isys->adev->dev, "%s: invalid num pads, source, sink combo\n", __func__);
+		return -EINVAL;
+	}
 
 	mutex_init(&asd->mutex);
 
@@ -817,6 +822,13 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 	if (!asd->pad || !asd->ffmt || !asd->crop || !asd->compose ||
 	    !asd->valid_tgts)
 		return -ENOMEM;
+
+	for (i = 0; i < num_sink; i++)
+		asd->pad[i].flags = MEDIA_PAD_FL_SINK;
+
+	/* Continue from above loop */
+	for (;i < num_pads; i++)
+		asd->pad[i].flags = MEDIA_PAD_FL_SOURCE;
 
 	rval = media_entity_pads_init(&asd->sd.entity, num_pads, asd->pad);
 	if (rval)

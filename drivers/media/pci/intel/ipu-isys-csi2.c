@@ -534,9 +534,7 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 	if (rval)
 		goto fail;
 
-	csi2->asd.pad[CSI2_PAD_SINK].flags = MEDIA_PAD_FL_SINK
-		| MEDIA_PAD_FL_MUST_CONNECT;
-	csi2->asd.pad[CSI2_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
+	csi2->asd.pad[CSI2_PAD_SINK].flags |= MEDIA_PAD_FL_MUST_CONNECT;
 
 	src = index;
 	csi2->asd.source = IPU_FW_ISYS_STREAM_SRC_CSI2_PORT0 + src;
