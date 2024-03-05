@@ -382,15 +382,12 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
 	struct ipu_isys_csi2_be_soc *csi2_be_soc;
-	unsigned int i, k;
-	int rval;
+	int i = 0, k = 0, rval;
 
 	isys->csi2 = devm_kcalloc(&isys->adev->dev, csi2->nports,
 				  sizeof(*isys->csi2), GFP_KERNEL);
-	if (!isys->csi2) {
-		rval = -ENOMEM;
-		goto fail;
-	}
+	if (!isys->csi2)
+		return -ENOMEM;
 
 	for (i = 0; i < csi2->nports; i++) {
 		rval = ipu_isys_csi2_init(&isys->csi2[i], isys,
@@ -425,7 +422,8 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 			if (rval) {
 				dev_info(&isys->adev->dev,
 					 "can't create link csi2->be_soc\n");
-				goto fail;
+				isys_unregister_subdevices(isys);
+				return rval;
 			}
 		}
 	}
@@ -433,7 +431,16 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	return 0;
 
 fail:
-	isys_unregister_subdevices(isys);
+	while (--k >= 0) {
+		dev_info(&isys->adev->dev, "foo %d\n", k);
+		ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc[k]);
+	}
+
+	while (--i >= 0) {
+		dev_info(&isys->adev->dev, "bar %d\n", k);
+		ipu_isys_csi2_cleanup(&isys->csi2[i]);
+	}
+
 	return rval;
 }
 
