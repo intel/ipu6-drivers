@@ -396,8 +396,10 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 		rval = ipu_isys_csi2_init(&isys->csi2[i], isys,
 					  isys->pdata->base +
 					  csi2->offsets[i], i);
-		if (rval)
+		if (rval) {
+			dev_err(&isys->adev->dev, "ipu_isys_csi2_init() err %d\n", rval);
 			goto fail;
+		}
 
 		isys->isr_csi2_bits |= IPU_ISYS_UNISPART_IRQ_CSI2(i);
 	}
@@ -1009,12 +1011,16 @@ static int isys_register_devices(struct ipu_isys *isys)
 		goto out_v4l2_device_unregister;
 
 	rval = isys_notifier_init(isys);
-	if (rval)
+	if (rval) {
+		dev_err(&isys->adev->dev, "isys_notifier_init() err %d\n", rval);
 		goto out_isys_unregister_subdevices;
+	}
 
 	rval = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
-	if (rval)
+	if (rval) {
+		dev_err(&isys->adev->dev, "error registering subdev nodes %d\n", rval);
 		goto out_isys_notifier_cleanup;
+	}
 
 	return 0;
 
@@ -1561,8 +1567,10 @@ static int isys_probe(struct ipu_bus_device *adev)
 	if (rval)
 		goto out_remove_pkg_dir_shared_buffer;
 	rval = isys_iwake_watermark_init(isys);
-	if (rval)
+	if (rval) {
+		dev_err(&adev->dev, "isys_iwake_watermark_init() err %d\n", rval);
 		goto out_unregister_devices;
+	}
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 

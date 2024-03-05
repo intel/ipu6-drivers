@@ -531,8 +531,10 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 				    NR_OF_CSI2_SOURCE_PADS,
 				    NR_OF_CSI2_SINK_PADS,
 				    0);
-	if (rval)
+	if (rval) {
+		dev_err(&isys->adev->dev, "ipu_isys_subdev_init() err %d\n", rval);
 		goto fail;
+	}
 
 	csi2->asd.pad[CSI2_PAD_SINK].flags = MEDIA_PAD_FL_SINK
 		| MEDIA_PAD_FL_MUST_CONNECT;
