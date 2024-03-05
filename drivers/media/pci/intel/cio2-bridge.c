@@ -9,6 +9,7 @@
 #include <linux/version.h>
 #include <media/v4l2-fwnode.h>
 
+#include "ipu.h"
 #include "cio2-bridge.h"
 
 /*

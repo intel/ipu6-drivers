@@ -858,8 +858,12 @@ static int ov08a10_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&ov08a10->mutex);
 	ov08a10_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state,
 					    fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		ov08a10->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ov08a10->link_freq, mode->link_freq_index);
@@ -892,9 +896,13 @@ static int ov08a10_get_format(struct v4l2_subdev *sd,
 
 	mutex_lock(&ov08a10->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov08a10->sd,
 							  sd_state,
 							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
+#endif
 	else
 		ov08a10_update_pad_format(ov08a10->cur_mode, &fmt->format);
 
@@ -938,8 +946,13 @@ static int ov08a10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct ov08a10 *ov08a10 = to_ov08a10(sd);
 
 	mutex_lock(&ov08a10->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	ov08a10_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	ov08a10_update_pad_format(&supported_modes[0],
+				  v4l2_subdev_state_get_format(fh->state, 0));
+#endif
 	mutex_unlock(&ov08a10->mutex);
 
 	return 0;

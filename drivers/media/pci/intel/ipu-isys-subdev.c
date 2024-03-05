@@ -162,8 +162,10 @@ struct v4l2_mbus_framefmt *__ipu_isys_get_ffmt(struct v4l2_subdev *sd,
 		return v4l2_subdev_get_try_format(cfg, pad);
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		return v4l2_subdev_get_try_format(sd, cfg, pad);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		return v4l2_subdev_get_try_format(sd, state, pad);
+#else
+		return v4l2_subdev_state_get_format(state, pad);
 #endif
 }
 
@@ -199,11 +201,16 @@ struct v4l2_rect *__ipu_isys_get_selection(struct v4l2_subdev *sd,
 			return v4l2_subdev_get_try_crop(sd, cfg, pad);
 		case V4L2_SEL_TGT_COMPOSE:
 			return v4l2_subdev_get_try_compose(sd, cfg, pad);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		case V4L2_SEL_TGT_CROP:
 			return v4l2_subdev_get_try_crop(sd, state, pad);
 		case V4L2_SEL_TGT_COMPOSE:
 			return v4l2_subdev_get_try_compose(sd, state, pad);
+#else
+		case V4L2_SEL_TGT_CROP:
+			return v4l2_subdev_state_get_crop(state, pad);
+		case V4L2_SEL_TGT_COMPOSE:
+			return v4l2_subdev_state_get_compose(state, pad);
 #endif
 		}
 	}
@@ -755,13 +762,20 @@ int ipu_isys_subdev_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 			v4l2_subdev_get_try_crop(sd, fh->pad, i);
 		struct v4l2_rect *try_compose =
 			v4l2_subdev_get_try_compose(sd, fh->pad, i);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		struct v4l2_mbus_framefmt *try_fmt =
 			v4l2_subdev_get_try_format(sd, fh->state, i);
 		struct v4l2_rect *try_crop =
 			v4l2_subdev_get_try_crop(sd, fh->state, i);
 		struct v4l2_rect *try_compose =
 			v4l2_subdev_get_try_compose(sd, fh->state, i);
+#else
+		struct v4l2_mbus_framefmt *try_fmt =
+			v4l2_subdev_state_get_format(fh->state, i);
+		struct v4l2_rect *try_crop =
+			v4l2_subdev_state_get_crop(fh->state, i);
+		struct v4l2_rect *try_compose =
+			v4l2_subdev_state_get_compose(fh->state, i);
 #endif
 
 		*try_fmt = asd->ffmt[i];
