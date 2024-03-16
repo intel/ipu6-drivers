@@ -4,6 +4,7 @@
 #include <linux/acpi.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
+#include <linux/gpio/consumer.h>
 #include <linux/pm_runtime.h>
 #include <linux/version.h>
 #include <media/v4l2-ctrls.h>
@@ -1380,9 +1381,15 @@ static int ov13858_write_reg_list(struct ov13858 *ov13858,
 static int ov13858_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov13858 *ov13858 = to_ov13858(sd);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	struct v4l2_mbus_framefmt *try_fmt = v4l2_subdev_get_try_format(sd,
 									fh->pad,
 									0);
+#else
+	struct v4l2_mbus_framefmt *try_fmt = v4l2_subdev_get_try_format(sd,
+									fh->state,
+									0);
+#endif
 
 	mutex_lock(&ov13858->mutex);
 
@@ -1516,7 +1523,11 @@ static const struct v4l2_ctrl_ops ov13858_ctrl_ops = {
 };
 
 static int ov13858_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				  struct v4l2_subdev_pad_config *cfg,
+#else
+				 struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	/* Only one bayer order(GRBG) is supported */
@@ -1529,7 +1540,11 @@ static int ov13858_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov13858_enum_frame_size(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				  struct v4l2_subdev_pad_config *cfg,
+#else
+				 struct v4l2_subdev_state *sd_state,
+#endif
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1556,14 +1571,23 @@ static void ov13858_update_pad_format(const struct ov13858_mode *mode,
 }
 
 static int ov13858_do_get_pad_format(struct ov13858 *ov13858,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				     struct v4l2_subdev_pad_config *cfg,
+#else
+			     struct v4l2_subdev_state *sd_state,
+#endif
 				     struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *framefmt;
 	struct v4l2_subdev *sd = &ov13858->sd;
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		framefmt = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+#else
+		framefmt = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
+#endif
+
 		fmt->format = *framefmt;
 	} else {
 		ov13858_update_pad_format(ov13858->cur_mode, fmt);
@@ -1573,14 +1597,22 @@ static int ov13858_do_get_pad_format(struct ov13858 *ov13858,
 }
 
 static int ov13858_get_pad_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 				  struct v4l2_subdev_pad_config *cfg,
+#else
+			     struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_format *fmt)
 {
 	struct ov13858 *ov13858 = to_ov13858(sd);
 	int ret;
 
 	mutex_lock(&ov13858->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ret = ov13858_do_get_pad_format(ov13858, cfg, fmt);
+#else
+	ret = ov13858_do_get_pad_format(ov13858, sd_state, fmt);
+#endif
 	mutex_unlock(&ov13858->mutex);
 
 	return ret;
@@ -1588,7 +1620,11 @@ static int ov13858_get_pad_format(struct v4l2_subdev *sd,
 
 static int
 ov13858_set_pad_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		       struct v4l2_subdev_pad_config *cfg,
+#else
+			     struct v4l2_subdev_state *sd_state,
+#endif
 		       struct v4l2_subdev_format *fmt)
 {
 	struct ov13858 *ov13858 = to_ov13858(sd);
@@ -1612,7 +1648,11 @@ ov13858_set_pad_format(struct v4l2_subdev *sd,
 				      fmt->format.width, fmt->format.height);
 	ov13858_update_pad_format(mode, fmt);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		framefmt = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+#else
+		framefmt = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
+#endif
 		*framefmt = fmt->format;
 	} else {
 		ov13858->cur_mode = mode;
@@ -1990,7 +2030,11 @@ static int ov13858_probe(struct i2c_client *client,
 		goto error_handler_free;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
 	ret = v4l2_async_register_subdev_sensor_common(&ov13858->sd);
+#else
+	ret = v4l2_async_register_subdev_sensor(&ov13858->sd);
+#endif
 	if (ret < 0)
 		goto error_media_entity;
 

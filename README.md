@@ -130,6 +130,20 @@ Three ways are available:
 		  To compile this driver as a module, choose M here: the
 		  module will be called ov02e10.
 
+	config VIDEO_OV13858_INTEL
+		tristate "OmniVision OV13858 sensor support"
+		depends on VIDEO_DEV && I2C
+		depends on ACPI || COMPILE_TEST
+		select MEDIA_CONTROLLER
+		select VIDEO_V4L2_SUBDEV_API
+		select V4L2_FWNODE
+		help
+		  This is a Video4Linux2 sensor driver for the OmniVision
+		  OV13858 camera.
+
+		  To compile this driver as a module, choose M here: the
+		  module will be called ov13858_intel.
+
 	config VIDEO_HM2170
 		tristate "Himax HM2170 sensor support"
 		depends on VIDEO_DEV && I2C
@@ -166,6 +180,7 @@ Three ways are available:
 	obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
 	obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
 	obj-$(CONFIG_VIDEO_OV02E10) += ov02e10.o
+	obj-$(CONFIG_VIDEO_OV13858_INTEL) += ov13858_intel.o
 	obj-$(CONFIG_VIDEO_HM2170) += hm2170.o
 	obj-$(CONFIG_VIDEO_HM2170) += hm2172.o
 	```
@@ -187,6 +202,7 @@ Three ways are available:
 	CONFIG_VIDEO_HM11B1=m
 	CONFIG_VIDEO_OV02C10=m
 	CONFIG_VIDEO_OV02E10=m
+	CONFIG_VIDEO_OV13858_INTEL = m
 	CONFIG_VIDEO_HM2170=m
 	CONFIG_VIDEO_HM2172=m
 	# Set this only if you use only 1 camera and don't want too many device nodes in media-ctl
