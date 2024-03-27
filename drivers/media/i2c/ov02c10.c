@@ -1176,8 +1176,10 @@ static int ov02c10_set_format(struct v4l2_subdev *sd,
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 #endif
 	} else {
 		ov02c10->cur_mode = mode;
@@ -1215,9 +1217,11 @@ static int ov02c10_get_format(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov02c10->sd, cfg,
 							  fmt->pad);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov02c10->sd,
 							  sd_state, fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
 #endif
 	else
 		ov02c10_update_pad_format(ov02c10->cur_mode, &fmt->format);
@@ -1273,9 +1277,12 @@ static int ov02c10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ov02c10_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->pad, 0));
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	ov02c10_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	ov02c10_update_pad_format(&supported_modes[0],
+				  v4l2_subdev_state_get_format(fh->state, 0));
 #endif
 	mutex_unlock(&ov02c10->mutex);
 

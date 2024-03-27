@@ -307,9 +307,7 @@ int ipu_isys_csi2_be_init(struct ipu_isys_csi2_be *csi2_be,
 	if (rval)
 		goto fail;
 
-	csi2_be->asd.pad[CSI2_BE_PAD_SINK].flags = MEDIA_PAD_FL_SINK
-	    | MEDIA_PAD_FL_MUST_CONNECT;
-	csi2_be->asd.pad[CSI2_BE_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
+	csi2_be->asd.pad[CSI2_BE_PAD_SINK].flags |= MEDIA_PAD_FL_MUST_CONNECT;
 	csi2_be->asd.valid_tgts[CSI2_BE_PAD_SOURCE].crop = true;
 	csi2_be->asd.set_ffmt = csi2_be_set_ffmt;
 

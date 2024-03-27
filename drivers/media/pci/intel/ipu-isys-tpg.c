@@ -291,7 +291,6 @@ int ipu_isys_tpg_init(struct ipu_isys_tpg *tpg,
 #else
 	tpg->asd.sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 #endif
-	tpg->asd.pad[TPG_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
 
 	tpg->asd.source = IPU_FW_ISYS_STREAM_SRC_MIPIGEN_PORT0 + index;
 	tpg->asd.supported_codes = tpg_supported_codes;

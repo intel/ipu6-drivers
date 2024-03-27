@@ -1494,7 +1494,11 @@ static int hm2172_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&hm2172->mutex);
 	hm2172_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		hm2172->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(hm2172->link_freq, mode->link_freq_index);
@@ -1526,8 +1530,12 @@ static int hm2172_get_format(struct v4l2_subdev *sd,
 
 	mutex_lock(&hm2172->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&hm2172->sd,
 							  sd_state, fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
+#endif
 	else
 		hm2172_update_pad_format(hm2172->cur_mode, &fmt->format);
 
@@ -1571,8 +1579,13 @@ static int hm2172_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct hm2172 *hm2172 = to_hm2172(sd);
 
 	mutex_lock(&hm2172->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	hm2172_update_pad_format(&supported_modes[0],
 				 v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	hm2172_update_pad_format(&supported_modes[0],
+				 v4l2_subdev_state_get_format(fh->state, 0));
+#endif
 	mutex_unlock(&hm2172->mutex);
 
 	return 0;
