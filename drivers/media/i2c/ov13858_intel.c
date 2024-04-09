@@ -1380,9 +1380,15 @@ static int ov13858_write_reg_list(struct ov13858 *ov13858,
 static int ov13858_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov13858 *ov13858 = to_ov13858(sd);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	struct v4l2_mbus_framefmt *try_fmt = v4l2_subdev_get_try_format(sd,
 									fh->pad,
 									0);
+#else
+	struct v4l2_mbus_framefmt *try_fmt = v4l2_subdev_state_get_format(
+									fh->pad,
+									0);
+#endif
 
 	mutex_lock(&ov13858->mutex);
 
@@ -1563,7 +1569,11 @@ static int ov13858_do_get_pad_format(struct ov13858 *ov13858,
 	struct v4l2_subdev *sd = &ov13858->sd;
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		framefmt = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+#else
+		framefmt = v4l2_subdev_state_get_format(cfg, fmt->pad);
+#endif
 		fmt->format = *framefmt;
 	} else {
 		ov13858_update_pad_format(ov13858->cur_mode, fmt);
@@ -1612,7 +1622,11 @@ ov13858_set_pad_format(struct v4l2_subdev *sd,
 				      fmt->format.width, fmt->format.height);
 	ov13858_update_pad_format(mode, fmt);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		framefmt = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+#else
+		framefmt = v4l2_subdev_state_get_format(cfg, fmt->pad);
+#endif
 		*framefmt = fmt->format;
 	} else {
 		ov13858->cur_mode = mode;

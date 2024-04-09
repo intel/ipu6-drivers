@@ -1,0 +1,46 @@
+From f71be295d188e89f5eab1648467e65010a9daf28 Mon Sep 17 00:00:00 2001
+From: Wentong Wu <wentong.wu@intel.com>
+Date: Wed, 7 Feb 2024 08:59:08 +0800
+Subject: [PATCH 4/5] ACPI: scan: Defer enumeration of devices with a _DEP
+ pointing to IVSC device
+
+Inside IVSC, switching ownership requires an interface with two
+different hardware modules, ACE and CSI. The software interface
+to these modules is based on Intel MEI framework. Usually mei
+client devices are dynamically created, so the info of consumers
+depending on mei client devices is not present in the firmware
+tables.
+
+This causes problems with the probe ordering with respect to
+drivers for consumers of these MEI client devices. But on these
+camera sensor devices, the ACPI nodes describing the sensors all
+have a _DEP dependency on the matching MEI bus ACPI device, so
+adding IVSC MEI bus ACPI device to acpi_honor_dep_ids allows
+solving the probe-ordering problem by deferring the enumeration of
+ACPI-devices which have a _DEP dependency on an IVSC mei bus ACPI
+device.
+
+Add INTC10CF, the HID of IVSC MEI bus ACPI device on MTL platform,
+to acpi_honor_dep_ids.
+
+Signed-off-by: Wentong Wu <wentong.wu@intel.com>
+Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+---
+ drivers/acpi/scan.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/acpi/scan.c b/drivers/acpi/scan.c
+index 617f3e0e963d..dd817e9ed2e5 100644
+--- a/drivers/acpi/scan.c
++++ b/drivers/acpi/scan.c
+@@ -794,6 +794,7 @@ static const char * const acpi_honor_dep_ids[] = {
+ 	"INTC1059", /* IVSC (TGL) driver must be loaded to allow i2c access to camera sensors */
+ 	"INTC1095", /* IVSC (ADL) driver must be loaded to allow i2c access to camera sensors */
+ 	"INTC100A", /* IVSC (RPL) driver must be loaded to allow i2c access to camera sensors */
++	"INTC10CF", /* IVSC (MTL) driver must be loaded to allow i2c access to camera sensors */
+ 	NULL
+ };
+ 
+-- 
+2.43.2
+

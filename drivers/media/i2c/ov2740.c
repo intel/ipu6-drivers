@@ -1115,8 +1115,10 @@ static int ov2740_set_format(struct v4l2_subdev *sd,
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 #endif
 	} else {
 		ov2740->cur_mode = mode;
@@ -1157,8 +1159,12 @@ static int ov2740_get_format(struct v4l2_subdev *sd,
 		fmt->format = *v4l2_subdev_get_try_format(&ov2740->sd,
 							  cfg,
 							  fmt->pad);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov2740->sd,
+							  sd_state,
+							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(
 							  sd_state,
 							  fmt->pad);
 #endif
@@ -1230,9 +1236,12 @@ static int ov2740_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ov2740_update_pad_format(ov2740->cur_mode,
 				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	ov2740_update_pad_format(ov2740->cur_mode,
 				 v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	ov2740_update_pad_format(ov2740->cur_mode,
+				 v4l2_subdev_state_get_format(fh->state, 0));
 #endif
 	mutex_unlock(&ov2740->mutex);
 

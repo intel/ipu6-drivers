@@ -12,7 +12,8 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
 
 static const struct acpi_device_id cvfd_ids[] = {
@@ -509,7 +510,8 @@ struct hi556 {
 	/* Clock provider */
 	struct clk *img_clk;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
@@ -525,7 +527,8 @@ struct hi556 {
 
 	/* True if the device has been identified */
 	bool identified;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	bool use_intel_vsc;
 #endif
 };
@@ -701,7 +704,8 @@ static int hi556_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = hi556_test_pattern(hi556, ctrl->val);
 		break;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	case V4L2_CID_PRIVACY:
 		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
 		break;
@@ -728,7 +732,8 @@ static int hi556_init_controls(struct hi556 *hi556)
 	int ret;
 
 	ctrl_hdlr = &hi556->ctrl_handler;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
 #else
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
@@ -766,7 +771,8 @@ static int hi556_init_controls(struct hi556 *hi556)
 					  h_blank);
 	if (hi556->hblank)
 		hi556->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	hi556->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &hi556_ctrl_ops,
 						  V4L2_CID_PRIVACY, 0, 1, 1,
 						  !(hi556->status.status));
@@ -830,7 +836,8 @@ static int hi556_identify_module(struct hi556 *hi556)
 	return 0;
 }
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 static void hi556_vsc_privacy_callback(void *handle,
 				       enum vsc_privacy_status status)
 {
@@ -929,7 +936,8 @@ static int hi556_power_off(struct device *dev)
 	struct hi556 *hi556 = to_hi556(sd);
 	int ret = 0;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	if (hi556->use_intel_vsc) {
 		ret = vsc_release_camera_sensor(&hi556->status);
 		if (ret && ret != -EAGAIN)
@@ -953,7 +961,8 @@ static int hi556_power_on(struct device *dev)
 	struct hi556 *hi556 = to_hi556(sd);
 	int ret;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	if (hi556->use_intel_vsc) {
 		hi556->conf.lane_num = HI556_DATA_LANES;
 		/* frequency unit 100k */
@@ -1058,8 +1067,10 @@ static int hi556_set_format(struct v4l2_subdev *sd,
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 #endif
 	} else {
 		hi556->cur_mode = mode;
@@ -1101,8 +1112,12 @@ static int hi556_get_format(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		fmt->format =
 			*v4l2_subdev_get_try_format(&hi556->sd, cfg, fmt->pad);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&hi556->sd,
+							  sd_state,
+							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(
 							  sd_state,
 							  fmt->pad);
 #endif
@@ -1160,9 +1175,12 @@ static int hi556_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	hi556_assign_pad_format(&supported_modes[0],
 				v4l2_subdev_get_try_format(sd, fh->pad, 0));
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	hi556_assign_pad_format(&supported_modes[0],
 				v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	hi556_assign_pad_format(&supported_modes[0],
+				v4l2_subdev_state_get_format(fh->state, 0));
 #endif
 	mutex_unlock(&hi556->mutex);
 
@@ -1199,7 +1217,8 @@ static int hi556_get_pm_resources(struct device *dev)
 	struct hi556 *hi556 = to_hi556(sd);
 	int ret;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	acpi_handle handle = ACPI_HANDLE(dev);
 	struct acpi_handle_list dep_devices;
 	acpi_status status;

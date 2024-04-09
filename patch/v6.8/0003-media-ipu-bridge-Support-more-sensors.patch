@@ -1,0 +1,45 @@
+From fd6e61b885b92eb666870949fac0921143e3fa6f Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Tue, 26 Mar 2024 10:50:41 +0800
+Subject: [PATCH 3/5] media: ipu-bridge: Support more sensors
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/pci/intel/ipu-bridge.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index f980e3125a7b..2ac59e02b839 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -58,8 +58,27 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("INT3537", 1, 437000000),
+ 	/* Omnivision ov13b10 */
+ 	IPU_SENSOR_CONFIG("OVTIDB10", 1, 560000000),
++	IPU_SENSOR_CONFIG("OVTI13B1", 1, 560000000),
+ 	/* GalaxyCore GC0310 */
+ 	IPU_SENSOR_CONFIG("INT0310", 0),
++	/* Omnivision ov01a10 */
++	IPU_SENSOR_CONFIG("OVTI01A0", 1, 400000000),
++	/* Omnivision ov08x40 */
++	IPU_SENSOR_CONFIG("OVTI08F4", 1, 400000000),
++	/* Himax hm11b1 */
++	IPU_SENSOR_CONFIG("HIMX11B1", 1, 384000000),
++	/* Himax hm2170 */
++	IPU_SENSOR_CONFIG("HIMX2170", 1, 384000000),
++	/* Himax hm2172 */
++	IPU_SENSOR_CONFIG("HIMX2172", 1, 384000000),
++	/* Omnivision ov01a1s */
++	IPU_SENSOR_CONFIG("OVTI01AS", 1, 400000000),
++	/* Omnivision ov02c10 */
++	IPU_SENSOR_CONFIG("OVTI02C1", 1, 400000000),
++	/* Omnivision ov02e10 */
++	IPU_SENSOR_CONFIG("OVTI02E1", 1, 360000000),
++	/* Omnivision ov08a10 */
++	IPU_SENSOR_CONFIG("OVTI08A1", 1, 500000000),
+ };
+ 
+ static const struct ipu_property_names prop_names = {
+-- 
+2.43.2
+

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2020 Intel Corporation
+// Copyright (C) 2013 - 2024 Intel Corporation
 
 #include <linux/completion.h>
 #include <linux/device.h>
@@ -863,7 +863,7 @@ static void stop_streaming(struct vb2_queue *q)
 	struct ipu_isys_pipeline *ip =
 		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	struct ipu_isys_video *pipe_av =
-	    container_of(ip, struct ipu_isys_video, ip);
+		container_of(ip, struct ipu_isys_video, ip);
 
 	if (pipe_av != av) {
 		mutex_unlock(&av->mutex);
@@ -1052,7 +1052,6 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 			first = false;
 			continue;
 		}
-
 		if (info->error_info.error ==
 		    IPU_FW_ISYS_ERROR_HW_REPORTED_STR2MMIO) {
 			/*
@@ -1074,7 +1073,6 @@ void ipu_isys_queue_buf_ready(struct ipu_isys_pipeline *ip,
 		spin_unlock_irqrestore(&aq->lock, flags);
 
 		ipu_isys_buf_calc_sequence_time(ib, info);
-
 		/*
 		 * For interlaced buffers, the notification to user space
 		 * is postponed to capture_done event since the field

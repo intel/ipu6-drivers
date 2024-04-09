@@ -15,7 +15,8 @@
 #include <media/v4l2-fwnode.h>
 #include <linux/clk.h>
 #include <linux/gpio/consumer.h>
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
 
 static const struct acpi_device_id cvfd_ids[] = {
@@ -926,7 +927,8 @@ struct hm2172 {
 	struct gpio_desc *reset;
 	struct gpio_desc *handshake;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
@@ -940,7 +942,8 @@ struct hm2172 {
 
 	/* Streaming on/off */
 	bool streaming;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	bool use_intel_vsc;
 #endif
 };
@@ -1106,7 +1109,8 @@ static int hm2172_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = hm2172_test_pattern(hm2172, ctrl->val);
 		break;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	case V4L2_CID_PRIVACY:
 		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
 		break;
@@ -1138,7 +1142,8 @@ static int hm2172_init_controls(struct hm2172 *hm2172)
 	int ret = 0;
 
 	ctrl_hdlr = &hm2172->ctrl_handler;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
 #else
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
@@ -1178,7 +1183,8 @@ static int hm2172_init_controls(struct hm2172 *hm2172)
 	if (hm2172->hblank)
 		hm2172->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	hm2172->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr, &hm2172_ctrl_ops,
 						   V4L2_CID_PRIVACY, 0, 1, 1,
 						   !(hm2172->status.status));
@@ -1217,7 +1223,8 @@ static void hm2172_update_pad_format(const struct hm2172_mode *mode,
 	fmt->field = V4L2_FIELD_NONE;
 }
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 static void hm2172_vsc_privacy_callback(void *handle,
 				       enum vsc_privacy_status status)
 {
@@ -1302,7 +1309,8 @@ static int hm2172_power_off(struct device *dev)
 	struct hm2172 *hm2172 = to_hm2172(sd);
 	int ret = 0;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	if (hm2172->use_intel_vsc) {
 		ret = vsc_release_camera_sensor(&hm2172->status);
 		if (ret && ret != -EAGAIN)
@@ -1328,7 +1336,8 @@ static int hm2172_power_on(struct device *dev)
 	struct hm2172 *hm2172 = to_hm2172(sd);
 	int ret;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	if (hm2172->use_intel_vsc) {
 		hm2172->conf.lane_num = HM2172_DATA_LANES;
 		/* frequency unit 100k */
@@ -1383,7 +1392,8 @@ static int hm2172_get_pm_resources(struct device *dev)
 	struct hm2172 *hm2172 = to_hm2172(sd);
 	int ret = 0;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	acpi_handle handle = ACPI_HANDLE(dev);
 	struct acpi_handle_list dep_devices;
 	acpi_status status;
@@ -1494,7 +1504,11 @@ static int hm2172_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&hm2172->mutex);
 	hm2172_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		hm2172->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(hm2172->link_freq, mode->link_freq_index);
@@ -1526,8 +1540,13 @@ static int hm2172_get_format(struct v4l2_subdev *sd,
 
 	mutex_lock(&hm2172->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&hm2172->sd,
 							  sd_state, fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(
+							  sd_state, fmt->pad);
+#endif
 	else
 		hm2172_update_pad_format(hm2172->cur_mode, &fmt->format);
 
@@ -1572,7 +1591,11 @@ static int hm2172_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	mutex_lock(&hm2172->mutex);
 	hm2172_update_pad_format(&supported_modes[0],
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 				 v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+				 v4l2_subdev_state_get_format(fh->state, 0));
+#endif
 	mutex_unlock(&hm2172->mutex);
 
 	return 0;
@@ -1625,6 +1648,70 @@ static int hm2172_identify_module(struct hm2172 *hm2172)
 	return 0;
 }
 
+static int hm2172_check_hwcfg(struct device *dev)
+{
+	struct v4l2_fwnode_endpoint bus_cfg = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY
+	};
+	struct fwnode_handle *ep;
+	struct fwnode_handle *fwnode = dev_fwnode(dev);
+	unsigned int i, j;
+	int ret;
+	u32 ext_clk;
+
+	if (!fwnode)
+		return -ENXIO;
+
+	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (!ep)
+		return -EPROBE_DEFER;
+
+	ret = fwnode_property_read_u32(dev_fwnode(dev), "clock-frequency",
+				       &ext_clk);
+	if (ret) {
+		dev_err(dev, "can't get clock frequency");
+		return ret;
+	}
+
+	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
+	fwnode_handle_put(ep);
+	if (ret)
+		return ret;
+
+	if (bus_cfg.bus.mipi_csi2.num_data_lanes != HM2172_DATA_LANES) {
+		dev_err(dev, "number of CSI2 data lanes %d is not supported",
+			bus_cfg.bus.mipi_csi2.num_data_lanes);
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	if (!bus_cfg.nr_of_link_frequencies) {
+		dev_err(dev, "no link frequencies defined");
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); i++) {
+		for (j = 0; j < bus_cfg.nr_of_link_frequencies; j++) {
+			if (link_freq_menu_items[i] ==
+				bus_cfg.link_frequencies[j])
+				break;
+		}
+
+		if (j == bus_cfg.nr_of_link_frequencies) {
+			dev_err(dev, "no link frequency %lld supported",
+				link_freq_menu_items[i]);
+			ret = -EINVAL;
+			goto out_err;
+		}
+	}
+
+out_err:
+	v4l2_fwnode_endpoint_free(&bus_cfg);
+
+	return ret;
+}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int hm2172_remove(struct i2c_client *client)
 #else
@@ -1649,6 +1736,13 @@ static int hm2172_probe(struct i2c_client *client)
 {
 	struct hm2172 *hm217;
 	int ret;
+
+	/* Check HW config */
+	ret = hm2172_check_hwcfg(&client->dev);
+	if (ret) {
+		dev_err(&client->dev, "failed to check hwcfg: %d", ret);
+		return ret;
+	}
 
 	hm217 = devm_kzalloc(&client->dev, sizeof(*hm217), GFP_KERNEL);
 	if (!hm217)

@@ -11,7 +11,8 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
 #endif
 
@@ -680,7 +681,8 @@ struct ov02c10 {
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
@@ -834,7 +836,8 @@ static int ov02c10_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = ov02c10_test_pattern(ov02c10, ctrl->val);
 		break;
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	case V4L2_CID_PRIVACY:
 		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
 		break;
@@ -864,7 +867,8 @@ static int ov02c10_init_controls(struct ov02c10 *ov02c10)
 	int ret = 0;
 
 	ctrl_hdlr = &ov02c10->ctrl_handler;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
 #else
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
@@ -901,7 +905,8 @@ static int ov02c10_init_controls(struct ov02c10 *ov02c10)
 					    1, h_blank);
 	if (ov02c10->hblank)
 		ov02c10->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	ov02c10->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr,
 						    &ov02c10_ctrl_ops,
 						    V4L2_CID_PRIVACY, 0, 1, 1,
@@ -1067,7 +1072,8 @@ static int ov02c10_set_stream(struct v4l2_subdev *sd, int enable)
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 static void ov02c10_vsc_privacy_callback(void *handle,
 				       enum vsc_privacy_status status)
 {
@@ -1176,8 +1182,10 @@ static int ov02c10_set_format(struct v4l2_subdev *sd,
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 #endif
 	} else {
 		ov02c10->cur_mode = mode;
@@ -1215,8 +1223,11 @@ static int ov02c10_get_format(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov02c10->sd, cfg,
 							  fmt->pad);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov02c10->sd,
+							  sd_state, fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(
 							  sd_state, fmt->pad);
 #endif
 	else
@@ -1273,9 +1284,12 @@ static int ov02c10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ov02c10_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->pad, 0));
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	ov02c10_update_pad_format(&supported_modes[0],
 				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	ov02c10_update_pad_format(&supported_modes[0],
+				  v4l2_subdev_state_get_format(fh->state, 0));
 #endif
 	mutex_unlock(&ov02c10->mutex);
 
@@ -1366,6 +1380,63 @@ static int ov02c10_identify_module(struct ov02c10 *ov02c10)
 	return 0;
 }
 
+static int ov02c10_check_hwcfg(struct device *dev)
+{
+	struct v4l2_fwnode_endpoint bus_cfg = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY
+	};
+	struct fwnode_handle *ep;
+	struct fwnode_handle *fwnode = dev_fwnode(dev);
+	unsigned int i, j;
+	int ret;
+	u32 ext_clk;
+
+	if (!fwnode)
+		return -ENXIO;
+
+	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (!ep)
+		return -EPROBE_DEFER;
+
+	ret = fwnode_property_read_u32(dev_fwnode(dev), "clock-frequency",
+				       &ext_clk);
+	if (ret) {
+		dev_err(dev, "can't get clock frequency");
+		return ret;
+	}
+
+	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
+	fwnode_handle_put(ep);
+	if (ret)
+		return ret;
+
+	if (!bus_cfg.nr_of_link_frequencies) {
+		dev_err(dev, "no link frequencies defined");
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); i++) {
+		for (j = 0; j < bus_cfg.nr_of_link_frequencies; j++) {
+			if (link_freq_menu_items[i] ==
+				bus_cfg.link_frequencies[j])
+				break;
+		}
+
+		if (j == bus_cfg.nr_of_link_frequencies) {
+			dev_err(dev, "no link frequency %lld supported",
+				link_freq_menu_items[i]);
+			ret = -EINVAL;
+			goto out_err;
+		}
+	}
+
+out_err:
+	v4l2_fwnode_endpoint_free(&bus_cfg);
+
+	return ret;
+}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int ov02c10_remove(struct i2c_client *client)
 #else
@@ -1420,6 +1491,13 @@ static int ov02c10_probe(struct i2c_client *client)
 	struct ov02c10 *ov02c10;
 	int ret = 0;
 
+	/* Check HW config */
+	ret = ov02c10_check_hwcfg(&client->dev);
+	if (ret) {
+		dev_err(&client->dev, "failed to check hwcfg: %d", ret);
+		return ret;
+	}
+
 	ov02c10 = devm_kzalloc(&client->dev, sizeof(*ov02c10), GFP_KERNEL);
 	if (!ov02c10)
 		return -ENOMEM;
@@ -1427,7 +1505,8 @@ static int ov02c10_probe(struct i2c_client *client)
 	v4l2_i2c_subdev_init(&ov02c10->sd, client, &ov02c10_subdev_ops);
 	ov02c10_read_module_name(ov02c10);
 
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	ov02c10->mipi_lanes = OV02C10_DATA_LANES;
 	ov02c10->conf.lane_num = ov02c10->mipi_lanes;
 	/* frequency unit 100k */
@@ -1496,7 +1575,8 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov02c10->mutex);
 
 probe_error_ret:
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	ov02c10_power_off(&client->dev);
 #endif
 
@@ -1505,7 +1585,8 @@ probe_error_ret:
 
 static const struct dev_pm_ops ov02c10_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(ov02c10_suspend, ov02c10_resume)
-#if IS_ENABLED(CONFIG_INTEL_VSC)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+    IS_ENABLED(CONFIG_INTEL_VSC)
 	SET_RUNTIME_PM_OPS(ov02c10_power_off, ov02c10_power_on, NULL)
 #endif
 };
