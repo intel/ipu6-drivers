@@ -1,0 +1,29 @@
+From f3721fd8b5eed61ba575e3e535e4de736a41c04d Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Wed, 10 Apr 2024 19:51:49 +0800
+Subject: [PATCH] Add symbolic link for Intel IPU6 firmwares
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ WHENCE | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/WHENCE b/WHENCE
+index 9f089996..b38452c0 100644
+--- a/WHENCE
++++ b/WHENCE
+@@ -1194,6 +1194,11 @@ Version: scci_master_20230926_0007
+ File: intel/ipu/ipu6se_fw.bin
+ Version: scci_master_20210502_1459
+ 
++Link: intel/ipu6epadln_fw.bin -> ipu/ipu6epadln_fw.bin
++Link: intel/ipu6ep_fw.bin -> ipu/ipu6ep_fw.bin
++Link: intel/ipu6epmtl_fw.bin -> ipu/ipu6epmtl_fw.bin
++Link: intel/ipu6_fw.bin -> ipu/ipu6_fw.bin
++
+ Licence: Redistributable. See LICENSE.ivsc for details
+ 
+ --------------------------------------------------------------------------
+-- 
+2.43.2
+
