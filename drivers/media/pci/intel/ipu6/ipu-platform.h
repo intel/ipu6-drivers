@@ -14,6 +14,14 @@
 #define IPU6EPMTLES_FIRMWARE_NAME	"intel/ipu6epmtles_fw.bin"
 #define IPU6EPADLN_FIRMWARE_NAME	"intel/ipu6epadln_fw.bin"
 
+#define IPU6SE_FIRMWARE_NAME_NEW	"intel/ipu/ipu6se_fw.bin"
+#define IPU6EP_FIRMWARE_NAME_NEW	"intel/ipu/ipu6ep_fw.bin"
+#define IPU6EPES_FIRMWARE_NAME_NEW	"intel/ipu/ipu6epes_fw.bin"
+#define IPU6_FIRMWARE_NAME_NEW		"intel/ipu/ipu6_fw.bin"
+#define IPU6EPMTL_FIRMWARE_NAME_NEW	"intel/ipu/ipu6epmtl_fw.bin"
+#define IPU6EPMTLES_FIRMWARE_NAME_NEW	"intel/ipu/ipu6epmtles_fw.bin"
+#define IPU6EPADLN_FIRMWARE_NAME_NEW	"intel/ipu/ipu6epadln_fw.bin"
+
 /*
  * The following definitions are encoded to the media_device's model field so
  * that the software components which uses IPU driver can get the hw stepping
