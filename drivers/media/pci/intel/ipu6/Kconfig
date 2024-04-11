@@ -47,5 +47,3 @@ config IPU_SINGLE_BE_SOC_DEVICE
 	  If selected, IPU exports only one BE SOC device.
 
 	  If you don't need multiple camera streaming, select y here.
-
-source "drivers/media/pci/intel/ipu3/Kconfig"

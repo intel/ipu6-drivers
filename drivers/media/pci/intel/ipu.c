@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2022 Intel Corporation
+// Copyright (C) 2013 - 2024 Intel Corporation
 
 #include <linux/acpi.h>
 #include <linux/debugfs.h>
@@ -14,6 +14,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/timer.h>
 #include <linux/sched.h>
+#include <linux/version.h>
 
 #include "ipu.h"
 #include "ipu-buttress.h"
@@ -26,7 +27,10 @@
 #include "ipu-platform-regs.h"
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
-#if defined(CONFIG_IPU_ISYS_BRIDGE)
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
+LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+#include <media/ipu-bridge.h>
+#elif defined(CONFIG_IPU_ISYS_BRIDGE)
 #include "cio2-bridge.h"
 #endif
 
@@ -34,7 +38,9 @@
 enum ipu_version ipu_ver;
 EXPORT_SYMBOL(ipu_ver);
 
-#if defined(CONFIG_IPU_ISYS_BRIDGE)
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
+LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0) || \
+defined(CONFIG_IPU_ISYS_BRIDGE)
 static int ipu_isys_check_fwnode_graph(struct fwnode_handle *fwnode)
 {
 	struct fwnode_handle *endpoint;
@@ -63,8 +69,10 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	struct ipu_bus_device *isys;
 	struct ipu_isys_pdata *pdata;
 	int ret;
-#if defined(CONFIG_IPU_ISYS_BRIDGE)
-	struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
+LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0) || \
+defined(CONFIG_IPU_ISYS_BRIDGE)
+struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 
 	ret = ipu_isys_check_fwnode_graph(fwnode);
 	if (ret) {
@@ -74,12 +82,21 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 			return ERR_PTR(-EINVAL);
 		}
 
+#if defined(CONFIG_IPU_ISYS_BRIDGE)
 		ret = cio2_bridge_init(pdev);
 		if (ret) {
 			dev_err_probe(&pdev->dev, ret,
 				      "ipu_isys_bridge_init() failed\n");
 			return ERR_PTR(ret);
 		}
+#else
+		ret = ipu_bridge_init(&pdev->dev, ipu_bridge_parse_ssdb);
+		if (ret) {
+			dev_err_probe(&pdev->dev, ret,
+				      "IPU bridge init failed\n");
+			return ERR_PTR(ret);
+		}
+#endif
 	}
 #endif
 
@@ -928,6 +945,10 @@ static void __exit ipu_exit(void)
 module_init(ipu_init);
 module_exit(ipu_exit);
 
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
+LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+#endif
 MODULE_AUTHOR("Sakari Ailus <sakari.ailus@linux.intel.com>");
 MODULE_AUTHOR("Jouni Högander <jouni.hogander@intel.com>");
 MODULE_AUTHOR("Antti Laakso <antti.laakso@intel.com>");

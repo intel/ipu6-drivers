@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2023 Intel Corporation
+// Copyright (C) 2013 - 2024 Intel Corporation
 
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -976,14 +976,14 @@ static int isys_register_devices(struct ipu_isys *isys)
 #else
 	isys->media_dev.link_notify = v4l2_pipeline_link_notify;
 #endif
-	strlcpy(isys->media_dev.model,
+	strscpy(isys->media_dev.model,
 		IPU_MEDIA_DEV_MODEL_NAME, sizeof(isys->media_dev.model));
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	isys->media_dev.driver_version = LINUX_VERSION_CODE;
 #endif
 	snprintf(isys->media_dev.bus_info, sizeof(isys->media_dev.bus_info),
 		 "pci:%s", dev_name(isys->adev->dev.parent->parent));
-	strlcpy(isys->v4l2_dev.name, isys->media_dev.model,
+	strscpy(isys->v4l2_dev.name, isys->media_dev.model,
 		sizeof(isys->v4l2_dev.name));
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
@@ -1572,6 +1572,7 @@ out_unregister_devices:
 	isys_iwake_watermark_cleanup(isys);
 	isys_unregister_devices(isys);
 out_remove_pkg_dir_shared_buffer:
+	cpu_latency_qos_remove_request(&isys->pm_qos);
 	if (!isp->secure_mode)
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
 				     isys->pkg_dir_dma_addr,

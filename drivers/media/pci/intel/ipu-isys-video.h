@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright (C) 2013 - 2022 Intel Corporation */
+/* Copyright (C) 2013 - 2024 Intel Corporation */
 
 #ifndef IPU_ISYS_VIDEO_H
 #define IPU_ISYS_VIDEO_H
@@ -125,6 +125,7 @@ struct ipu_isys_video {
 	unsigned int streaming;
 	bool packed;
 	bool compression;
+	bool initialized;
 	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_ctrl *compression_ctrl;
 	unsigned int ts_offsets[VIDEO_MAX_PLANES];

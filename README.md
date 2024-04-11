@@ -26,7 +26,7 @@ Three ways are available:
 3. and build with dkms
 
 ### 1. Build with kernel source tree
-- Tested with kernel v6.4
+- Tested with kernel v6.8
 - Check out kernel
 - Apply patches:
 	```sh
@@ -44,144 +44,20 @@ Three ways are available:
 
 	# For kernel version >= 6.3 and using ov13b10
 	patch/ov13b10-v6.3/*.patch
+
+	# For kernel version v6.8
+	patch/v6.8/*.patch
 	```
-- Copy repo content to kernel source **(except Makefile and drivers/media/i2c/{Kconfig,Makefile}, will change manually next)**
-- Modify related Kconfig and Makefile
-- Add config in LinuxRoot/drivers/media/i2c/Kconfig *(for kernel version < 5.18, use `VIDEO_V4L2` instead of `VIDEO_DEV` in `depends on` section)*
-	```conf
-	config POWER_CTRL_LOGIC
-		tristate "power control logic driver"
-		depends on GPIO_ACPI
-		help
-		  This is a power control logic driver for sensor, the design
-		  depends on camera sensor connections.
-		  This driver controls power by getting and using managed GPIO
-		  pins from ACPI config for sensors, such as HM11B1, OV01A1S.
-
-		  To compile this driver as a module, choose M here: the
-		  module will be called power_ctrl_logic.
-
-	config VIDEO_OV01A1S
-		tristate "OmniVision OV01A1S sensor support"
-		depends on VIDEO_DEV && I2C
-		depends on ACPI || COMPILE_TEST
-		select MEDIA_CONTROLLER
-		select VIDEO_V4L2_SUBDEV_API
-		select V4L2_FWNODE
-		help
-		  This is a Video4Linux2 sensor driver for the OmniVision
-		  OV01A1S camera.
-
-		  To compile this driver as a module, choose M here: the
-		  module will be called ov01a1s.
-
-	config VIDEO_HM11B1
-		tristate "Himax HM11B1 sensor support"
-		depends on VIDEO_DEV && I2C
-		select MEDIA_CONTROLLER
-		select VIDEO_V4L2_SUBDEV_API
-		select V4L2_FWNODE
-		help
-		  This is a Video4Linux2 sensor driver for the Himax
-		  HM11B1 camera.
-
-		  To compile this driver as a module, choose M here: the
-		  module will be called hm11b1.
-
-	config VIDEO_OV01A10
-		tristate "OmniVision OV01A10 sensor support"
-		depends on VIDEO_DEV && I2C
-		depends on ACPI || COMPILE_TEST
-		select MEDIA_CONTROLLER
-		select VIDEO_V4L2_SUBDEV_API
-		select V4L2_FWNODE
-		help
-		  This is a Video4Linux2 sensor driver for the OmniVision
-		  OV01A10 camera.
-
-		  To compile this driver as a module, choose M here: the
-		  module will be called ov01a10.
-
-	config VIDEO_OV02C10
-		tristate "OmniVision OV02C10 sensor support"
-		depends on VIDEO_DEV && I2C
-		depends on ACPI || COMPILE_TEST
-		select MEDIA_CONTROLLER
-		select VIDEO_V4L2_SUBDEV_API
-		select V4L2_FWNODE
-		help
-		  This is a Video4Linux2 sensor driver for the OmniVision
-		  OV02C10 camera.
-
-		  To compile this driver as a module, choose M here: the
-		  module will be called ov02c10.
-
-	config VIDEO_OV02E10
-		tristate "OmniVision OV02E10 sensor support"
-		depends on VIDEO_DEV && I2C
-		depends on ACPI || COMPILE_TEST
-		select MEDIA_CONTROLLER
-		select VIDEO_V4L2_SUBDEV_API
-		select V4L2_FWNODE
-		help
-		  This is a Video4Linux2 sensor driver for the OmniVision
-		  OV02E10 camera.
-
-		  To compile this driver as a module, choose M here: the
-		  module will be called ov02e10.
-
-	config VIDEO_HM2170
-		tristate "Himax HM2170 sensor support"
-		depends on VIDEO_DEV && I2C
-		select MEDIA_CONTROLLER
-		select VIDEO_V4L2_SUBDEV_API
-		select V4L2_FWNODE
-		help
-			This is a Video4Linux2 sensor driver for the Himax
-			HM2170 camera.
-
-			To compile this driver as a module, choose M here: the
-			module will be called hm2170.
-
-	config VIDEO_HM2172
-		tristate "Himax HM2172 sensor support"
-		depends on VIDEO_DEV && I2C
-		select MEDIA_CONTROLLER
-		select VIDEO_V4L2_SUBDEV_API
-		select V4L2_FWNODE
-		help
-			This is a Video4Linux2 sensor driver for the Himax
-			HM2170 camera.
-
-			To compile this driver as a module, choose M here: the
-			module will be called hm2172.
-
-	```
-
-- Add to drivers/media/i2c/Makefile
-	```makefile
-	obj-$(CONFIG_POWER_CTRL_LOGIC) += power_ctrl_logic.o
-	obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
-	obj-$(CONFIG_VIDEO_HM11B1)  += hm11b1.o
-	obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
-	obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
-	obj-$(CONFIG_VIDEO_OV02E10) += ov02e10.o
-	obj-$(CONFIG_VIDEO_HM2170) += hm2170.o
-	obj-$(CONFIG_VIDEO_HM2170) += hm2172.o
-	```
-
-- Modify drivers/media/pci/Kconfig
-	```conf
-	# replace line:
-	# source "drivers/media/pci/intel/ipu3/Kconfig"
-	# with line:
-	source "drivers/media/pci/intel/Kconfig"
-	```
+- For kernel v6.8. patch/v6.8/0002-media-Add-IPU6-and-supported-sensors-config.patch will change the related Kconfig & Makefile.
+- For latest linux-firmware repo, apply patch/linux-firmware/0001-Add-symbolic-link-for-Intel-IPU6-firmwares.patch to it to make driver work.
+- Copy repo content to kernel source **(except Kconfig & Makefile at drivers/media/pci/intel and drivers/media/i2c as they are modified by patches in previous step)**.
 
 - Enable the following settings in .config
 	```conf
 	CONFIG_VIDEO_INTEL_IPU6=m
 	CONFIG_IPU_ISYS_BRIDGE=y
+	# For kernel >= v6.8 please use IPU_BRIDGE instead of IPU_ISYS_BRIDGE
+	CONFIG_IPU_BRIDGE=m
 	CONFIG_VIDEO_OV01A1S=m
 	CONFIG_VIDEO_OV01A10=m
 	CONFIG_VIDEO_HM11B1=m
@@ -194,13 +70,15 @@ Three ways are available:
 	# If your kernel < 5.15 or not set CONFIG_INTEL_SKL_INT3472, please set this
 	# CONFIG_POWER_CTRL_LOGIC=m
 	```
-- LJCA and CVF part as below, please check details at https://github.com/intel/ivsc-driver/blob/main/README.md
+- LJCA and CVF part as below, please check details at https://github.com/intel/ivsc-driver/blob/main/README.md.
 	```conf
 	CONFIG_MFD_LJCA=m
 	CONFIG_I2C_LJCA=m
 	CONFIG_SPI_LJCA=m
 	CONFIG_GPIO_LJCA=m
+	CONFIG_USB_LJCA=m
 	CONFIG_INTEL_MEI_VSC=m
+	CONFIG_INTEL_MEI_VSC_HW=m
 	CONFIG_INTEL_VSC=m
 	CONFIG_INTEL_VSC_CSI=m
 	CONFIG_INTEL_VSC_ACE=m
@@ -209,8 +87,8 @@ Three ways are available:
 	```
 ### 2. Build outside kernel source tree
 - Requires kernel header installed on build machine
-- Requires iVSC driver be built together
-- To prepare dependency:
+- For kernel >= v6.8, still need to patch kernel by patch/v6.8/0004 & 0005 to make upstream iVSC driver work correctly. For kernel <= v6.6, requires iVSC out-of-tree driver be built together.
+- To prepare out-of-tree iVSC driver under kernel <= v6.6:
 	```sh
 	cd ipu6-drivers
 	git clone https://github.com/intel/ivsc-driver.git
@@ -224,7 +102,7 @@ Three ways are available:
 	```
 
 ### 3. Build with dkms
-- Prepare dependency:
+- Prepare out-of-tree iVSC driver under kernel <= v6.6:
 	```sh
 	cd ipu6-drivers
 	git clone https://github.com/intel/ivsc-driver.git

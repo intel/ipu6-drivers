@@ -858,8 +858,13 @@ static int ov08a10_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&ov08a10->mutex);
 	ov08a10_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state,
 					    fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state,
+					    fmt->pad) = fmt->format;
+#endif
 	} else {
 		ov08a10->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ov08a10->link_freq, mode->link_freq_index);
@@ -892,9 +897,15 @@ static int ov08a10_get_format(struct v4l2_subdev *sd,
 
 	mutex_lock(&ov08a10->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ov08a10->sd,
 							  sd_state,
 							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(
+							  sd_state,
+							  fmt->pad);
+#endif
 	else
 		ov08a10_update_pad_format(ov08a10->cur_mode, &fmt->format);
 
@@ -939,7 +950,11 @@ static int ov08a10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	mutex_lock(&ov08a10->mutex);
 	ov08a10_update_pad_format(&supported_modes[0],
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 				  v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+				  v4l2_subdev_state_get_format(fh->state, 0));
+#endif
 	mutex_unlock(&ov08a10->mutex);
 
 	return 0;
@@ -994,6 +1009,70 @@ static int ov08a10_identify_module(struct ov08a10 *ov08a10)
 	return 0;
 }
 
+static int ov08a10_check_hwcfg(struct device *dev)
+{
+	struct v4l2_fwnode_endpoint bus_cfg = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY
+	};
+	struct fwnode_handle *ep;
+	struct fwnode_handle *fwnode = dev_fwnode(dev);
+	unsigned int i, j;
+	int ret;
+	u32 ext_clk;
+
+	if (!fwnode)
+		return -ENXIO;
+
+	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (!ep)
+		return -EPROBE_DEFER;
+
+	ret = fwnode_property_read_u32(dev_fwnode(dev), "clock-frequency",
+				       &ext_clk);
+	if (ret) {
+		dev_err(dev, "can't get clock frequency");
+		return ret;
+	}
+
+	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
+	fwnode_handle_put(ep);
+	if (ret)
+		return ret;
+
+	if (bus_cfg.bus.mipi_csi2.num_data_lanes != OV08A10_DATA_LANES) {
+		dev_err(dev, "number of CSI2 data lanes %d is not supported",
+			bus_cfg.bus.mipi_csi2.num_data_lanes);
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	if (!bus_cfg.nr_of_link_frequencies) {
+		dev_err(dev, "no link frequencies defined");
+		ret = -EINVAL;
+		goto out_err;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); i++) {
+		for (j = 0; j < bus_cfg.nr_of_link_frequencies; j++) {
+			if (link_freq_menu_items[i] ==
+				bus_cfg.link_frequencies[j])
+				break;
+		}
+
+		if (j == bus_cfg.nr_of_link_frequencies) {
+			dev_err(dev, "no link frequency %lld supported",
+				link_freq_menu_items[i]);
+			ret = -EINVAL;
+			goto out_err;
+		}
+	}
+
+out_err:
+	v4l2_fwnode_endpoint_free(&bus_cfg);
+
+	return ret;
+}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int ov08a10_remove(struct i2c_client *client)
 #else
@@ -1044,6 +1123,13 @@ static int ov08a10_probe(struct i2c_client *client)
 {
 	struct ov08a10 *ov08a10;
 	int ret = 0;
+
+	/* Check HW config */
+	ret = ov08a10_check_hwcfg(&client->dev);
+	if (ret) {
+		dev_err(&client->dev, "failed to check hwcfg: %d", ret);
+		return ret;
+	}
 
 	ov08a10 = devm_kzalloc(&client->dev, sizeof(*ov08a10), GFP_KERNEL);
 	if (!ov08a10)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2013 - 2023 Intel Corporation
+// Copyright (C) 2013 - 2024 Intel Corporation
 
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -359,8 +359,8 @@ int ipu_isys_vidioc_querycap(struct file *file, void *fh,
 {
 	struct ipu_isys_video *av = video_drvdata(file);
 
-	strlcpy(cap->driver, IPU_ISYS_NAME, sizeof(cap->driver));
-	strlcpy(cap->card, av->isys->media_dev.model, sizeof(cap->card));
+	strscpy(cap->driver, IPU_ISYS_NAME, sizeof(cap->driver));
+	strscpy(cap->card, av->isys->media_dev.model, sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "PCI:%s",
 		 av->isys->media_dev.bus_info);
 	return 0;
@@ -492,6 +492,7 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 	/* overwrite bpl/height with compression alignment */
 	if (av->compression) {
 		u32 planar_tile_status_size, tile_status_size;
+		u64 planar_bytes;
 
 		mpix->plane_fmt[0].bytesperline =
 		    ALIGN(mpix->plane_fmt[0].bytesperline,
@@ -504,10 +505,11 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 			  IPU_ISYS_COMPRESSION_PAGE_ALIGN);
 
 		/* ISYS compression only for RAW and single plannar */
+		planar_bytes =
+		    mul_u32_u32(mpix->plane_fmt[0].bytesperline, mpix->height);
 		planar_tile_status_size =
-		    DIV_ROUND_UP_ULL((mpix->plane_fmt[0].bytesperline *
-				      mpix->height /
-				      IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
+		    DIV_ROUND_UP_ULL((planar_bytes /
+				     IPU_ISYS_COMPRESSION_TILE_SIZE_BYTES) *
 				     IPU_ISYS_COMPRESSION_TILE_STATUS_BITS,
 				     BITS_PER_BYTE);
 		tile_status_size = ALIGN(planar_tile_status_size,
@@ -586,7 +588,7 @@ static int vidioc_enum_input(struct file *file, void *fh,
 {
 	if (input->index > 0)
 		return -EINVAL;
-	strlcpy(input->name, "camera", sizeof(input->name));
+	strscpy(input->name, "camera", sizeof(input->name));
 	input->type = V4L2_INPUT_TYPE_CAMERA;
 
 	return 0;
@@ -1106,6 +1108,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	struct media_pad *source_pad = media_pad_remote_pad_first(&av->pad);
 #endif
 	struct ipu_fw_isys_cropping_abi *crop;
+	enum ipu_fw_isys_send_type send_type;
 	int rval, rvalout, tout;
 
 	rval = get_external_facing_format(ip, &source_fmt);
@@ -1256,8 +1259,22 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	rval = ipu_fw_isys_simple_cmd(av->isys, ip->stream_handle,
-				      IPU_FW_ISYS_SEND_TYPE_STREAM_START);
+	if (bl) {
+		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
+		ipu_fw_isys_dump_frame_buff_set(dev, buf,
+						stream_cfg->nof_output_pins);
+		rval = ipu_fw_isys_complex_cmd(av->isys,
+					       ip->stream_handle,
+					       buf, to_dma_addr(msg),
+					       sizeof(*buf),
+					       send_type);
+	} else {
+		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START;
+		rval = ipu_fw_isys_simple_cmd(av->isys,
+					      ip->stream_handle,
+					      send_type);
+	}
+
 	if (rval < 0) {
 		dev_err(dev, "can't start streaming (%d)\n", rval);
 		goto out_stream_close;
@@ -1276,18 +1293,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		goto out_stream_close;
 	}
 
-	if (!bl)
-		return 0;
-
-	ipu_fw_isys_dump_frame_buff_set(dev, buf, stream_cfg->nof_output_pins);
-	rval = ipu_fw_isys_complex_cmd(av->isys, ip->stream_handle, buf,
-				       to_dma_addr(msg), sizeof(*buf),
-				       IPU_FW_ISYS_SEND_TYPE_STREAM_CAPTURE);
-	if (rval < 0) {
-		dev_err(dev, "can't queue buffers (%d)\n", rval);
-		goto out_stream_close;
-	}
-
+	dev_dbg(dev, "start stream: complete\n");
 	return 0;
 
 out_stream_close:
@@ -1932,6 +1938,7 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 
 	av->pfmt = av->try_fmt_vid_mplane(av, &av->mpix);
 
+	av->initialized = true;
 	mutex_unlock(&av->mutex);
 
 	return rval;
@@ -1953,9 +1960,13 @@ out_mutex_destroy:
 
 void ipu_isys_video_cleanup(struct ipu_isys_video *av)
 {
+	if (!av->initialized)
+		return;
+
 	kfree(av->watermark);
 	video_unregister_device(&av->vdev);
 	media_entity_cleanup(&av->vdev.entity);
 	mutex_destroy(&av->mutex);
 	ipu_isys_queue_cleanup(&av->aq);
+	av->initialized = false;
 }
