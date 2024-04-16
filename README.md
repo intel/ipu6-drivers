@@ -50,7 +50,7 @@ Three ways are available:
 	```
 - For kernel v6.8. patch/v6.8/0002-media-Add-IPU6-and-supported-sensors-config.patch will change the related Kconfig & Makefile.
 - For latest linux-firmware repo, apply patch/linux-firmware/0001-Add-symbolic-link-for-Intel-IPU6-firmwares.patch to it to make driver work.
-- Copy repo content to kernel source **(except Kconfig & Makefile at drivers/media/pci/intel and drivers/media/i2c as they are modified by patches in previous step)**.
+- Copy `drivers` and `include` folders to kernel source **(except Kconfig & Makefile at drivers/media/pci/intel and drivers/media/i2c as they are modified by patches in previous step. You can delete them before you copy folders.)**.
 
 - Enable the following settings in .config
 	```conf
