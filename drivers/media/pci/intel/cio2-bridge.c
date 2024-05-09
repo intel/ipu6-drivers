@@ -247,15 +247,13 @@ static void cio2_bridge_create_connection_swnodes(struct cio2_bridge *bridge,
 						  struct cio2_sensor *sensor)
 {
 	struct software_node *nodes = sensor->swnodes;
-	char sensor_node_name[ACPI_ID_LEN + 2];
-	char vcm_node_name[ACPI_ID_LEN + 2];
 
 	cio2_bridge_init_swnode_names(sensor);
 
-	snprintf(sensor_node_name, sizeof(sensor_node_name),
+	snprintf(sensor->node_names.sensor_name, sizeof(sensor->node_names.sensor_name),
 		 "%s-%u", sensor->name, sensor->ssdb.link);
 
-	nodes[SWNODE_SENSOR_HID] = NODE_SENSOR(sensor_node_name,
+	nodes[SWNODE_SENSOR_HID] = NODE_SENSOR(sensor->node_names.sensor_name,
 					       sensor->dev_properties);
 	nodes[SWNODE_SENSOR_PORT] = NODE_PORT(sensor->node_names.port,
 					      &nodes[SWNODE_SENSOR_HID]);
@@ -271,10 +269,10 @@ static void cio2_bridge_create_connection_swnodes(struct cio2_bridge *bridge,
 			      sensor->cio2_properties);
 	if (sensor->ssdb.vcmtype &&
 	    sensor->ssdb.vcmtype <= ARRAY_SIZE(cio2_vcm_types)) {
-		snprintf(vcm_node_name, sizeof(vcm_node_name),
+		snprintf(sensor->node_names.vcm_name, sizeof(sensor->node_names.vcm_name),
 			 "%s-%u", cio2_vcm_types[sensor->ssdb.vcmtype - 1],
 			 sensor->ssdb.link);
-		nodes[SWNODE_VCM] = NODE_VCM(vcm_node_name);
+		nodes[SWNODE_VCM] = NODE_VCM(sensor->node_names.vcm_name);
 	}
 
 	cio2_bridge_init_swnode_group(sensor);

@@ -4,6 +4,7 @@
 #ifndef __CIO2_BRIDGE_H
 #define __CIO2_BRIDGE_H
 
+#include <linux/mod_devicetable.h>
 #include <linux/property.h>
 #include <linux/types.h>
 
@@ -106,6 +107,8 @@ struct cio2_node_names {
 	char port[7];
 	char endpoint[11];
 	char remote_port[7];
+	char sensor_name[ACPI_ID_LEN + 2];
+	char vcm_name[ACPI_ID_LEN + 2];
 };
 
 struct cio2_sensor_config {
