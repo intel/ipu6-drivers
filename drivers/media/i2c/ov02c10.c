@@ -79,11 +79,10 @@ enum {
 };
 
 enum module_names {
-	MODULE_EMPTY = 0,
+	MODULE_OTHERS = 0,
 	MODULE_2BG203N3,
 	MODULE_CJFME32,
-	/* etc. */
-	MODULE_MAX
+	MODULE_KBFC645,
 };
 
 struct ov02c10_reg {
@@ -633,9 +632,10 @@ static const char * const ov02c10_test_pattern_menu[] = {
 };
 
 static const char * const ov02c10_module_names[] = {
-	[MODULE_EMPTY] = "",
-	[MODULE_CJFME32] = "CJFME32",
+	[MODULE_OTHERS] = "",
 	[MODULE_2BG203N3] = "2BG203N3",
+	[MODULE_CJFME32] = "CJFME32",
+	[MODULE_KBFC645] = "KBFC645",
 };
 
 static const s64 link_freq_menu_items[] = {
@@ -974,6 +974,7 @@ static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 	const struct ov02c10_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+	u32 rotate, shift_x, shift_y;
 
 	link_freq_index = ov02c10->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
@@ -994,49 +995,50 @@ static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 	if (ret)
 		return ret;
 
-	if ((ov02c10->module_name_index == MODULE_CJFME32) ||
-		(ov02c10->module_name_index == MODULE_2BG203N3)) {
-		u32 rotateReg, shiftXReg, shiftYReg;
-
+	switch (ov02c10->module_name_index) {
+	case MODULE_CJFME32:
+	case MODULE_2BG203N3:
+	case MODULE_KBFC645:
 		ret = ov02c10_read_reg(ov02c10, OV02C10_ROTATE_CONTROL,
-				       1, &rotateReg);
+				       1, &rotate);
 		if (ret)
 			dev_err(&client->dev,
 				"read ROTATE_CONTROL fail: %d", ret);
 
 		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL,
-				       1, &shiftXReg);
+				       1, &shift_x);
 		if (ret)
 			dev_err(&client->dev,
 				"read ISP_X_WIN_CONTROL fail: %d", ret);
 
 		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL,
-				       1, &shiftYReg);
+				       1, &shift_y);
 		if (ret)
 			dev_err(&client->dev,
 				"read ISP_Y_WIN_CONTROL fail: %d", ret);
 
-		rotateReg ^= OV02C10_CONFIG_ROTATE;
-		shiftXReg = shiftXReg - 1;
-		shiftYReg = shiftYReg - 1;
+		rotate ^= OV02C10_CONFIG_ROTATE;
+		shift_x = shift_x - 1;
+		shift_y = shift_y - 1;
 
 		ret = ov02c10_write_reg(ov02c10, OV02C10_ROTATE_CONTROL,
-					1, rotateReg);
+					1, rotate);
 		if (ret)
 			dev_err(&client->dev,
 				"write ROTATE_CONTROL fail: %d", ret);
 
 		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL,
-					1, shiftXReg);
+					1, shift_x);
 		if (ret)
 			dev_err(&client->dev,
 				"write ISP_X_WIN_CONTROL fail: %d", ret);
 
 		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL,
-					1, shiftYReg);
+					1, shift_y);
 		if (ret)
 			dev_err(&client->dev,
 				"write ISP_Y_WIN_CONTROL fail: %d", ret);
+		break;
 	}
 
 	ret = ov02c10_write_reg(ov02c10, OV02C10_REG_MODE_SELECT, 1,
