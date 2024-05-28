@@ -1597,9 +1597,9 @@ static int ov02c10_read_module_name(struct ov02c10 *ov02c10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02c10->sd);
 	struct device *dev = &client->dev;
-	int i = 0;
 	union acpi_object *obj;
 	struct acpi_device *adev = ACPI_COMPANION(dev);
+	int i;
 
 	ov02c10->module_name_index = 0;
 	if (!adev)
@@ -1608,13 +1608,14 @@ static int ov02c10_read_module_name(struct ov02c10 *ov02c10)
 	obj = acpi_evaluate_dsm_typed(adev->handle,
 				      &cio2_sensor_module_guid, 0x00,
 				      0x01, NULL, ACPI_TYPE_STRING);
+	if (!obj)
+		return 0;
 
-	if (obj && obj->string.type == ACPI_TYPE_STRING) {
-		for (i = 1; i < ARRAY_SIZE(ov02c10_module_names); i++) {
-			if (!strcmp(ov02c10_module_names[i], obj->string.pointer)) {
-				ov02c10->module_name_index = i;
-				break;
-			}
+	dev_dbg(dev, "module name: %s", obj->string.pointer);
+	for (i = 1; i < ARRAY_SIZE(ov02c10_module_names); i++) {
+		if (!strcmp(ov02c10_module_names[i], obj->string.pointer)) {
+			ov02c10->module_name_index = i;
+			break;
 		}
 	}
 	ACPI_FREE(obj);
