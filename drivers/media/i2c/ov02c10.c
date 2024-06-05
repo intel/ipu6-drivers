@@ -3,7 +3,9 @@
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
+#include <linux/clk.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
@@ -12,8 +14,16 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
+
+static const struct acpi_device_id cvfd_ids[] = {
+	{ "INTC1059", 0 },
+	{ "INTC1095", 0 },
+	{ "INTC100A", 0 },
+	{ "INTC10CF", 0 },
+	{}
+};
 #endif
 
 #define OV02C10_LINK_FREQ_400MHZ	400000000ULL
@@ -69,11 +79,10 @@ enum {
 };
 
 enum module_names {
-	MODULE_EMPTY = 0,
+	MODULE_OTHERS = 0,
 	MODULE_2BG203N3,
 	MODULE_CJFME32,
-	/* etc. */
-	MODULE_MAX
+	MODULE_KBFC645,
 };
 
 struct ov02c10_reg {
@@ -623,9 +632,10 @@ static const char * const ov02c10_test_pattern_menu[] = {
 };
 
 static const char * const ov02c10_module_names[] = {
-	[MODULE_EMPTY] = "",
-	[MODULE_CJFME32] = "CJFME32",
+	[MODULE_OTHERS] = "",
 	[MODULE_2BG203N3] = "2BG203N3",
+	[MODULE_CJFME32] = "CJFME32",
+	[MODULE_KBFC645] = "KBFC645",
 };
 
 static const s64 link_freq_menu_items[] = {
@@ -681,8 +691,14 @@ struct ov02c10 {
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
+
+	struct clk *img_clk;
+	struct regulator *avdd;
+	struct gpio_desc *reset;
+	struct gpio_desc *handshake;
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	struct vsc_mipi_config conf;
 	struct vsc_camera_status status;
 	struct v4l2_ctrl *privacy_status;
@@ -701,6 +717,11 @@ struct ov02c10 {
 
 	/* Module name index */
 	u8 module_name_index;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+IS_ENABLED(CONFIG_INTEL_VSC)
+
+	bool use_intel_vsc;
+#endif
 };
 
 static inline struct ov02c10 *to_ov02c10(struct v4l2_subdev *subdev)
@@ -837,7 +858,7 @@ static int ov02c10_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	case V4L2_CID_PRIVACY:
 		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
 		break;
@@ -868,7 +889,7 @@ static int ov02c10_init_controls(struct ov02c10 *ov02c10)
 
 	ctrl_hdlr = &ov02c10->ctrl_handler;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
 #else
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
@@ -906,7 +927,7 @@ static int ov02c10_init_controls(struct ov02c10 *ov02c10)
 	if (ov02c10->hblank)
 		ov02c10->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	ov02c10->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr,
 						    &ov02c10_ctrl_ops,
 						    V4L2_CID_PRIVACY, 0, 1, 1,
@@ -953,6 +974,7 @@ static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 	const struct ov02c10_reg_list *reg_list;
 	int link_freq_index;
 	int ret = 0;
+	u32 rotate, shift_x, shift_y;
 
 	link_freq_index = ov02c10->cur_mode->link_freq_index;
 	reg_list = &link_freq_configs[link_freq_index].reg_list;
@@ -973,49 +995,50 @@ static int ov02c10_start_streaming(struct ov02c10 *ov02c10)
 	if (ret)
 		return ret;
 
-	if ((ov02c10->module_name_index == MODULE_CJFME32) ||
-		(ov02c10->module_name_index == MODULE_2BG203N3)) {
-		u32 rotateReg, shiftXReg, shiftYReg;
-
+	switch (ov02c10->module_name_index) {
+	case MODULE_CJFME32:
+	case MODULE_2BG203N3:
+	case MODULE_KBFC645:
 		ret = ov02c10_read_reg(ov02c10, OV02C10_ROTATE_CONTROL,
-				       1, &rotateReg);
+				       1, &rotate);
 		if (ret)
 			dev_err(&client->dev,
 				"read ROTATE_CONTROL fail: %d", ret);
 
 		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL,
-				       1, &shiftXReg);
+				       1, &shift_x);
 		if (ret)
 			dev_err(&client->dev,
 				"read ISP_X_WIN_CONTROL fail: %d", ret);
 
 		ret = ov02c10_read_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL,
-				       1, &shiftYReg);
+				       1, &shift_y);
 		if (ret)
 			dev_err(&client->dev,
 				"read ISP_Y_WIN_CONTROL fail: %d", ret);
 
-		rotateReg ^= OV02C10_CONFIG_ROTATE;
-		shiftXReg = shiftXReg - 1;
-		shiftYReg = shiftYReg - 1;
+		rotate ^= OV02C10_CONFIG_ROTATE;
+		shift_x = shift_x - 1;
+		shift_y = shift_y - 1;
 
 		ret = ov02c10_write_reg(ov02c10, OV02C10_ROTATE_CONTROL,
-					1, rotateReg);
+					1, rotate);
 		if (ret)
 			dev_err(&client->dev,
 				"write ROTATE_CONTROL fail: %d", ret);
 
 		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_X_WIN_CONTROL,
-					1, shiftXReg);
+					1, shift_x);
 		if (ret)
 			dev_err(&client->dev,
 				"write ISP_X_WIN_CONTROL fail: %d", ret);
 
 		ret = ov02c10_write_reg(ov02c10, OV02C10_ISP_Y_WIN_CONTROL,
-					1, shiftYReg);
+					1, shift_y);
 		if (ret)
 			dev_err(&client->dev,
 				"write ISP_Y_WIN_CONTROL fail: %d", ret);
+		break;
 	}
 
 	ret = ov02c10_write_reg(ov02c10, OV02C10_REG_MODE_SELECT, 1,
@@ -1072,8 +1095,75 @@ static int ov02c10_set_stream(struct v4l2_subdev *sd, int enable)
 	return ret;
 }
 
+/* This function tries to get power control resources */
+static int ov02c10_get_pm_resources(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov02c10 *ov02c10 = to_ov02c10(sd);
+	int ret;
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
+	acpi_handle handle = ACPI_HANDLE(dev);
+	struct acpi_handle_list deps;
+	acpi_status status;
+	int i = 0;
+
+	ov02c10->use_intel_vsc = false;
+	if (!acpi_has_method(handle, "_DEP"))
+		return false;
+
+	status = acpi_evaluate_reference(handle, "_DEP", NULL, &deps);
+	if (ACPI_FAILURE(status)) {
+		acpi_handle_debug(handle, "Failed to evaluate _DEP.\n");
+		return false;
+	}
+	for (i = 0; i < deps.count; i++) {
+		struct acpi_device *dep = NULL;
+
+		if (deps.handles[i])
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+			acpi_bus_get_device(deps.handles[i], &dep);
+#else
+			dep = acpi_fetch_acpi_dev(deps.handles[i]);
+#endif
+
+		if (dep && !acpi_match_device_ids(dep, cvfd_ids)) {
+			ov02c10->use_intel_vsc = true;
+			return 0;
+		}
+	}
+#endif
+	ov02c10->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(ov02c10->reset))
+		return dev_err_probe(dev, PTR_ERR(ov02c10->reset),
+				     "failed to get reset gpio\n");
+
+	ov02c10->handshake = devm_gpiod_get_optional(dev, "handshake",
+						   GPIOD_OUT_LOW);
+	if (IS_ERR(ov02c10->handshake))
+		return dev_err_probe(dev, PTR_ERR(ov02c10->handshake),
+				     "failed to get handshake gpio\n");
+
+	ov02c10->img_clk = devm_clk_get_optional(dev, NULL);
+	if (IS_ERR(ov02c10->img_clk))
+		return dev_err_probe(dev, PTR_ERR(ov02c10->img_clk),
+				     "failed to get imaging clock\n");
+
+	ov02c10->avdd = devm_regulator_get_optional(dev, "avdd");
+	if (IS_ERR(ov02c10->avdd)) {
+		ret = PTR_ERR(ov02c10->avdd);
+		ov02c10->avdd = NULL;
+		if (ret != -ENODEV)
+			return dev_err_probe(dev, ret,
+					     "failed to get avdd regulator\n");
+	}
+
+	return 0;
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+IS_ENABLED(CONFIG_INTEL_VSC)
 static void ov02c10_vsc_privacy_callback(void *handle,
 				       enum vsc_privacy_status status)
 {
@@ -1081,16 +1171,31 @@ static void ov02c10_vsc_privacy_callback(void *handle,
 
 	v4l2_ctrl_s_ctrl(ov02c10->privacy_status, !status);
 }
+#endif
 
 static int ov02c10_power_off(struct device *dev)
 {
 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
 	struct ov02c10 *ov02c10 = to_ov02c10(sd);
-	int ret;
+	int ret = 0;
 
-	ret = vsc_release_camera_sensor(&ov02c10->status);
-	if (ret && ret != -EAGAIN)
-		dev_err(dev, "Release VSC failed");
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+IS_ENABLED(CONFIG_INTEL_VSC)
+	if (ov02c10->use_intel_vsc) {
+		ret = vsc_release_camera_sensor(&ov02c10->status);
+		if (ret && ret != -EAGAIN)
+			dev_err(dev, "Release VSC failed");
+
+		return ret;
+	}
+#endif
+	gpiod_set_value_cansleep(ov02c10->reset, 1);
+	gpiod_set_value_cansleep(ov02c10->handshake, 0);
+
+	if (ov02c10->avdd)
+		ret = regulator_disable(ov02c10->avdd);
+
+	clk_disable_unprepare(ov02c10->img_clk);
 
 	return ret;
 }
@@ -1101,21 +1206,52 @@ static int ov02c10_power_on(struct device *dev)
 	struct ov02c10 *ov02c10 = to_ov02c10(sd);
 	int ret;
 
-	ov02c10->conf.lane_num = ov02c10->mipi_lanes;
-	/* frequency unit 100k */
-	ov02c10->conf.freq = OV02C10_LINK_FREQ_400MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&ov02c10->conf,
-					ov02c10_vsc_privacy_callback,
-					ov02c10, &ov02c10->status);
-	if (ret && ret != -EAGAIN) {
-		dev_err(dev, "Acquire VSC failed");
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+IS_ENABLED(CONFIG_INTEL_VSC)
+	if (ov02c10->use_intel_vsc) {
+		ov02c10->conf.lane_num = ov02c10->mipi_lanes;
+		/* frequency unit 100k */
+		ov02c10->conf.freq = OV02C10_LINK_FREQ_400MHZ / 100000;
+		ret = vsc_acquire_camera_sensor(&ov02c10->conf,
+						ov02c10_vsc_privacy_callback,
+						ov02c10, &ov02c10->status);
+		if (ret == -EAGAIN)
+			return -EPROBE_DEFER;
+		if (ret) {
+			dev_err(dev, "Acquire VSC failed");
+			return ret;
+		}
+		if (ov02c10->privacy_status)
+			__v4l2_ctrl_s_ctrl(ov02c10->privacy_status,
+					   !(ov02c10->status.status));
+
 		return ret;
 	}
-	__v4l2_ctrl_s_ctrl(ov02c10->privacy_status, !(ov02c10->status.status));
+#endif
+	ret = clk_prepare_enable(ov02c10->img_clk);
+	if (ret < 0) {
+		dev_err(dev, "failed to enable imaging clock: %d", ret);
+		return ret;
+	}
+
+	if (ov02c10->avdd) {
+		ret = regulator_enable(ov02c10->avdd);
+		if (ret < 0) {
+			dev_err(dev, "failed to enable avdd: %d", ret);
+			clk_disable_unprepare(ov02c10->img_clk);
+			return ret;
+		}
+	}
+	gpiod_set_value_cansleep(ov02c10->handshake, 1);
+	gpiod_set_value_cansleep(ov02c10->reset, 0);
+
+	/* Lattice MIPI aggregator with some version FW needs longer delay
+	   after handshake triggered. We set 25ms as a safe value and wait
+	   for a stable version FW. */
+	msleep_interruptible(25);
 
 	return ret;
 }
-#endif
 
 static int __maybe_unused ov02c10_suspend(struct device *dev)
 {
@@ -1461,9 +1597,9 @@ static int ov02c10_read_module_name(struct ov02c10 *ov02c10)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&ov02c10->sd);
 	struct device *dev = &client->dev;
-	int i = 0;
 	union acpi_object *obj;
 	struct acpi_device *adev = ACPI_COMPANION(dev);
+	int i;
 
 	ov02c10->module_name_index = 0;
 	if (!adev)
@@ -1472,13 +1608,14 @@ static int ov02c10_read_module_name(struct ov02c10 *ov02c10)
 	obj = acpi_evaluate_dsm_typed(adev->handle,
 				      &cio2_sensor_module_guid, 0x00,
 				      0x01, NULL, ACPI_TYPE_STRING);
+	if (!obj)
+		return 0;
 
-	if (obj && obj->string.type == ACPI_TYPE_STRING) {
-		for (i = 1; i < ARRAY_SIZE(ov02c10_module_names); i++) {
-			if (!strcmp(ov02c10_module_names[i], obj->string.pointer)) {
-				ov02c10->module_name_index = i;
-				break;
-			}
+	dev_dbg(dev, "module name: %s", obj->string.pointer);
+	for (i = 1; i < ARRAY_SIZE(ov02c10_module_names); i++) {
+		if (!strcmp(ov02c10_module_names[i], obj->string.pointer)) {
+			ov02c10->module_name_index = i;
+			break;
 		}
 	}
 	ACPI_FREE(obj);
@@ -1503,24 +1640,13 @@ static int ov02c10_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	v4l2_i2c_subdev_init(&ov02c10->sd, client, &ov02c10_subdev_ops);
-	ov02c10_read_module_name(ov02c10);
+	ov02c10_get_pm_resources(&client->dev);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
-	ov02c10->mipi_lanes = OV02C10_DATA_LANES;
-	ov02c10->conf.lane_num = ov02c10->mipi_lanes;
-	/* frequency unit 100k */
-	ov02c10->conf.freq = OV02C10_LINK_FREQ_400MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&ov02c10->conf,
-					ov02c10_vsc_privacy_callback,
-					ov02c10, &ov02c10->status);
-	if (ret == -EAGAIN) {
-		return -EPROBE_DEFER;
-	} else if (ret) {
-		dev_err(&client->dev, "Acquire VSC failed");
+	ret = ov02c10_power_on(&client->dev);
+	if (ret) {
+		dev_err_probe(&client->dev, ret, "failed to power on\n");
 		return ret;
 	}
-#endif
 
 	ret = ov02c10_identify_module(ov02c10);
 	if (ret) {
@@ -1528,6 +1654,7 @@ static int ov02c10_probe(struct i2c_client *client)
 		goto probe_error_ret;
 	}
 
+	ov02c10_read_module_name(ov02c10);
 	ov02c10_read_mipi_lanes(ov02c10);
 	mutex_init(&ov02c10->mutex);
 	ov02c10->cur_mode = &supported_modes[0];
@@ -1575,20 +1702,14 @@ probe_error_v4l2_ctrl_handler_free:
 	mutex_destroy(&ov02c10->mutex);
 
 probe_error_ret:
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
 	ov02c10_power_off(&client->dev);
-#endif
 
 	return ret;
 }
 
 static const struct dev_pm_ops ov02c10_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(ov02c10_suspend, ov02c10_resume)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
 	SET_RUNTIME_PM_OPS(ov02c10_power_off, ov02c10_power_on, NULL)
-#endif
 };
 
 #ifdef CONFIG_ACPI

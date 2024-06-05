@@ -1467,6 +1467,7 @@ static int ov2740_read_module_name(struct ov2740 *ov2740)
 				      0x01, NULL, ACPI_TYPE_STRING);
 
 	if (obj && obj->string.type == ACPI_TYPE_STRING) {
+		dev_dbg(dev, "module name: %s", obj->string.pointer);
 		for (i = 1; i < ARRAY_SIZE(ov2740_module_names); i++) {
 			if (!strcmp(ov2740_module_names[i], obj->string.pointer)) {
 				ov2740->module_name_index = i;
