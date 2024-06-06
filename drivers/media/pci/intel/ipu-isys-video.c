@@ -954,7 +954,7 @@ csi_short_packet_prepare_fw_cfg(struct ipu_isys_pipeline *ip,
 
 #define MEDIA_ENTITY_MAX_PADS		512
 
-static bool is_support_vc(struct media_pad *source_pad,
+bool is_support_vc(struct media_pad *source_pad,
 			  struct ipu_isys_pipeline *ip)
 {
 	struct media_pad *remote_pad = source_pad;
@@ -1015,6 +1015,17 @@ static bool is_support_vc(struct media_pad *source_pad,
 	}
 
 	return true;
+}
+
+bool is_has_metadata(const struct ipu_isys_pipeline *ip)
+{
+	int i = 0;
+
+	for (i = 0; i < CSI2_BE_SOC_SOURCE_PADS_NUM; i++) {
+		if (ip->asv[i].dt == IPU_ISYS_MIPI_CSI2_TYPE_EMBEDDED8)
+			return true;
+	}
+	return false;
 }
 
 static int ipu_isys_query_sensor_info(struct media_pad *source_pad,
@@ -1334,8 +1345,16 @@ static void media_pipeline_stop_for_vc(struct ipu_isys_video *av)
 		return;
 
 	media_graph_walk_start(&graph, entity);
-	while ((entity = media_graph_walk_next(&graph)))
-		entity->pads[0].pipe = NULL;
+	dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
+			"stream count: %u, av entity name: %s.\n",
+			av->ip.csi2->stream_count, av->vdev.entity.name);
+	while ((entity = media_graph_walk_next(&graph))) {
+		dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
+				"walk entity name: %s.\n",
+				entity->name);
+		if (av->ip.csi2->stream_count == 0 || !strcmp(entity->name, av->vdev.entity.name))
+			entity->pads[0].pipe = NULL;
+	}
 
 	media_graph_walk_cleanup(&graph);
 }
@@ -1901,7 +1920,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 
 	reinit_completion(&ip->stream_start_completion);
 
-	if (bl && !av->isys->in_reset) {
+	if (bl && (is_support_vc(source_pad, ip))) {
 		dev_dbg(dev, "start stream: start and capture\n");
 
 		send_type = IPU_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
@@ -1938,7 +1957,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 		rval = -EIO;
 		goto out_stream_close;
 	}
-	if (av->isys->in_reset) {
+	if (!is_support_vc(source_pad, ip)) {
 		if (bl) {
 			dev_dbg(dev, "start stream: capture\n");
 

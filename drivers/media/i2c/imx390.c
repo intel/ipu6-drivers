@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2021-2023 Intel Corporation.
+// Copyright (c) 2021-2024 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -1706,7 +1706,6 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 {
 	struct imx390 *imx390 = to_imx390(sd);
 	const struct imx390_mode *mode;
-	int ret = 0;
 	s32 vblank_def;
 	s64 hblank;
 	int i;
@@ -1949,7 +1948,11 @@ static int imx390_identify_module(struct imx390 *imx390)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int imx390_remove(struct i2c_client *client)
+#else
+static void imx390_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx390 *imx390 = to_imx390(sd);
@@ -1960,7 +1963,9 @@ static int imx390_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&imx390->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 	return 0;
+#endif
 }
 
 irqreturn_t imx390_threaded_irq_fn(int irq, void *dev_id)
