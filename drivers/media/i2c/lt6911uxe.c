@@ -960,7 +960,12 @@ static int lt6911uxe_set_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int lt6911uxe_g_frame_interval(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 		struct v4l2_subdev_frame_interval *fival)
+#else
+		struct v4l2_subdev_state *sd_state,
+		struct v4l2_subdev_frame_interval *fival)
+#endif
 {
 	struct lt6911uxe_state *lt6911uxe = to_state(sd);
 
@@ -1130,7 +1135,9 @@ static const struct v4l2_subdev_internal_ops lt6911uxe_subdev_internal_ops = {
 
 static const struct v4l2_subdev_video_ops lt6911uxe_video_ops = {
 	.s_stream = lt6911uxe_set_stream,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 	.g_frame_interval = lt6911uxe_g_frame_interval,
+#endif
 	.g_input_status	= lt6911uxe_g_input_status,
 //	.s_dv_timings	= lt6911uxe_s_dv_timings,
 	.g_dv_timings	= lt6911uxe_g_dv_timings,
@@ -1144,6 +1151,9 @@ static const struct v4l2_subdev_pad_ops lt6911uxe_pad_ops = {
 	.enum_mbus_code = lt6911uxe_enum_mbus_code,
 	.enum_frame_size = lt6911uxe_enum_frame_size,
 	.enum_frame_interval = lt6911uxe_enum_frame_interval,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	.get_frame_interval = lt6911uxe_g_frame_interval,
+#endif
 };
 
 static struct v4l2_subdev_core_ops lt6911uxe_subdev_core_ops = {
