@@ -1298,6 +1298,7 @@ static int ov2740_check_hwcfg(struct device *dev)
 	struct v4l2_fwnode_endpoint bus_cfg = {
 		.bus_type = V4L2_MBUS_CSI2_DPHY
 	};
+	bool found = false;
 	u32 mclk;
 	int ret;
 	unsigned int i, j;
@@ -1335,17 +1336,16 @@ static int ov2740_check_hwcfg(struct device *dev)
 
 	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); i++) {
 		for (j = 0; j < bus_cfg.nr_of_link_frequencies; j++) {
-			if (link_freq_menu_items[i] ==
-				bus_cfg.link_frequencies[j])
+			if (link_freq_menu_items[i] == bus_cfg.link_frequencies[j]) {
+				found = true;
 				break;
+			}
 		}
+	}
 
-		if (j == bus_cfg.nr_of_link_frequencies) {
-			dev_err(dev, "no link frequency %lld supported",
-				link_freq_menu_items[i]);
-			ret = -EINVAL;
-			goto check_hwcfg_error;
-		}
+	if (!found) {
+		dev_err(dev, "no supported link frequencies\n");
+		ret = -EINVAL;
 	}
 
 check_hwcfg_error:
