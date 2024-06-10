@@ -81,22 +81,22 @@ else
 obj-y += drivers/media/pci/intel/ipu6/psys/
 endif
 
-export CONFIG_VIDEO_HM11B1 = m
-export CONFIG_VIDEO_OV01A1S = m
-export CONFIG_VIDEO_OV01A10 = m
-export CONFIG_VIDEO_OV02C10 = m
-export CONFIG_VIDEO_OV02E10 = m
-export CONFIG_VIDEO_HM2170 = m
-export CONFIG_VIDEO_HM2172 = m
-export CONFIG_VIDEO_HI556 = m
+export CONFIG_ICAMERA_HM11B1 = m
+export CONFIG_ICAMERA_OV01A1S = m
+export CONFIG_ICAMERA_OV01A10 = m
+export CONFIG_ICAMERA_OV02C10 = m
+export CONFIG_ICAMERA_OV02E10 = m
+export CONFIG_ICAMERA_HM2170 = m
+export CONFIG_ICAMERA_HM2172 = m
+export CONFIG_ICAMERA_HI556 = m
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV2740)),true)
-export CONFIG_VIDEO_OV2740 = m
-export CONFIG_VIDEO_GC5035 = m
+export CONFIG_ICAMERA_OV2740 = m
+export CONFIG_ICAMERA_GC5035 = m
 endif
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV05C10)),false)
-export CONFIG_VIDEO_OV05C10 = m
+export CONFIG_ICAMERA_OV05C10 = m
 endif
 
 obj-y += drivers/media/i2c/
