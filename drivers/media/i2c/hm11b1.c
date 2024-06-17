@@ -4,6 +4,7 @@
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
 #include <linux/delay.h>
+#include <linux/dmi.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
@@ -440,6 +441,17 @@ static const struct hm11b1_mode supported_modes[] = {
 		},
 		.link_freq_index = HM11B1_LINK_FREQ_384MHZ_INDEX,
 	},
+};
+
+static const struct dmi_system_id skip_hwcfg_check_dmi_table[] = {
+	{
+		.ident = "Dell Latitude 9420",
+		.matches = {
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Latitude 9420"),
+		},
+	},
+	{ }
 };
 
 struct hm11b1 {
@@ -1201,11 +1213,13 @@ static int hm11b1_probe(struct i2c_client *client)
 	struct hm11b1 *hm11b1;
 	int ret = 0;
 
-	/* Check HW config */
-	ret = hm11b1_check_hwcfg(&client->dev);
-	if (ret) {
-		dev_err(&client->dev, "failed to check hwcfg: %d", ret);
-		return ret;
+	if (!dmi_check_system(skip_hwcfg_check_dmi_table)) {
+		/* Check HW config */
+		ret = hm11b1_check_hwcfg(&client->dev);
+		if (ret) {
+			dev_err(&client->dev, "failed to check hwcfg: %d", ret);
+			return ret;
+		}
 	}
 
 	hm11b1 = devm_kzalloc(&client->dev, sizeof(*hm11b1), GFP_KERNEL);

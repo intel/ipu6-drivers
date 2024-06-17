@@ -4,6 +4,7 @@
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
 #include <linux/delay.h>
+#include <linux/dmi.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
@@ -290,6 +291,17 @@ static const struct ov01a1s_mode supported_modes[] = {
 		},
 		.link_freq_index = OV01A1S_LINK_FREQ_400MHZ_INDEX,
 	},
+};
+
+static const struct dmi_system_id skip_hwcfg_check_dmi_table[] = {
+	{
+		.ident = "Dell Latitude 9420",
+		.matches = {
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Latitude 9420"),
+		},
+	},
+	{ }
 };
 
 struct ov01a1s {
@@ -1160,11 +1172,13 @@ static int ov01a1s_probe(struct i2c_client *client)
 	struct ov01a1s *ov01a1s;
 	int ret = 0;
 
-	/* Check HW config */
-	ret = ov01a1s_check_hwcfg(&client->dev);
-	if (ret) {
-		dev_err(&client->dev, "failed to check hwcfg: %d", ret);
-		return ret;
+	if (!dmi_check_system(skip_hwcfg_check_dmi_table)) {
+		/* Check HW config */
+		ret = ov01a1s_check_hwcfg(&client->dev);
+		if (ret) {
+			dev_err(&client->dev, "failed to check hwcfg: %d", ret);
+			return ret;
+		}
 	}
 
 	ov01a1s = devm_kzalloc(&client->dev, sizeof(*ov01a1s), GFP_KERNEL);
