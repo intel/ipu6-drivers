@@ -1,0 +1,72 @@
+From c30877d19866e37662d6098988a4efcdc118e02e Mon Sep 17 00:00:00 2001
+From: Wentong Wu <wentong.wu@intel.com>
+Date: Fri, 21 Jun 2024 11:02:52 +0800
+Subject: [PATCH] mei: vsc: reset ivsc during shutdown
+
+During system shutdown, reset ivsc to have chipset in valid
+state.
+
+Signed-off-by: Wentong Wu <wentong.wu@intel.com>
+---
+ drivers/misc/mei/vsc-tp.c | 20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mei/vsc-tp.c b/drivers/misc/mei/vsc-tp.c
+index 870c70ef3..4033e1534 100644
+--- a/drivers/misc/mei/vsc-tp.c
++++ b/drivers/misc/mei/vsc-tp.c
+@@ -331,12 +331,12 @@ int vsc_tp_rom_xfer(struct vsc_tp *tp, const void *obuf, void *ibuf, size_t len)
+ 		return ret;
+ 	}
+ 
+-	ret = vsc_tp_dev_xfer(tp, tp->tx_buf, tp->rx_buf, len);
++	ret = vsc_tp_dev_xfer(tp, tp->tx_buf, ibuf ? tp->rx_buf : NULL, len);
+ 	if (ret)
+ 		return ret;
+ 
+ 	if (ibuf)
+-		cpu_to_be32_array(ibuf, tp->rx_buf, words);
++		be32_to_cpu_array(ibuf, tp->rx_buf, words);
+ 
+ 	return ret;
+ }
+@@ -349,6 +349,8 @@ void vsc_tp_reset(struct vsc_tp *tp)
+ {
+ 	disable_irq(tp->spi->irq);
+ 
++	gpiod_set_value_cansleep(tp->resetfw, 1);
++	msleep(VSC_TP_RESET_PIN_TOGGLE_INTERVAL_MS);
+ 	/* toggle reset pin */
+ 	gpiod_set_value_cansleep(tp->resetfw, 0);
+ 	msleep(VSC_TP_RESET_PIN_TOGGLE_INTERVAL_MS);
+@@ -557,6 +559,19 @@ static int vsc_tp_probe(struct spi_device *spi)
+ 	return ret;
+ }
+ 
++static void vsc_tp_shutdown(struct spi_device *spi)
++{
++	struct vsc_tp *tp = spi_get_drvdata(spi);
++
++	platform_device_unregister(tp->pdev);
++
++	mutex_destroy(&tp->mutex);
++
++	vsc_tp_reset(tp);
++
++	free_irq(spi->irq, tp);
++}
++
+ static void vsc_tp_remove(struct spi_device *spi)
+ {
+ 	struct vsc_tp *tp = spi_get_drvdata(spi);
+@@ -580,6 +595,7 @@ MODULE_DEVICE_TABLE(acpi, vsc_tp_acpi_ids);
+ static struct spi_driver vsc_tp_driver = {
+ 	.probe = vsc_tp_probe,
+ 	.remove = vsc_tp_remove,
++	.shutdown = vsc_tp_shutdown,
+ 	.driver = {
+ 		.name = "vsc-tp",
+ 		.acpi_match_table = vsc_tp_acpi_ids,
+-- 
+2.34.1
+
