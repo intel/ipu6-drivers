@@ -15,6 +15,7 @@
 #include <linux/timer.h>
 #include <linux/sched.h>
 #include <linux/version.h>
+#include <linux/vmalloc.h>
 
 #include "ipu.h"
 #include "ipu-buttress.h"
