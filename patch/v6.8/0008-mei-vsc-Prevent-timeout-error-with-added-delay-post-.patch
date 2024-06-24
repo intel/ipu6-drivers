@@ -1,0 +1,37 @@
+From 8790622ea947b245bf00b00cc05784110355ecbb Mon Sep 17 00:00:00 2001
+From: Wentong Wu <wentong.wu@intel.com>
+Date: Sun, 23 Jun 2024 11:20:41 +0800
+Subject: [PATCH] mei: vsc: Prevent timeout error with added delay
+ post-firmware download
+
+After completing the firmware download, the firmware requires some
+time to become functional. This change introduces additional sleep
+time before the first read operation to prevent a confusing timeout
+error in vsc_tp_xfer().
+
+Fixes: 566f5ca97680 ("mei: Add transport driver for IVSC device")
+Cc: stable@vger.kernel.org # for 6.8+
+Signed-off-by: Wentong Wu <wentong.wu@intel.com>
+Tested-by: Jason Chen <jason.z.chen@intel.com>
+---
+ drivers/misc/mei/platform-vsc.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mei/platform-vsc.c b/drivers/misc/mei/platform-vsc.c
+index 1ec65d87488a..d02f6e881139 100644
+--- a/drivers/misc/mei/platform-vsc.c
++++ b/drivers/misc/mei/platform-vsc.c
+@@ -28,8 +28,8 @@
+ 
+ #define MEI_VSC_MAX_MSG_SIZE		512
+ 
+-#define MEI_VSC_POLL_DELAY_US		(50 * USEC_PER_MSEC)
+-#define MEI_VSC_POLL_TIMEOUT_US		(200 * USEC_PER_MSEC)
++#define MEI_VSC_POLL_DELAY_US		(100 * USEC_PER_MSEC)
++#define MEI_VSC_POLL_TIMEOUT_US		(400 * USEC_PER_MSEC)
+ 
+ #define mei_dev_to_vsc_hw(dev)		((struct mei_vsc_hw *)((dev)->hw))
+ 
+-- 
+2.34.1
+

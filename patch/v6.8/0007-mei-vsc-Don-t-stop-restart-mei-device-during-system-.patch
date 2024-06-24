@@ -1,0 +1,94 @@
+From 9b5e045029d8bded4c6979874ed3abc347c1415c Mon Sep 17 00:00:00 2001
+From: Wentong Wu <wentong.wu@intel.com>
+Date: Mon, 27 May 2024 20:38:35 +0800
+Subject: [PATCH] mei: vsc: Don't stop/restart mei device during system
+ suspend/resume
+
+The dynamically created mei client device (mei csi) is used as one V4L2
+sub device of the whole video pipeline, and the V4L2 connection graph is
+built by software node. The mei_stop() and mei_restart() will delete the
+old mei csi client device and create a new mei client device, which will
+cause the software node information saved in old mei csi device lost and
+the whole video pipeline will be broken.
+
+Removing mei_stop()/mei_restart() during system suspend/resume can fix
+the issue above and won't impact hardware actual power saving logic.
+
+Fixes: f6085a96c973 ("mei: vsc: Unregister interrupt handler for system suspend")
+Cc: stable@vger.kernel.org # for 6.8+
+Reported-by: Hao Yao <hao.yao@intel.com>
+Signed-off-by: Wentong Wu <wentong.wu@intel.com>
+Reviewed-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Tested-by: Jason Chen <jason.z.chen@intel.com>
+Tested-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Acked-by: Tomas Winkler <tomas.winkler@intel.com>
+Link: https://lore.kernel.org/r/20240527123835.522384-1-wentong.wu@intel.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/misc/mei/platform-vsc.c | 39 +++++++++++++--------------------
+ 1 file changed, 15 insertions(+), 24 deletions(-)
+
+diff --git a/drivers/misc/mei/platform-vsc.c b/drivers/misc/mei/platform-vsc.c
+index b543e6b9f3cf..1ec65d87488a 100644
+--- a/drivers/misc/mei/platform-vsc.c
++++ b/drivers/misc/mei/platform-vsc.c
+@@ -399,41 +399,32 @@ static void mei_vsc_remove(struct platform_device *pdev)
+ 
+ static int mei_vsc_suspend(struct device *dev)
+ {
+-	struct mei_device *mei_dev = dev_get_drvdata(dev);
+-	struct mei_vsc_hw *hw = mei_dev_to_vsc_hw(mei_dev);
++	struct mei_device *mei_dev;
++	int ret = 0;
+ 
+-	mei_stop(mei_dev);
++	mei_dev = dev_get_drvdata(dev);
++	if (!mei_dev)
++		return -ENODEV;
+ 
+-	mei_disable_interrupts(mei_dev);
++	mutex_lock(&mei_dev->device_lock);
+ 
+-	vsc_tp_free_irq(hw->tp);
++	if (!mei_write_is_idle(mei_dev))
++		ret = -EAGAIN;
+ 
+-	return 0;
++	mutex_unlock(&mei_dev->device_lock);
++
++	return ret;
+ }
+ 
+ static int mei_vsc_resume(struct device *dev)
+ {
+-	struct mei_device *mei_dev = dev_get_drvdata(dev);
+-	struct mei_vsc_hw *hw = mei_dev_to_vsc_hw(mei_dev);
+-	int ret;
+-
+-	ret = vsc_tp_request_irq(hw->tp);
+-	if (ret)
+-		return ret;
+-
+-	ret = mei_restart(mei_dev);
+-	if (ret)
+-		goto err_free;
++	struct mei_device *mei_dev;
+ 
+-	/* start timer if stopped in suspend */
+-	schedule_delayed_work(&mei_dev->timer_work, HZ);
++	mei_dev = dev_get_drvdata(dev);
++	if (!mei_dev)
++		return -ENODEV;
+ 
+ 	return 0;
+-
+-err_free:
+-	vsc_tp_free_irq(hw->tp);
+-
+-	return ret;
+ }
+ 
+ static DEFINE_SIMPLE_DEV_PM_OPS(mei_vsc_pm_ops, mei_vsc_suspend, mei_vsc_resume);
+-- 
+2.34.1
+
