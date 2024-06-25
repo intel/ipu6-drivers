@@ -142,6 +142,7 @@
  * end of dummy CID
  */
 
+
 #define to_imx390(_sd)			container_of(_sd, struct imx390, sd)
 
 /**
@@ -226,6 +227,8 @@ struct imx390_mode {
 	/* Sensor register settings for this resolution */
 	const struct imx390_reg_list reg_list;
 };
+
+
 
 struct imx390 {
 	struct v4l2_subdev sd;
@@ -1065,6 +1068,7 @@ static const struct imx390_mode supported_modes[] = {
 	},
 };
 
+
 static u32 supported_formats[] = {
 	MEDIA_BUS_FMT_SGRBG12_1X12,
 };
@@ -1451,6 +1455,7 @@ static int imx390_init_controls(struct imx390 *imx390)
 			  IMX390_ANAL_GAIN_MIN, IMX390_ANAL_GAIN_MAX,
 			  IMX390_ANAL_GAIN_STEP, IMX390_ANAL_GAIN_DEFAULT);
 
+
 	imx390->digital_gain = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops, V4L2_CID_DIGITAL_GAIN,
 			IMX390_DGTL_GAIN_MIN, IMX390_DGTL_GAIN_MAX,
 			IMX390_DGTL_GAIN_STEP, IMX390_DGTL_GAIN_DEFAULT);
@@ -1647,7 +1652,12 @@ static int imx390_set_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int imx390_g_frame_interval(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 		struct v4l2_subdev_frame_interval *fival)
+#else
+		struct v4l2_subdev_state *sd_state,
+		struct v4l2_subdev_frame_interval *fival)
+#endif
 {
 	struct imx390 *imx390 = to_imx390(sd);
 
@@ -1900,7 +1910,9 @@ static int imx390_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 static const struct v4l2_subdev_video_ops imx390_video_ops = {
 	.s_stream = imx390_set_stream,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 	.g_frame_interval = imx390_g_frame_interval,
+#endif
 };
 
 static const struct v4l2_subdev_pad_ops imx390_pad_ops = {
@@ -1910,6 +1922,9 @@ static const struct v4l2_subdev_pad_ops imx390_pad_ops = {
 	.enum_mbus_code = imx390_enum_mbus_code,
 	.enum_frame_size = imx390_enum_frame_size,
 	.enum_frame_interval = imx390_enum_frame_interval,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	.get_frame_interval = imx390_g_frame_interval,
+#endif
 };
 
 static const struct v4l2_subdev_ops imx390_subdev_ops = {
@@ -1967,27 +1982,6 @@ static void imx390_remove(struct i2c_client *client)
 	return 0;
 #endif
 }
-
-irqreturn_t imx390_threaded_irq_fn(int irq, void *dev_id)
-{
-	struct imx390 *imx390 = dev_id;
-
-	mutex_lock(&imx390->mutex);
-	if (imx390->streaming == false) {
-		gpio_set_value(imx390->platform_data->gpios[0], 0);
-		goto imx390_irq_handled;
-	}
-	if (imx390->strobe_source->val == V4L2_FLASH_STROBE_SOURCE_EXTERNAL) {
-
-		gpio_set_value(imx390->platform_data->gpios[0],
-				gpio_get_value(imx390->platform_data->irq_pin));
-	}
-
-imx390_irq_handled:
-	mutex_unlock(&imx390->mutex);
-	return IRQ_HANDLED;
-}
-
 static int imx390_probe(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd;
@@ -2021,6 +2015,7 @@ static int imx390_probe(struct i2c_client *client)
 			"%s : media entity init Failed %d\n", __func__, ret);
 		return ret;
 	}
+
 
 	ret = imx390_identify_module(imx390);
 	if (ret) {

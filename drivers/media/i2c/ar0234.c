@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2019-2023 Intel Corporation.
+// Copyright (c) 2019-2024 Intel Corporation.
 
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
@@ -1326,6 +1326,7 @@ static const struct ar0234_mode supported_modes[] = {
 	},
 };
 
+
 static u32 supported_formats[] = {
 	MEDIA_BUS_FMT_SGRBG10_1X10,
 	MEDIA_BUS_FMT_SGRBG8_1X8,
@@ -1338,6 +1339,9 @@ struct ar0234 {
 
 	/* V4L2 Controls */
 	struct v4l2_ctrl *link_freq;
+#ifdef V4L2_CID_MIPI_LANES
+	struct v4l2_ctrl *mipi_lanes;
+#endif
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *exposure;
 	struct v4l2_ctrl *analogue_gain;
@@ -1553,6 +1557,11 @@ static int ar0234_set_ctrl(struct v4l2_ctrl *ctrl)
 				       ar0234->cur_mode->height + ctrl->val);
 		dev_dbg(&client->dev, "set vblank %d\n", ar0234->cur_mode->height + ctrl->val);
 		break;
+#ifdef V4L2_CID_MIPI_LANES
+	case V4L2_CID_MIPI_LANES:
+		dev_dbg(&client->dev, "set mipi lane %d\n", ctrl->val);
+		break;
+#endif
 	case V4L2_CID_FLASH_STROBE_SOURCE:
 		dev_dbg(&client->dev, "set led flash source %d\n", ctrl->val);
 		break;
@@ -1700,6 +1709,9 @@ static int ar0234_init_controls(struct ar0234 *ar0234)
 	struct v4l2_ctrl_handler *ctrl_hdlr;
 	s64 exposure_max;
 	s64 hblank;
+#ifdef V4L2_CID_MIPI_LANES
+	struct v4l2_ctrl_config cfg = { 0 };
+#endif
 	int ret;
 
 	ctrl_hdlr = &ar0234->ctrl_handler;
@@ -1732,6 +1744,15 @@ static int ar0234_init_controls(struct ar0234 *ar0234)
 					     AR0234_EXPOSURE_MIN, exposure_max,
 					     AR0234_EXPOSURE_STEP,
 					     exposure_max);
+#ifdef V4L2_CID_MIPI_LANES
+	cfg.ops = &ar0234_ctrl_ops;
+	cfg.id = V4L2_CID_MIPI_LANES;
+	cfg.name = "V4L2_CID_MIPI_LANES";
+	cfg.type = V4L2_CTRL_TYPE_INTEGER;
+	cfg.max = 4; cfg.min = 2; cfg.step = 2; cfg.def = 4;
+	cfg.qmenu = 0; cfg.elem_size = 0;
+	ar0234->mipi_lanes = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg, NULL);
+#endif
 	ar0234->strobe_source = v4l2_ctrl_new_std_menu(
 			ctrl_hdlr, &ar0234_ctrl_ops,
 			V4L2_CID_FLASH_STROBE_SOURCE,
@@ -1882,7 +1903,7 @@ static int ar0234_g_frame_interval(struct v4l2_subdev *sd,
 		struct v4l2_subdev_frame_interval *fival)
 #else
 		struct v4l2_subdev_state *sd_state,
-		 struct v4l2_subdev_frame_interval *fival)
+		struct v4l2_subdev_frame_interval *fival)
 #endif
 {
 	struct ar0234 *ar0234 = to_ar0234(sd);
@@ -1946,6 +1967,9 @@ static int ar0234_set_format(struct v4l2_subdev *sd,
 	s32 vblank_def;
 	s64 hblank;
 	int i;
+#ifdef V4L2_CID_MIPI_LANES
+	s32 mipi_lanes = ar0234->mipi_lanes->val;
+#endif
 
 	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
 		if (supported_modes[i].width != fmt->format.width
@@ -1957,6 +1981,12 @@ static int ar0234_set_format(struct v4l2_subdev *sd,
 			dev_dbg(&client->dev, "pixel format doesn't match\n");
 			continue;
 		}
+#ifdef V4L2_CID_MIPI_LANES
+		if (supported_modes[i].lanes != mipi_lanes) {
+			dev_dbg(&client->dev, "mipi lanes doesn't match\n");
+			continue;
+		}
+#endif
 		mode = &supported_modes[i];
 		break;
 	}
@@ -2193,7 +2223,7 @@ static void ar0234_remove(struct i2c_client *client)
 #endif
 }
 
-irqreturn_t ar0234_threaded_irq_fn(int irq, void *dev_id)
+static irqreturn_t ar0234_threaded_irq_fn(int irq, void *dev_id)
 {
 	struct ar0234 *ar0234 = dev_id;
 
