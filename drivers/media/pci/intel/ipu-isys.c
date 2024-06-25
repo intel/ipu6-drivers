@@ -668,8 +668,8 @@ static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
 					struct ipu_isys, notifier);
 	struct sensor_async_sd *s_asd = container_of(asc,
 					struct sensor_async_sd, asc);
-#if IS_ENABLED(CONFIG_IPU_BRIDGE)
 	int ret;
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
 
 	ret = ipu_bridge_instantiate_vcm(sd->dev);
 	if (ret) {
@@ -781,6 +781,7 @@ static int isys_notifier_init(struct ipu_isys *isys)
 			"v4l2 parse_fwnode_endpoints() failed: %d\n", ret);
 		return ret;
 	}
+
 	if (list_empty(&isys->notifier.asd_list)) {
 		/* isys probe could continue with async subdevs missing */
 		dev_warn(&isys->adev->dev, "no subdev found in graph\n");

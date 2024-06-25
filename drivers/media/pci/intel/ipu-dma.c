@@ -322,6 +322,7 @@ static void ipu_dma_free(struct device *dev, size_t size, void *vaddr,
 
 	kfree(info);
 }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 
 static int ipu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
 			void *addr, dma_addr_t iova, size_t size,
@@ -359,6 +360,33 @@ static int ipu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
 
 	return 0;
 }
+#else
+
+static int ipu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
+			void *addr, dma_addr_t iova, size_t size,
+			unsigned long attrs)
+{
+	struct ipu_mmu *mmu = to_ipu_bus_device(dev)->mmu;
+	struct vm_info *info;
+	size_t count = PAGE_ALIGN(size) >> PAGE_SHIFT;
+
+	info = get_vm_info(mmu, iova);
+	if (!info)
+		return -EFAULT;
+
+	if (!info->vaddr)
+		return -EFAULT;
+
+	if (vma->vm_start & ~PAGE_MASK)
+		return -EINVAL;
+
+	if (size > info->size)
+		return -EFAULT;
+
+	return vm_insert_pages(vma, vma->vm_start, info->pages, &count);
+}
+
+#endif
 
 static void ipu_dma_unmap_sg(struct device *dev,
 			     struct scatterlist *sglist,
