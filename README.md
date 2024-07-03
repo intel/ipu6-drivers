@@ -115,3 +115,7 @@ Three ways are available:
 	sudo dkms add .
 	sudo dkms autoinstall ipu6-drivers/0.0.0
 	```
+
+### Note
+If your kernel version is below v5.19, you will need to apply this patch.
+On the intel platform, The i2c port 6 and 7 might not have been registered in the PCIe bus.
