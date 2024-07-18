@@ -1,7 +1,7 @@
-From 12ce4727869b46e93c8d01064621593cfb240404 Mon Sep 17 00:00:00 2001
+From 60955329017e6f64672dde27911f2ff00874c59f Mon Sep 17 00:00:00 2001
 From: Wentong Wu <wentong.wu@intel.com>
 Date: Mon, 3 Jun 2024 10:33:28 +0800
-Subject: [PATCH 2/3] media: ivsc: csi: add separate lock for v4l2 control
+Subject: [PATCH 10/12] media: ivsc: csi: add separate lock for v4l2 control
  handler
 
 There're possibilities that privacy status change notification happens
@@ -18,10 +18,10 @@ Tested-by: Jason Chen <jason.z.chen@intel.com>
  1 file changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/media/pci/intel/ivsc/mei_csi.c b/drivers/media/pci/intel/ivsc/mei_csi.c
-index 05c0acb78939..a46a012b301f 100644
+index c58826dd5a50..c730865bdd8a 100644
 --- a/drivers/media/pci/intel/ivsc/mei_csi.c
 +++ b/drivers/media/pci/intel/ivsc/mei_csi.c
-@@ -126,6 +126,8 @@ struct mei_csi {
+@@ -123,6 +123,8 @@ struct mei_csi {
  	struct v4l2_ctrl_handler ctrl_handler;
  	struct v4l2_ctrl *freq_ctrl;
  	struct v4l2_ctrl *privacy_ctrl;
@@ -30,7 +30,7 @@ index 05c0acb78939..a46a012b301f 100644
  	unsigned int remote_pad;
  	/* start streaming or not */
  	int streaming;
-@@ -563,11 +565,13 @@ static int mei_csi_init_controls(struct mei_csi *csi)
+@@ -615,11 +617,13 @@ static int mei_csi_init_controls(struct mei_csi *csi)
  	u32 max;
  	int ret;
  
@@ -45,7 +45,7 @@ index 05c0acb78939..a46a012b301f 100644
  
  	max = ARRAY_SIZE(link_freq_menu_items) - 1;
  	csi->freq_ctrl = v4l2_ctrl_new_int_menu(&csi->ctrl_handler,
-@@ -756,6 +760,7 @@ static int mei_csi_probe(struct mei_cl_device *cldev,
+@@ -798,6 +802,7 @@ static int mei_csi_probe(struct mei_cl_device *cldev,
  
  err_ctrl_handler:
  	v4l2_ctrl_handler_free(&csi->ctrl_handler);
@@ -53,7 +53,7 @@ index 05c0acb78939..a46a012b301f 100644
  	v4l2_async_nf_unregister(&csi->notifier);
  	v4l2_async_nf_cleanup(&csi->notifier);
  
-@@ -775,6 +780,7 @@ static void mei_csi_remove(struct mei_cl_device *cldev)
+@@ -817,6 +822,7 @@ static void mei_csi_remove(struct mei_cl_device *cldev)
  	v4l2_async_nf_unregister(&csi->notifier);
  	v4l2_async_nf_cleanup(&csi->notifier);
  	v4l2_ctrl_handler_free(&csi->ctrl_handler);
@@ -62,5 +62,5 @@ index 05c0acb78939..a46a012b301f 100644
  	v4l2_subdev_cleanup(&csi->subdev);
  	media_entity_cleanup(&csi->subdev.entity);
 -- 
-2.34.1
+2.43.0
 

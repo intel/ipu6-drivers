@@ -1,7 +1,7 @@
-From c30877d19866e37662d6098988a4efcdc118e02e Mon Sep 17 00:00:00 2001
+From a0816e198d3bb80809e0f1d895b4526ba1050bf3 Mon Sep 17 00:00:00 2001
 From: Wentong Wu <wentong.wu@intel.com>
 Date: Fri, 21 Jun 2024 11:02:52 +0800
-Subject: [PATCH] mei: vsc: reset ivsc during shutdown
+Subject: [PATCH 06/12] mei: vsc: reset ivsc during shutdown
 
 During system shutdown, reset ivsc to have chipset in valid
 state.
@@ -12,10 +12,10 @@ Signed-off-by: Wentong Wu <wentong.wu@intel.com>
  1 file changed, 18 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/misc/mei/vsc-tp.c b/drivers/misc/mei/vsc-tp.c
-index 870c70ef3..4033e1534 100644
+index dcf4d9bd3293..eae5370b8316 100644
 --- a/drivers/misc/mei/vsc-tp.c
 +++ b/drivers/misc/mei/vsc-tp.c
-@@ -331,12 +331,12 @@ int vsc_tp_rom_xfer(struct vsc_tp *tp, const void *obuf, void *ibuf, size_t len)
+@@ -328,12 +328,12 @@ int vsc_tp_rom_xfer(struct vsc_tp *tp, const void *obuf, void *ibuf, size_t len)
  		return ret;
  	}
  
@@ -30,7 +30,7 @@ index 870c70ef3..4033e1534 100644
  
  	return ret;
  }
-@@ -349,6 +349,8 @@ void vsc_tp_reset(struct vsc_tp *tp)
+@@ -346,6 +346,8 @@ void vsc_tp_reset(struct vsc_tp *tp)
  {
  	disable_irq(tp->spi->irq);
  
@@ -39,7 +39,7 @@ index 870c70ef3..4033e1534 100644
  	/* toggle reset pin */
  	gpiod_set_value_cansleep(tp->resetfw, 0);
  	msleep(VSC_TP_RESET_PIN_TOGGLE_INTERVAL_MS);
-@@ -557,6 +559,19 @@ static int vsc_tp_probe(struct spi_device *spi)
+@@ -554,6 +556,19 @@ static int vsc_tp_probe(struct spi_device *spi)
  	return ret;
  }
  
@@ -59,7 +59,7 @@ index 870c70ef3..4033e1534 100644
  static void vsc_tp_remove(struct spi_device *spi)
  {
  	struct vsc_tp *tp = spi_get_drvdata(spi);
-@@ -580,6 +595,7 @@ MODULE_DEVICE_TABLE(acpi, vsc_tp_acpi_ids);
+@@ -577,6 +592,7 @@ MODULE_DEVICE_TABLE(acpi, vsc_tp_acpi_ids);
  static struct spi_driver vsc_tp_driver = {
  	.probe = vsc_tp_probe,
  	.remove = vsc_tp_remove,
@@ -68,5 +68,5 @@ index 870c70ef3..4033e1534 100644
  		.name = "vsc-tp",
  		.acpi_match_table = vsc_tp_acpi_ids,
 -- 
-2.34.1
+2.43.0
 

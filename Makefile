@@ -23,6 +23,7 @@ version_lt = $(shell \
 KV_IVSC := 6.6.0
 KV_IPU_BRIDGE := 6.6.0
 KV_OV2740 := 6.8.0
+KV_OV05C10 := 6.8.0
 
 KERNEL_SRC ?= /lib/modules/$(KERNELRELEASE)/build
 MODSRC := $(shell pwd)
@@ -88,6 +89,11 @@ ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV2740)),true)
 export CONFIG_VIDEO_OV2740 = m
 export CONFIG_VIDEO_GC5035 = m
 endif
+
+ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV05C10)),false)
+export CONFIG_VIDEO_OV05C10 = m
+endif
+
 obj-y += drivers/media/i2c/
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_IVSC)),true)

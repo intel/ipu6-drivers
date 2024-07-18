@@ -1,7 +1,7 @@
-From 8790622ea947b245bf00b00cc05784110355ecbb Mon Sep 17 00:00:00 2001
+From dfe37854c057a794ed83bc836bb7de0f2c0d738d Mon Sep 17 00:00:00 2001
 From: Wentong Wu <wentong.wu@intel.com>
-Date: Sun, 23 Jun 2024 11:20:41 +0800
-Subject: [PATCH] mei: vsc: Prevent timeout error with added delay
+Date: Tue, 25 Jun 2024 16:10:44 +0800
+Subject: [PATCH 08/12] mei: vsc: Prevent timeout error with added delay
  post-firmware download
 
 After completing the firmware download, the firmware requires some
@@ -13,12 +13,15 @@ Fixes: 566f5ca97680 ("mei: Add transport driver for IVSC device")
 Cc: stable@vger.kernel.org # for 6.8+
 Signed-off-by: Wentong Wu <wentong.wu@intel.com>
 Tested-by: Jason Chen <jason.z.chen@intel.com>
+Acked-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Link: https://lore.kernel.org/r/20240625081047.4178494-3-wentong.wu@intel.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
 ---
  drivers/misc/mei/platform-vsc.c | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/misc/mei/platform-vsc.c b/drivers/misc/mei/platform-vsc.c
-index 1ec65d87488a..d02f6e881139 100644
+index 5a445f3b96a9..a59fb5a13bdc 100644
 --- a/drivers/misc/mei/platform-vsc.c
 +++ b/drivers/misc/mei/platform-vsc.c
 @@ -28,8 +28,8 @@
@@ -33,5 +36,5 @@ index 1ec65d87488a..d02f6e881139 100644
  #define mei_dev_to_vsc_hw(dev)		((struct mei_vsc_hw *)((dev)->hw))
  
 -- 
-2.34.1
+2.43.0
 

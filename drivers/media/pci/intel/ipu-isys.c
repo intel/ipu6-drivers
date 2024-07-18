@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (C) 2013 - 2024 Intel Corporation
 
+#include <linux/acpi.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/device.h>
@@ -13,6 +14,10 @@
 #include <linux/sched.h>
 #include <linux/version.h>
 
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
+LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+#include <media/ipu-bridge.h>
+#endif
 #include <media/ipu-isys.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #include <media/v4l2-mc.h>
@@ -634,6 +639,7 @@ void update_watermark_setting(struct ipu_isys *isys)
 		did = calc_fill_time_us - ltr;
 		ltr_did_type = LTR_IWAKE_ON;
 	}
+
 	threshold_bytes = did * isys_pb_datarate_mbs;
 	/* calculate iwake threshold with 2KB granularity pages */
 	iwake_threshold =
@@ -758,10 +764,21 @@ static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
 					struct ipu_isys, notifier);
 	struct sensor_async_sd *s_asd = container_of(asc,
 					struct sensor_async_sd, asc);
+	int ret;
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
+
+	ret = ipu_bridge_instantiate_vcm(sd->dev);
+	if (ret) {
+		dev_err(&isys->adev->dev, "instantiate vcm failed\n");
+		return ret;
+	}
+#endif
 
 	dev_info(&isys->adev->dev, "bind %s nlanes is %d port is %d\n",
 		 sd->name, s_asd->csi2.nlanes, s_asd->csi2.port);
-	isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
+	ret = isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
+	if (ret)
+		return ret;
 
 	return v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
 }
@@ -860,6 +877,7 @@ static int isys_notifier_init(struct ipu_isys *isys)
 			"v4l2 parse_fwnode_endpoints() failed: %d\n", ret);
 		return ret;
 	}
+
 	if (list_empty(&isys->notifier.asd_list)) {
 		/* isys probe could continue with async subdevs missing */
 		dev_warn(&isys->adev->dev, "no subdev found in graph\n");
@@ -1854,3 +1872,6 @@ MODULE_AUTHOR("Yu Xia <yu.y.xia@intel.com>");
 MODULE_AUTHOR("Jerry Hu <jerry.w.hu@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel ipu input system driver");
+#if IS_ENABLED(CONFIG_IPU_BRIDGE)
+MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+#endif

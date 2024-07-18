@@ -1,7 +1,7 @@
-From e39d4c99e2bf1002cd61faf79db86b95257a4a3e Mon Sep 17 00:00:00 2001
+From 768db18beee57328ca99ebaf465ad8d763167405 Mon Sep 17 00:00:00 2001
 From: Hao Yao <hao.yao@intel.com>
 Date: Mon, 25 Mar 2024 14:40:09 +0800
-Subject: [PATCH 2/5] media: Add IPU6 and supported sensors config
+Subject: [PATCH 02/12] media: Add IPU6 and supported sensors config
 
 Signed-off-by: Hao Yao <hao.yao@intel.com>
 ---
@@ -145,5 +145,5 @@ index f199a97e1d78..0ac987a40da5 100644
 +obj-y	+= ipu6/
  obj-y	+= ivsc/
 -- 
-2.43.2
+2.43.0
 

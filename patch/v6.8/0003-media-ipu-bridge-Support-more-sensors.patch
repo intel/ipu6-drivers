@@ -1,7 +1,7 @@
-From fd6e61b885b92eb666870949fac0921143e3fa6f Mon Sep 17 00:00:00 2001
+From 4a50a9f94b16b4f88193d9d015114f16b3ea3a1f Mon Sep 17 00:00:00 2001
 From: Hao Yao <hao.yao@intel.com>
 Date: Tue, 26 Mar 2024 10:50:41 +0800
-Subject: [PATCH 3/5] media: ipu-bridge: Support more sensors
+Subject: [PATCH 03/12] media: ipu-bridge: Support more sensors
 
 Signed-off-by: Hao Yao <hao.yao@intel.com>
 ---
@@ -41,5 +41,5 @@ index f980e3125a7b..2ac59e02b839 100644
  
  static const struct ipu_property_names prop_names = {
 -- 
-2.43.2
+2.43.0
 

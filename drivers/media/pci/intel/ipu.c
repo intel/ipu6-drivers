@@ -579,6 +579,7 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		rval = request_cpd_fw(&isp->cpd_fw, isp->cpd_fw_name_new,
 				      &pdev->dev);
 	}
+
 	if (rval) {
 		dev_err(&isp->pdev->dev, "Requesting signed firmware failed\n");
 		goto buttress_exit;
@@ -744,20 +745,17 @@ static void ipu_pci_remove(struct pci_dev *pdev)
 	isp->pkg_dir_dma_addr = 0;
 	isp->pkg_dir_size = 0;
 
+	ipu_mmu_cleanup(isp->psys->mmu);
+	ipu_mmu_cleanup(isp->isys->mmu);
+
 	ipu_bus_del_devices(pdev);
 
 	pm_runtime_forbid(&pdev->dev);
 	pm_runtime_get_noresume(&pdev->dev);
 
-	pci_release_regions(pdev);
-	pci_disable_device(pdev);
-
 	ipu_buttress_exit(isp);
 
 	release_firmware(isp->cpd_fw);
-
-	ipu_mmu_cleanup(isp->psys->mmu);
-	ipu_mmu_cleanup(isp->isys->mmu);
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
