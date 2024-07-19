@@ -1,7 +1,8 @@
-From 5611cf035ba882092d9c708420910153f332902b Mon Sep 17 00:00:00 2001
+From 3739cc06760919adfa44f10dcb6829a95834722a Mon Sep 17 00:00:00 2001
 From: Wentong Wu <wentong.wu@intel.com>
 Date: Mon, 3 Jun 2024 10:57:24 +0800
-Subject: [PATCH 3/3] media: ivsc: csi: remove privacy status in struct mei_csi
+Subject: [PATCH 11/12] media: ivsc: csi: remove privacy status in struct
+ mei_csi
 
 The privacy status is maintained by privacy_ctrl, on which all
 of the privacy status changes will go through, so there is no
@@ -15,10 +16,10 @@ Tested-by: Jason Chen <jason.z.chen@intel.com>
  1 file changed, 3 insertions(+), 7 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ivsc/mei_csi.c b/drivers/media/pci/intel/ivsc/mei_csi.c
-index a46a012b301f..bff0176fc8f1 100644
+index c730865bdd8a..8a905ba89b57 100644
 --- a/drivers/media/pci/intel/ivsc/mei_csi.c
 +++ b/drivers/media/pci/intel/ivsc/mei_csi.c
-@@ -138,9 +138,6 @@ struct mei_csi {
+@@ -136,9 +136,6 @@ struct mei_csi {
  	u32 nr_of_lanes;
  	/* frequency of the CSI-2 link */
  	u64 link_freq;
@@ -28,7 +29,7 @@ index a46a012b301f..bff0176fc8f1 100644
  };
  
  static const struct v4l2_mbus_framefmt mei_csi_format_mbus_default = {
-@@ -271,10 +268,9 @@ static void mei_csi_rx(struct mei_cl_device *cldev)
+@@ -269,10 +266,9 @@ static void mei_csi_rx(struct mei_cl_device *cldev)
  
  	switch (notif.cmd_id) {
  	case CSI_PRIVACY_NOTIF:
@@ -43,5 +44,5 @@ index a46a012b301f..bff0176fc8f1 100644
  	case CSI_SET_OWNER:
  	case CSI_SET_CONF:
 -- 
-2.34.1
+2.43.0
 

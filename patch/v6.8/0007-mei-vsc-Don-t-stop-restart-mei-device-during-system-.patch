@@ -1,7 +1,7 @@
-From 9b5e045029d8bded4c6979874ed3abc347c1415c Mon Sep 17 00:00:00 2001
+From fb88323ce3ebd94952c479fc80faadf0fe7fc27a Mon Sep 17 00:00:00 2001
 From: Wentong Wu <wentong.wu@intel.com>
 Date: Mon, 27 May 2024 20:38:35 +0800
-Subject: [PATCH] mei: vsc: Don't stop/restart mei device during system
+Subject: [PATCH 07/12] mei: vsc: Don't stop/restart mei device during system
  suspend/resume
 
 The dynamically created mei client device (mei csi) is used as one V4L2
@@ -29,10 +29,10 @@ Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
  1 file changed, 15 insertions(+), 24 deletions(-)
 
 diff --git a/drivers/misc/mei/platform-vsc.c b/drivers/misc/mei/platform-vsc.c
-index b543e6b9f3cf..1ec65d87488a 100644
+index 8db0fcf24e70..5a445f3b96a9 100644
 --- a/drivers/misc/mei/platform-vsc.c
 +++ b/drivers/misc/mei/platform-vsc.c
-@@ -399,41 +399,32 @@ static void mei_vsc_remove(struct platform_device *pdev)
+@@ -401,41 +401,32 @@ static int mei_vsc_remove(struct platform_device *pdev)
  
  static int mei_vsc_suspend(struct device *dev)
  {
@@ -90,5 +90,5 @@ index b543e6b9f3cf..1ec65d87488a 100644
  
  static DEFINE_SIMPLE_DEV_PM_OPS(mei_vsc_pm_ops, mei_vsc_suspend, mei_vsc_resume);
 -- 
-2.34.1
+2.43.0
 

@@ -1,0 +1,62 @@
+From 7a177f98e126861ab36623336e855be1541d3690 Mon Sep 17 00:00:00 2001
+From: Dongcheng Yan <dongcheng.yan@intel.com>
+Date: Thu, 25 Apr 2024 17:33:09 +0800
+Subject: [PATCH 12/12] media: Support ov05c10 camera sensor
+
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+---
+ drivers/media/i2c/Kconfig            | 11 +++++++++++
+ drivers/media/i2c/Makefile           |  1 +
+ drivers/media/pci/intel/ipu-bridge.c |  2 ++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 6b5c33bcec7f..be1c61deff9d 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -373,6 +373,17 @@ config VIDEO_OV02E10
+ 	  This is a Video4Linux2 sensor driver for the OmniVision
+ 	  ov02e10 camera.
+ 
++config VIDEO_OV05C10
++        tristate "OmniVision OV05C10 sensor support"
++        depends on ACPI || COMPILE_TEST
++	select V4L2_CCI_I2C
++	help
++          This is a Video4Linux2 sensor driver for the OmniVision
++          OV05C10 camera.
++
++          To compile this driver as a module, choose M here: the
++          module will be called ov05c10.
++
+ config VIDEO_OV08A10
+ 	tristate "OmniVision OV08A10 sensor support"
+ 	help
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 32dd623c6c81..2c1765d5650c 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -83,6 +83,7 @@ obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
+ obj-$(CONFIG_VIDEO_OV02A10) += ov02a10.o
+ obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
+ obj-$(CONFIG_VIDEO_OV02E10) += ov02e10.o
++obj-$(CONFIG_VIDEO_OV05C10) += ov05c10.o
+ obj-$(CONFIG_VIDEO_OV08A10) += ov08a10.o
+ obj-$(CONFIG_VIDEO_OV08D10) += ov08d10.o
+ obj-$(CONFIG_VIDEO_OV08X40) += ov08x40.o
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index 2ac59e02b839..f6907740ffdf 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -77,6 +77,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("OVTI02C1", 1, 400000000),
+ 	/* Omnivision ov02e10 */
+ 	IPU_SENSOR_CONFIG("OVTI02E1", 1, 360000000),
++	/* Omnivision ov05c10 */
++	IPU_SENSOR_CONFIG("OVTI05C1", 1, 480000000),
+ 	/* Omnivision ov08a10 */
+ 	IPU_SENSOR_CONFIG("OVTI08A1", 1, 500000000),
+ };
+-- 
+2.43.0
+

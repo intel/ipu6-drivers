@@ -1,7 +1,7 @@
-From 3f1e304628f1de6aa650777b738c0a0041eb38a7 Mon Sep 17 00:00:00 2001
+From a5624eebbdeb756d5d4b9fec9be10edaa3c3fd02 Mon Sep 17 00:00:00 2001
 From: Hao Yao <hao.yao@intel.com>
 Date: Tue, 26 Mar 2024 11:17:06 +0800
-Subject: [PATCH 1/5] media: ov08x40: Add Tline calculation and handshake pin
+Subject: [PATCH 01/12] media: ov08x40: Add Tline calculation and handshake pin
  support
 
 Signed-off-by: Hao Yao <hao.yao@intel.com>
@@ -403,5 +403,5 @@ index abbb0b774d43..aac42ad2ae3a 100644
  MODULE_DESCRIPTION("OmniVision OV08X40 sensor driver");
  MODULE_LICENSE("GPL");
 -- 
-2.43.2
+2.43.0
 

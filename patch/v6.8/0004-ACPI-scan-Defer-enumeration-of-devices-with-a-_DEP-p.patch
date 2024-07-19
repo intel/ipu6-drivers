@@ -1,7 +1,7 @@
-From f71be295d188e89f5eab1648467e65010a9daf28 Mon Sep 17 00:00:00 2001
+From 9e155aa642bd0f1187229952fb496026e6fcfee2 Mon Sep 17 00:00:00 2001
 From: Wentong Wu <wentong.wu@intel.com>
 Date: Wed, 7 Feb 2024 08:59:08 +0800
-Subject: [PATCH 4/5] ACPI: scan: Defer enumeration of devices with a _DEP
+Subject: [PATCH 04/12] ACPI: scan: Defer enumeration of devices with a _DEP
  pointing to IVSC device
 
 Inside IVSC, switching ownership requires an interface with two
@@ -30,10 +30,10 @@ Signed-off-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/drivers/acpi/scan.c b/drivers/acpi/scan.c
-index 617f3e0e963d..dd817e9ed2e5 100644
+index e6ed1ba91e5c..f32a2c738c8b 100644
 --- a/drivers/acpi/scan.c
 +++ b/drivers/acpi/scan.c
-@@ -794,6 +794,7 @@ static const char * const acpi_honor_dep_ids[] = {
+@@ -798,6 +798,7 @@ static const char * const acpi_honor_dep_ids[] = {
  	"INTC1059", /* IVSC (TGL) driver must be loaded to allow i2c access to camera sensors */
  	"INTC1095", /* IVSC (ADL) driver must be loaded to allow i2c access to camera sensors */
  	"INTC100A", /* IVSC (RPL) driver must be loaded to allow i2c access to camera sensors */
@@ -42,5 +42,5 @@ index 617f3e0e963d..dd817e9ed2e5 100644
  };
  
 -- 
-2.43.2
+2.43.0
 
