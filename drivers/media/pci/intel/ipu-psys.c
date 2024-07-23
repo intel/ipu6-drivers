@@ -258,6 +258,22 @@ ipu_psys_lookup_kbuffer_by_kaddr(struct ipu_psys_fh *fh, void *kaddr)
 	return NULL;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+/* Dropped from 6.10, use our own copy for now */
+static int follow_pfn(struct vm_area_struct *vma, unsigned long address, unsigned long *pfn)
+{
+	spinlock_t *ptl;
+	pte_t *ptep;
+
+	if (follow_pte(vma, address, &ptep, &ptl))
+		return -EINVAL;
+
+	*pfn = pte_pfn(ptep_get(ptep));
+	pte_unmap_unlock(ptep, ptl);
+	return 0;
+}
+#endif
+
 static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 {
 	struct vm_area_struct *vma;
