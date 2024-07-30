@@ -106,7 +106,7 @@ Three ways are available:
 	```sh
 	cd ipu6-drivers
 	git clone https://github.com/intel/ivsc-driver.git
-	cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include .
+	cp -r ivsc-driver/backport-include ivsc-driver/drivers ivsc-driver/include ivsc-driver/dkms.conf .
 	rm -rf ivsc-driver
 	```
 
