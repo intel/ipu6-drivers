@@ -31,7 +31,6 @@
 #include <linux/videodev2.h>
 #include <linux/version.h>
 
-#define IPU_VC_SIMPLIFIED
 #include <linux/ipu-isys.h>
 
 #include <media/media-entity.h>
@@ -4472,7 +4471,6 @@ static int ds5_fixed_configuration(struct i2c_client *client, struct ds5 *state)
 		};
 
 //#undef USE_Y
-#ifdef USE_Y
 		/* Override .width, .height, .code */
 		fmt.format.width = yw;
 		fmt.format.height = yh;
@@ -4482,16 +4480,6 @@ static int ds5_fixed_configuration(struct i2c_client *client, struct ds5 *state)
 		state->motion_t.sensor.streaming = true;
 		state->depth.sensor.streaming = true;
 		ret = __ds5_sensor_set_fmt(state, &state->motion_t.sensor, NULL, &fmt);
-#else
-		fmt.format.width = dw;
-		fmt.format.height = dh;
-		fmt.format.code = MEDIA_BUS_FMT_UYVY8_1X16;
-
-		//state->mux.sd.mode_prop_idx = 1;
-		state->motion_t.sensor.streaming = false;
-		state->depth.sensor.streaming = true;
-		ret = __ds5_sensor_set_fmt(state, &state->depth.sensor, NULL, &fmt);
-#endif
 		if (ret < 0)
 			return ret;
 	}
@@ -4917,7 +4905,7 @@ static int ds5_chrdev_init(struct i2c_client *c, struct ds5 *state)
 		dev_dbg(&c->dev, "%s(): <Major, Minor>: <%d, %d>\n",
 				__func__, MAJOR(*dev_num), MINOR(*dev_num));
 		/* Create a class : appears at /sys/class */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 		*ds5_class = class_create(THIS_MODULE, DS5_DRIVER_NAME_CLASS);
 #else
 		*ds5_class = class_create(DS5_DRIVER_NAME_CLASS);

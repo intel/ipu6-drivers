@@ -8,10 +8,6 @@
 
 #include <media/ipu-isys.h>
 
-#if CONFIG_VIDEO_CRLMODULE
-#include <media/crlmodule.h>
-#endif
-
 #include <media/ti960.h>
 #include <media/ar0234.h>
 #include <media/imx390.h>
@@ -66,70 +62,6 @@ static struct ipu_isys_subdev_info ov8856_sd_2 = {
 	}
 };
 
-#endif
-
-#if CONFIG_VIDEO_CRLMODULE
-#define AR0234CS_LANES       4
-#define AR0234CS_I2C_ADDRESS 0x10
-static struct ipu_isys_csi2_config ar0234cs_csi2_cfg_1 = {
-	.nlanes = AR0234CS_LANES,
-	.port = 1,
-};
-
-static struct ipu_isys_csi2_config ar0234cs_csi2_cfg_2 = {
-	.nlanes = AR0234CS_LANES,
-	.port = 2,
-};
-
-static struct crlmodule_platform_data ar0234cs_pdata_1 = {
-	.lanes = AR0234CS_LANES,
-	.ext_clk = 27000000,
-	.op_sys_clock = (uint64_t []){ 112500000 },
-	.module_name = "AR0234CS",
-	.fsin = 258,
-	.id_string = "0xa56",
-	.crl_irq_pin = 338,
-	.irq_pin_name = "B23",
-	.irq_pin_flags = IRQF_TRIGGER_RISING
-		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-	.suffix = 'a',
-};
-
-static struct ipu_isys_subdev_info ar0234cs_sd_1 = {
-	.csi2 = &ar0234cs_csi2_cfg_1,
-	.i2c = {
-		.board_info = {
-			I2C_BOARD_INFO("crlmodule", AR0234CS_I2C_ADDRESS),
-			.platform_data = &ar0234cs_pdata_1,
-		},
-		.i2c_adapter_bdf = "0000:00:15.3",
-	}
-};
-
-static struct crlmodule_platform_data ar0234cs_pdata_2 = {
-	.lanes = AR0234CS_LANES,
-	.ext_clk = 27000000,
-	.op_sys_clock = (uint64_t []){ 112500000 },
-	.module_name = "AR0234CS",
-	.fsin = 501,
-	.id_string = "0xa56",
-	.crl_irq_pin = 330,
-	.irq_pin_name = "R6",
-	.irq_pin_flags = IRQF_TRIGGER_RISING
-		| IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-	.suffix = 'b',
-};
-
-static struct ipu_isys_subdev_info ar0234cs_sd_2 = {
-	.csi2 = &ar0234cs_csi2_cfg_2,
-	.i2c = {
-		.board_info = {
-			I2C_BOARD_INFO("crlmodule", AR0234CS_I2C_ADDRESS),
-			.platform_data = &ar0234cs_pdata_2,
-		},
-		.i2c_adapter_bdf = "0000:00:19.1",
-	}
-};
 #endif
 
 #if IS_ENABLED(CONFIG_VIDEO_AR0234)
@@ -648,10 +580,6 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&dw9714_sd_1,
 		&ov8856_sd_2,
 #endif
-#if CONFIG_VIDEO_CRLMODULE
-		&ar0234cs_sd_1,
-		&ar0234cs_sd_2,
-#endif
 #if IS_ENABLED(CONFIG_VIDEO_AR0234)
 		&ar0234_sd_1,
 		&ar0234_sd_2,
@@ -684,9 +612,6 @@ static void ipu6_quirk(struct pci_dev *pci_dev)
 {
 	pci_dev->dev.platform_data = &pdata;
 }
-#ifdef CONFIG_VIDEO_INTEL_IPU_MOCK
-EXPORT_SYMBOL_GPL(ipu6_quirk);
-#endif
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_INTEL, IPU6_PCI_ID, ipu6_quirk);
 
 MODULE_LICENSE("GPL");

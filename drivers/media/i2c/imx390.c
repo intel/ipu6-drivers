@@ -142,7 +142,6 @@
  * end of dummy CID
  */
 
-
 #define to_imx390(_sd)			container_of(_sd, struct imx390, sd)
 
 /**
@@ -227,8 +226,6 @@ struct imx390_mode {
 	/* Sensor register settings for this resolution */
 	const struct imx390_reg_list reg_list;
 };
-
-
 
 struct imx390 {
 	struct v4l2_subdev sd;
@@ -1068,7 +1065,6 @@ static const struct imx390_mode supported_modes[] = {
 	},
 };
 
-
 static u32 supported_formats[] = {
 	MEDIA_BUS_FMT_SGRBG12_1X12,
 };
@@ -1454,7 +1450,6 @@ static int imx390_init_controls(struct imx390 *imx390)
 	imx390->analogue_gain = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
 			  IMX390_ANAL_GAIN_MIN, IMX390_ANAL_GAIN_MAX,
 			  IMX390_ANAL_GAIN_STEP, IMX390_ANAL_GAIN_DEFAULT);
-
 
 	imx390->digital_gain = v4l2_ctrl_new_std(ctrl_hdlr, &imx390_ctrl_ops, V4L2_CID_DIGITAL_GAIN,
 			IMX390_DGTL_GAIN_MIN, IMX390_DGTL_GAIN_MAX,
@@ -2015,7 +2010,6 @@ static int imx390_probe(struct i2c_client *client)
 			"%s : media entity init Failed %d\n", __func__, ret);
 		return ret;
 	}
-
 
 	ret = imx390_identify_module(imx390);
 	if (ret) {
