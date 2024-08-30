@@ -7,6 +7,7 @@
 #include <linux/iova.h>
 #include <linux/module.h>
 #include <linux/sizes.h>
+#include <linux/vmalloc.h>
 
 #include "ipu.h"
 #include "ipu-platform.h"
