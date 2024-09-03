@@ -8,7 +8,7 @@ endif
 ccflags-y += -DIPU_TPG_FRAME_SYNC -DIPU_PSYS_GPC \
 		-DIPU_ISYS_GPC
 
-intel-ipu6-objs				+= ../ipu.o \
+icamera-ipu6-objs			+= ../ipu.o \
 					   ../ipu-bus.o \
 					   ../ipu-dma.o \
 					   ../ipu-mmu.o \
@@ -18,12 +18,12 @@ intel-ipu6-objs				+= ../ipu.o \
 					   ipu6.o \
 					   ../ipu-fw-com.o
 ifdef CONFIG_IPU_ISYS_BRIDGE
-intel-ipu6-objs				+= ../cio2-bridge.o
+icamera-ipu6-objs			+= ../cio2-bridge.o
 endif
 
-obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6.o
+obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= icamera-ipu6.o
 
-intel-ipu6-isys-objs			+= ../ipu-isys.o \
+icamera-ipu6-isys-objs			+= ../ipu-isys.o \
 					   ../ipu-isys-csi2.o \
 					   ipu6-isys.o \
 					   ipu6-isys-phy.o \
@@ -36,26 +36,26 @@ intel-ipu6-isys-objs			+= ../ipu-isys.o \
 					   ../ipu-isys-queue.o \
 					   ../ipu-isys-subdev.o
 
-obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6-isys.o
+obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= icamera-ipu6-isys.o
 
-intel-ipu6-psys-objs			+= ../ipu-psys.o \
+icamera-ipu6-psys-objs			+= ../ipu-psys.o \
 					   ipu6-psys.o \
 					   ipu-resources.o \
 					   ipu6-psys-gpc.o \
 					   ipu6-l-scheduler.o \
 					   ipu6-ppg.o
 
-intel-ipu6-psys-objs			+= ipu-fw-resources.o \
+icamera-ipu6-psys-objs			+= ipu-fw-resources.o \
 					   ipu6-fw-resources.o \
 					   ipu6se-fw-resources.o \
 					   ipu6ep-fw-resources.o \
 					   ../ipu-fw-psys.o
 
 ifeq ($(CONFIG_COMPAT),y)
-intel-ipu6-psys-objs			+= ../ipu-psys-compat32.o
+icamera-ipu6-psys-objs			+= ../ipu-psys-compat32.o
 endif
 
-obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6-psys.o
+obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= icamera-ipu6-psys.o
 
 ccflags-y += -I$(srcpath)/$(src)/../../../../../include/
 ccflags-y += -I$(srcpath)/$(src)/../
