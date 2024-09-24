@@ -82,6 +82,11 @@ struct ipu_device {
 	unsigned int pkg_dir_size;
 	struct sg_table fw_sgt;
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+	const struct firmware *spdata_fw;
+#endif
+#endif
 	void __iomem *base;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *ipu_dir;
@@ -110,17 +115,5 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 		   struct device *device);
 extern enum ipu_version ipu_ver;
 void ipu_internal_pdata_init(void);
-#if defined(CONFIG_IPU_ISYS_BRIDGE)
-int cio2_bridge_init(struct pci_dev *cio2);
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-#include <media/media-entity.h>
-/* Helpers for building against various kernel versions */
-static inline struct media_pipeline *media_entity_pipeline(struct media_entity *entity)
-{
-	return entity->pipe;
-}
-#endif
 
 #endif /* IPU_H */

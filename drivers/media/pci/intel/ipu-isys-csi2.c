@@ -81,7 +81,6 @@ static struct v4l2_subdev_internal_ops csi2_sd_internal_ops = {
 	.close = ipu_isys_subdev_close,
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 255)
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 {
 	struct media_pipeline *mp = media_entity_pipeline(&csi2->asd.sd.entity);
@@ -113,60 +112,6 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 
 	return 0;
 }
-#else
-int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
-{
-	struct media_pipeline *mp = media_entity_pipeline(&csi2->asd.sd.entity);
-	struct ipu_isys_pipeline *pipe = container_of(mp,
-						      struct ipu_isys_pipeline,
-						      pipe);
-	struct v4l2_subdev *ext_sd =
-	    media_entity_to_v4l2_subdev(pipe->external->entity);
-	struct v4l2_ext_control c = {.id = V4L2_CID_LINK_FREQ, };
-	struct v4l2_ext_controls cs = {.count = 1,
-		.controls = &c,
-	};
-	struct v4l2_querymenu qm = {.id = c.id, };
-	int rval;
-
-	if (!ext_sd) {
-		WARN_ON(1);
-		return -ENODEV;
-	}
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
-	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler,
-				ext_sd->devnode,
-				ext_sd->v4l2_dev->mdev,
-				&cs);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
-	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler,
-				ext_sd->v4l2_dev->mdev,
-				&cs);
-#else
-	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler, &cs);
-#endif
-	if (rval) {
-		dev_info(&csi2->isys->adev->dev, "can't get link frequency\n");
-		return rval;
-	}
-
-	qm.index = c.value;
-
-	rval = v4l2_querymenu(ext_sd->ctrl_handler, &qm);
-	if (rval) {
-		dev_info(&csi2->isys->adev->dev, "can't get menu item\n");
-		return rval;
-	}
-
-	dev_dbg(&csi2->isys->adev->dev, "%s: link frequency %lld\n", __func__,
-		qm.value);
-
-	if (!qm.value)
-		return -EINVAL;
-	*link_freq = qm.value;
-	return 0;
-}
-#endif
 
 static int subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 			   struct v4l2_event_subscription *sub)
@@ -287,11 +232,20 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	cfg = v4l2_get_subdev_hostdata(ext_sd);
 
 	if (!enable) {
+		csi2->stream_count--;
+		if (csi2->stream_count)
+			return 0;
+
 		ipu_isys_csi2_set_stream(sd, timing, 0, enable);
 		return 0;
 	}
 
 	ip->has_sof = true;
+
+	if (csi2->stream_count) {
+		csi2->stream_count++;
+		return 0;
+	}
 
 	nlanes = cfg->nlanes;
 
@@ -302,6 +256,7 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 		return rval;
 
 	rval = ipu_isys_csi2_set_stream(sd, timing, nlanes, enable);
+	csi2->stream_count++;
 
 	return rval;
 }
@@ -329,7 +284,8 @@ static int csi2_link_validate(struct media_link *link)
 	struct ipu_isys_csi2 *csi2;
 	struct ipu_isys_pipeline *ip;
 	struct media_pipeline *mp;
-	int rval;
+	struct v4l2_subdev *source_sd;
+	struct v4l2_subdev *sink_sd;
 
 	mp = media_entity_pipeline(link->sink->entity);
 	if (!link->sink->entity || !link->source->entity || !mp)
@@ -340,25 +296,17 @@ static int csi2_link_validate(struct media_link *link)
 	csi2->receiver_errors = 0;
 	ip->csi2 = csi2;
 	ipu_isys_video_add_capture_done(ip, csi2_capture_done);
-	rval = v4l2_subdev_link_validate(link);
-	if (rval)
-		return rval;
+	source_sd = media_entity_to_v4l2_subdev(link->source->entity);
+	sink_sd = media_entity_to_v4l2_subdev(link->sink->entity);
+	if (!source_sd)
+		return -ENODEV;
 
-	if (!v4l2_ctrl_g_ctrl(csi2->store_csi2_header)) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
-		struct media_pad *remote_pad =
-		    media_entity_remote_pad(&csi2->asd.pad[CSI2_PAD_SOURCE]);
-#else
-		struct media_pad *remote_pad =
-		    media_pad_remote_pad_first(&csi2->asd.pad[CSI2_PAD_SOURCE]);
-#endif
-
-		if (remote_pad &&
-		    is_media_entity_v4l2_subdev(remote_pad->entity)) {
-			dev_err(&csi2->isys->adev->dev,
-				"CSI2 BE requires CSI2 headers.\n");
-			return -EINVAL;
-		}
+	if (strncmp(source_sd->name, IPU_ISYS_ENTITY_PREFIX,
+		    strlen(IPU_ISYS_ENTITY_PREFIX)) != 0) {
+		ip->external = link->source;
+		ip->source = to_ipu_isys_subdev(sink_sd)->source;
+		dev_dbg(&csi2->isys->adev->dev, "%s: using source %d\n",
+			sink_sd->entity.name, ip->source);
 	}
 
 	return 0;
@@ -368,37 +316,19 @@ static const struct v4l2_subdev_video_ops csi2_sd_video_ops = {
 	.s_stream = set_stream,
 };
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
-				 struct v4l2_subdev_format *fmt)
-{
-	return ipu_isys_subdev_get_ffmt(sd, cfg, fmt);
-}
-#else
 static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
 	return ipu_isys_subdev_get_ffmt(sd, state, fmt);
 }
-#endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
-				 struct v4l2_subdev_format *fmt)
-{
-	return ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
-}
-#else
 static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
 	return ipu_isys_subdev_set_ffmt(sd, state, fmt);
 }
-#endif
 
 static int __subdev_link_validate(struct v4l2_subdev *sd,
 				  struct media_link *link,
@@ -434,20 +364,12 @@ static struct media_entity_operations csi2_entity_ops = {
 };
 
 static void csi2_set_ffmt(struct v4l2_subdev *sd,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-			  struct v4l2_subdev_pad_config *cfg,
-#else
 			  struct v4l2_subdev_state *state,
-#endif
 			  struct v4l2_subdev_format *fmt)
 {
 	enum isys_subdev_prop_tgt tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT;
 	struct v4l2_mbus_framefmt *ffmt =
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
-#else
 		__ipu_isys_get_ffmt(sd, state, fmt->pad,
-#endif
 				    fmt->which);
 
 	if (fmt->format.field != V4L2_FIELD_ALTERNATE)
@@ -455,13 +377,8 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 
 	if (fmt->pad == CSI2_PAD_SINK) {
 		*ffmt = fmt->format;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format, NULL,
-					      tgt, fmt->pad, fmt->which);
-#else
 		ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format, NULL,
 					      tgt, fmt->pad, fmt->which);
-#endif
 		return;
 	}
 
@@ -477,6 +394,25 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 	WARN_ON(1);
 }
 
+static const struct ipu_isys_pixelformat *
+csi2_try_fmt(struct ipu_isys_video *av,
+	     struct v4l2_pix_format_mplane *mpix)
+{
+	struct media_link *link = list_first_entry(&av->vdev.entity.links,
+						   struct media_link, list);
+	struct v4l2_subdev *sd =
+	    media_entity_to_v4l2_subdev(link->source->entity);
+	struct ipu_isys_csi2 *csi2;
+
+	if (!sd)
+		return NULL;
+
+	csi2 = to_ipu_isys_csi2(sd);
+
+	return ipu_isys_video_try_fmt_vid_mplane(av, mpix,
+				v4l2_ctrl_g_ctrl(csi2->store_csi2_header));
+}
+
 void ipu_isys_csi2_cleanup(struct ipu_isys_csi2 *csi2)
 {
 	if (!csi2->isys)
@@ -484,6 +420,7 @@ void ipu_isys_csi2_cleanup(struct ipu_isys_csi2 *csi2)
 
 	v4l2_device_unregister_subdev(&csi2->asd.sd);
 	ipu_isys_subdev_cleanup(&csi2->asd);
+	ipu_isys_video_cleanup(&csi2->av);
 	csi2->isys = NULL;
 }
 
@@ -529,6 +466,7 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 	csi2->asd.ctrl_init = csi_ctrl_init;
 	csi2->asd.isys = isys;
 	init_completion(&csi2->eof_completion);
+	csi2->stream_count = 0;
 	rval = ipu_isys_subdev_init(&csi2->asd, &csi2_sd_ops, 0,
 				    NR_OF_CSI2_PADS,
 				    NR_OF_CSI2_SOURCE_PADS,
@@ -565,6 +503,36 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 	__ipu_isys_subdev_set_ffmt(&csi2->asd.sd, NULL, &fmt);
 	mutex_unlock(&csi2->asd.mutex);
 
+	snprintf(csi2->av.vdev.name, sizeof(csi2->av.vdev.name),
+		 IPU_ISYS_ENTITY_PREFIX " CSI-2 %u capture", index);
+	csi2->av.isys = isys;
+	csi2->av.aq.css_pin_type = IPU_FW_ISYS_PIN_TYPE_MIPI;
+	csi2->av.pfmts = ipu_isys_pfmts_packed;
+	csi2->av.try_fmt_vid_mplane = csi2_try_fmt;
+	csi2->av.prepare_fw_stream =
+		ipu_isys_prepare_fw_cfg_default;
+	csi2->av.packed = true;
+	csi2->av.line_header_length =
+		IPU_ISYS_CSI2_LONG_PACKET_HEADER_SIZE;
+	csi2->av.line_footer_length =
+		IPU_ISYS_CSI2_LONG_PACKET_FOOTER_SIZE;
+	csi2->av.aq.buf_prepare = ipu_isys_buf_prepare;
+	csi2->av.aq.fill_frame_buff_set_pin =
+	ipu_isys_buffer_to_fw_frame_buff_pin;
+	csi2->av.aq.link_fmt_validate =
+		ipu_isys_link_fmt_validate;
+	csi2->av.aq.vbq.buf_struct_size =
+		sizeof(struct ipu_isys_video_buffer);
+
+	rval = ipu_isys_video_init(&csi2->av,
+				   &csi2->asd.sd.entity,
+				   CSI2_PAD_SOURCE,
+				   MEDIA_PAD_FL_SINK, 0);
+	if (rval) {
+		dev_info(&isys->adev->dev, "can't init video node\n");
+		goto fail;
+	}
+
 	return 0;
 
 fail:
@@ -573,7 +541,7 @@ fail:
 	return rval;
 }
 
-void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
+void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 {
 	struct ipu_isys_pipeline *ip = NULL;
 	struct v4l2_event ev = {
@@ -584,10 +552,11 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
 	unsigned int i;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
-	csi2->in_frame = true;
+	csi2->in_frame[vc] = true;
 
 	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
 		if (csi2->isys->pipes[i] &&
+		    csi2->isys->pipes[i]->vc == vc &&
 		    csi2->isys->pipes[i]->csi2 == csi2) {
 			ip = csi2->isys->pipes[i];
 			break;
@@ -601,15 +570,16 @@ void ipu_isys_csi2_sof_event(struct ipu_isys_csi2 *csi2)
 	}
 
 	ev.u.frame_sync.frame_sequence = atomic_inc_return(&ip->sequence) - 1;
+	ev.id = vc;
 	spin_unlock_irqrestore(&csi2->isys->lock, flags);
 
 	v4l2_event_queue(vdev, &ev);
 	dev_dbg(&csi2->isys->adev->dev,
-		"sof_event::csi2-%i sequence: %i\n",
-		csi2->index, ev.u.frame_sync.frame_sequence);
+		"sof_event::csi2-%i CPU-timestamp:%lld, sequence:%i, vc:%d\n",
+		csi2->index, ktime_get_ns(), ev.u.frame_sync.frame_sequence, vc);
 }
 
-void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
+void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2, unsigned int vc)
 {
 	struct ipu_isys_pipeline *ip = NULL;
 	unsigned long flags;
@@ -617,12 +587,13 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 	u32 frame_sequence;
 
 	spin_lock_irqsave(&csi2->isys->lock, flags);
-	csi2->in_frame = false;
-	if (csi2->wait_for_sync)
+	csi2->in_frame[vc] = false;
+	if (csi2->wait_for_sync[vc])
 		complete(&csi2->eof_completion);
 
 	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
 		if (csi2->isys->pipes[i] &&
+		    csi2->isys->pipes[i]->vc == vc &&
 		    csi2->isys->pipes[i]->csi2 == csi2) {
 			ip = csi2->isys->pipes[i];
 			break;
@@ -634,8 +605,8 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
 
 		dev_dbg(&csi2->isys->adev->dev,
-			"eof_event::csi2-%i sequence: %i\n",
-			csi2->index, frame_sequence);
+			"eof_event: csi2-%i sequence: %i, vc: %d\n",
+			csi2->index, frame_sequence, vc);
 		return;
 	}
 
@@ -646,24 +617,27 @@ void ipu_isys_csi2_eof_event(struct ipu_isys_csi2 *csi2)
 void ipu_isys_csi2_wait_last_eof(struct ipu_isys_csi2 *csi2)
 {
 	unsigned long flags, tout;
+	unsigned int i;
 
-	spin_lock_irqsave(&csi2->isys->lock, flags);
+	for (i = 0; i < NR_OF_CSI2_VC; i++) {
+		spin_lock_irqsave(&csi2->isys->lock, flags);
 
-	if (!csi2->in_frame) {
+		if (!csi2->in_frame[i]) {
+			spin_unlock_irqrestore(&csi2->isys->lock, flags);
+			continue;
+		}
+
+		reinit_completion(&csi2->eof_completion);
+		csi2->wait_for_sync[i] = true;
 		spin_unlock_irqrestore(&csi2->isys->lock, flags);
-		return;
+		tout = wait_for_completion_timeout(&csi2->eof_completion,
+						   IPU_EOF_TIMEOUT_JIFFIES);
+		if (!tout)
+			dev_err(&csi2->isys->adev->dev,
+				"csi2-%d: timeout at sync to eof of vc %d\n",
+				csi2->index, i);
+		csi2->wait_for_sync[i] = false;
 	}
-
-	reinit_completion(&csi2->eof_completion);
-	csi2->wait_for_sync = true;
-	spin_unlock_irqrestore(&csi2->isys->lock, flags);
-	tout = wait_for_completion_timeout(&csi2->eof_completion,
-					   IPU_EOF_TIMEOUT_JIFFIES);
-	if (!tout)
-		dev_err(&csi2->isys->adev->dev,
-			"csi2-%d: timeout at sync to eof\n",
-			csi2->index);
-	csi2->wait_for_sync = false;
 }
 
 struct ipu_isys_buffer *

@@ -12,10 +12,12 @@
 #include <media/v4l2-subdev.h>
 
 #include "ipu-isys-queue.h"
+#include "ipu-platform-isys.h"
 
 #define IPU_ISYS_OUTPUT_PINS 11
 #define IPU_NUM_CAPTURE_DONE 2
 #define IPU_ISYS_MAX_PARALLEL_SOF 2
+#define CSI2_BE_SOC_SOURCE_PADS_NUM NR_OF_CSI2_BE_SOC_STREAMS
 
 struct ipu_isys;
 struct ipu_isys_csi2_be_soc;
@@ -41,10 +43,31 @@ struct output_pin_data {
 	struct ipu_isys_queue *aq;
 };
 
+/*
+ * struct ipu_isys_sub_stream_vc
+ */
+struct ipu_isys_sub_stream_vc {
+	unsigned int substream;	/* sub stream id */
+	int vc;	/* VC number */
+	u32 width;
+	u32 height;
+	unsigned int dt;
+	unsigned int code;
+};
+
+#define SUB_STREAM_CODE(value) ((value) & 0xFFFF)
+#define SUB_STREAM_H(value) (((value) >> 16) & 0xFFFF)
+#define SUB_STREAM_W(value) (((value) >> 32) & 0xFFFF)
+#define SUB_STREAM_DT(value) (((value) >> 48) & 0xFF)
+#define SUB_STREAM_VC_ID(value) ((value) >> 56 & 0xFF)
+#define SUB_STREAM_SET_VALUE(vc_id, stream_state) \
+	((((vc_id) << 8) & 0xFF00) | (stream_state))
+
 struct ipu_isys_pipeline {
 	struct media_pipeline pipe;
 	struct media_pad *external;
 	atomic_t sequence;
+	int last_sequence;
 	unsigned int seq_index;
 	struct sequence_info seq[IPU_ISYS_MAX_PARALLEL_SOF];
 	int source;	/* SSI stream source */
@@ -59,6 +82,7 @@ struct ipu_isys_pipeline {
 	 * Number of capture queues, write access serialised using struct
 	 * ipu_isys.stream_mutex
 	 */
+	/* If it supports vc, this is number of links for the same vc. */
 	int nr_queues;
 	int nr_streaming;	/* Number of capture queues streaming */
 	int streaming;	/* Has streaming been really started? */
@@ -87,29 +111,14 @@ struct ipu_isys_pipeline {
 	spinlock_t short_packet_queue_lock;
 	struct list_head pending_interlaced_bufs;
 	unsigned int short_packet_trace_index;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	struct media_graph graph;
-#else
-	struct media_entity_graph graph;
-#endif
-#endif
 	struct media_entity_enum entity_enum;
+	unsigned int vc;
+	struct ipu_isys_sub_stream_vc asv[CSI2_BE_SOC_SOURCE_PADS_NUM];
 };
 
 #define to_ipu_isys_pipeline(__pipe)				\
 	container_of((__pipe), struct ipu_isys_pipeline, pipe)
-
-struct video_stream_watermark {
-	u32 width;
-	u32 height;
-	u32 vblank;
-	u32 hblank;
-	u32 frame_rate;
-	u64 pixel_rate;
-	u64 stream_data_rate;
-	struct list_head stream_node;
-};
 
 struct ipu_isys_video {
 	/* Serialise access to other fields in the struct. */
@@ -123,6 +132,9 @@ struct ipu_isys_video {
 	struct ipu_isys *isys;
 	struct ipu_isys_pipeline ip;
 	unsigned int streaming;
+	unsigned int reset;
+	unsigned int skipframe;
+	unsigned int start_streaming;
 	bool packed;
 	bool compression;
 	bool initialized;
@@ -131,8 +143,6 @@ struct ipu_isys_video {
 	unsigned int ts_offsets[VIDEO_MAX_PLANES];
 	unsigned int line_header_length;	/* bits */
 	unsigned int line_footer_length;	/* bits */
-
-	struct video_stream_watermark *watermark;
 
 	const struct ipu_isys_pixelformat *
 		(*try_fmt_vid_mplane)(struct ipu_isys_video *av,
@@ -181,5 +191,10 @@ void ipu_isys_video_add_capture_done(struct ipu_isys_pipeline *ip,
 				     void (*capture_done)
 				      (struct ipu_isys_pipeline *ip,
 				       struct ipu_fw_isys_resp_info_abi *resp));
+
+bool is_support_vc(struct media_pad *source_pad,
+						struct ipu_isys_pipeline *ip);
+
+bool is_has_metadata(const struct ipu_isys_pipeline *ip);
 
 #endif /* IPU_ISYS_VIDEO_H */

@@ -27,34 +27,35 @@
 #include "ipu-platform-regs.h"
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
-#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
-LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
-#include <media/ipu-bridge.h>
-#elif defined(CONFIG_IPU_ISYS_BRIDGE)
-#include "cio2-bridge.h"
+
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+#include <media/ipu-isys.h>
+#endif
+#endif
+
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+#include <media/ipu-acpi.h>
 #endif
 
 #define IPU_PCI_BAR		0
 enum ipu_version ipu_ver;
 EXPORT_SYMBOL(ipu_ver);
 
-#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
-LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0) || \
-defined(CONFIG_IPU_ISYS_BRIDGE)
-static int ipu_isys_check_fwnode_graph(struct fwnode_handle *fwnode)
+static int isys_freq_override = -1;
+module_param(isys_freq_override, int, 0660);
+MODULE_PARM_DESC(isys_freq_override, "override isys freq default value");
+
+static int psys_freq_override = -1;
+module_param(psys_freq_override, int, 0660);
+MODULE_PARM_DESC(psys_freq_override, "override psys freq default value");
+
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+static int isys_init_acpi_add_device(struct device *dev, void *priv,
+				struct ipu_isys_csi2_config *csi2,
+				bool reprobe)
 {
-	struct fwnode_handle *endpoint;
-
-	if (IS_ERR_OR_NULL(fwnode))
-		return -EINVAL;
-
-	endpoint = fwnode_graph_get_next_endpoint(fwnode, NULL);
-	if (endpoint) {
-		fwnode_handle_put(endpoint);
-		return 0;
-	}
-
-	return ipu_isys_check_fwnode_graph(fwnode->secondary);
+	return 0;
 }
 #endif
 
@@ -64,41 +65,18 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    void __iomem *base,
 					    const struct ipu_isys_internal_pdata
 					    *ipdata,
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+					    struct ipu_isys_subdev_pdata
+					    *spdata,
+#endif
 					    unsigned int nr)
 {
 	struct ipu_bus_device *isys;
 	struct ipu_isys_pdata *pdata;
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+	struct ipu_isys_subdev_pdata *acpi_pdata;
+#endif
 	int ret;
-#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
-LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0) || \
-defined(CONFIG_IPU_ISYS_BRIDGE)
-struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
-
-	ret = ipu_isys_check_fwnode_graph(fwnode);
-	if (ret) {
-		if (fwnode && !IS_ERR_OR_NULL(fwnode->secondary)) {
-			dev_err(&pdev->dev,
-				"fwnode graph has no endpoints connection\n");
-			return ERR_PTR(-EINVAL);
-		}
-
-#if defined(CONFIG_IPU_ISYS_BRIDGE)
-		ret = cio2_bridge_init(pdev);
-		if (ret) {
-			dev_err_probe(&pdev->dev, ret,
-				      "ipu_isys_bridge_init() failed\n");
-			return ERR_PTR(ret);
-		}
-#else
-		ret = ipu_bridge_init(&pdev->dev, ipu_bridge_parse_ssdb);
-		if (ret) {
-			dev_err_probe(&pdev->dev, ret,
-				      "IPU bridge init failed\n");
-			return ERR_PTR(ret);
-		}
-#endif
-	}
-#endif
 
 	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -106,6 +84,9 @@ struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 
 	pdata->base = base;
 	pdata->ipdata = ipdata;
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+	pdata->spdata = spdata;
+#endif
 
 	/* Use 250MHz for ipu6 se */
 	if (ipu_ver == IPU_VER_6SE)
@@ -119,6 +100,18 @@ struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
 		kfree(pdata);
 		return isys;
 	}
+#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+	if (!spdata) {
+		dev_dbg(&pdev->dev, "No subdevice info provided");
+		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, NULL,
+				     isys_init_acpi_add_device);
+		pdata->spdata = acpi_pdata;
+	} else {
+		dev_dbg(&pdev->dev, "Subdevice info found");
+		ipu_get_acpi_devices(isys, &isys->dev, &acpi_pdata, &spdata,
+				     isys_init_acpi_add_device);
+	}
+#endif
 	isys->mmu = ipu_mmu_init(&pdev->dev, base, ISYS_MMID,
 				 &ipdata->hw_variant);
 	if (IS_ERR(isys->mmu)) {
@@ -444,6 +437,59 @@ int request_cpd_fw(const struct firmware **firmware_p, const char *name,
 }
 EXPORT_SYMBOL(request_cpd_fw);
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+static inline int match_spdata(struct ipu_isys_subdev_info *sd,
+			const struct ipu_spdata_rep *rep)
+{
+	if (strcmp(sd->i2c.board_info.type, rep->name))
+		return 0;
+
+	if (strcmp(sd->i2c.i2c_adapter_bdf, rep->i2c_adapter_bdf_o))
+		return 0;
+
+	if (sd->i2c.board_info.addr != rep->slave_addr_o)
+		return 0;
+
+	if (sd->csi2->port != rep->port_o)
+		return 0;
+
+	return 1;
+}
+
+static void fixup_spdata(const void *spdata_rep,
+			 struct ipu_isys_subdev_pdata *spdata)
+{
+	const struct ipu_spdata_rep *rep = spdata_rep;
+	struct ipu_isys_subdev_info **subdevs, *sd_info;
+
+	if (!spdata)
+		return;
+
+	for (; rep->name[0]; rep++) {
+		for (subdevs = spdata->subdevs; *subdevs; subdevs++) {
+			sd_info = *subdevs;
+
+			if (!sd_info->csi2)
+				continue;
+
+			if (match_spdata(sd_info, rep)) {
+				strcpy(sd_info->i2c.i2c_adapter_bdf,
+						rep->i2c_adapter_bdf_n);
+				sd_info->i2c.board_info.addr =
+					rep->slave_addr_n;
+				sd_info->csi2->port = rep->port_n;
+
+				if (sd_info->fixup_spdata)
+					sd_info->fixup_spdata(rep,
+					sd_info->i2c.board_info.platform_data);
+			}
+		}
+	}
+}
+#endif
+#endif
+
 static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct ipu_device *isp;
@@ -592,6 +638,15 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+	rval = request_firmware(&isp->spdata_fw, IPU_SPDATA_NAME, &pdev->dev);
+	if (rval)
+		dev_warn(&isp->pdev->dev, "no spdata replace, using default\n");
+	else
+		fixup_spdata(isp->spdata_fw->data, pdev->dev.platform_data);
+#endif
+#endif
 	rval = ipu_trace_add(isp);
 	if (rval)
 		dev_err(&pdev->dev, "Trace support not available\n");
@@ -616,10 +671,25 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	isp->isys = ipu_isys_init(pdev, &pdev->dev,
 				  isys_ctrl, isys_base,
 				  &isys_ipdata,
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+				  pdev->dev.platform_data,
+#endif
 				  0);
 	if (IS_ERR(isp->isys)) {
 		rval = PTR_ERR(isp->isys);
 		goto out_ipu_bus_del_devices;
+	}
+
+	if (isys_freq_override >= BUTTRESS_MIN_FORCE_IS_FREQ &&
+		isys_freq_override <= BUTTRESS_MAX_FORCE_IS_FREQ) {
+		u64 val = isys_freq_override;
+
+		do_div(val, BUTTRESS_IS_FREQ_STEP);
+		isys_ctrl->divisor = val;
+		dev_info(&isp->pdev->dev,
+			 "set isys freq as (%d), actually set (%d)\n",
+			 isys_freq_override,
+			 isys_ctrl->divisor * BUTTRESS_IS_FREQ_STEP);
 	}
 
 	psys_ctrl = devm_kzalloc(&pdev->dev, sizeof(*psys_ctrl), GFP_KERNEL);
@@ -639,6 +709,18 @@ static int ipu_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_ipu_bus_del_devices;
 	}
 
+	if (psys_freq_override >= BUTTRESS_MIN_FORCE_PS_FREQ &&
+		psys_freq_override <= BUTTRESS_MAX_FORCE_PS_FREQ) {
+		u64 val = psys_freq_override;
+
+		do_div(val, BUTTRESS_PS_FREQ_STEP);
+		psys_ctrl->divisor = val;
+		psys_ctrl->qos_floor = val;
+		dev_info(&isp->pdev->dev,
+			 "adjusted psys freq from input (%d) and set (%d)\n",
+			 psys_freq_override,
+			 psys_ctrl->divisor * BUTTRESS_PS_FREQ_STEP);
+	}
 	rval = pm_runtime_get_sync(&isp->psys->dev);
 	if (rval < 0) {
 		dev_err(&isp->psys->dev, "Failed to get runtime PM\n");
@@ -721,6 +803,11 @@ out_ipu_bus_del_devices:
 		pm_runtime_put(&isp->psys->dev);
 	ipu_bus_del_devices(pdev);
 	release_firmware(isp->cpd_fw);
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+	release_firmware(isp->spdata_fw);
+#endif
+#endif
 buttress_exit:
 	ipu_buttress_exit(isp);
 
@@ -758,29 +845,6 @@ static void ipu_pci_remove(struct pci_dev *pdev)
 	release_firmware(isp->cpd_fw);
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
-static void ipu_pci_reset_notify(struct pci_dev *pdev, bool prepare)
-{
-	struct ipu_device *isp = pci_get_drvdata(pdev);
-
-	if (prepare) {
-		dev_err(&pdev->dev, "FLR prepare\n");
-		pm_runtime_forbid(&isp->pdev->dev);
-		isp->flr_done = true;
-		return;
-	}
-
-	ipu_buttress_restore(isp);
-	if (isp->secure_mode)
-		ipu_buttress_reset_authentication(isp);
-
-	ipu_bus_flr_recovery();
-	isp->ipc_reinit = true;
-	pm_runtime_allow(&isp->pdev->dev);
-
-	dev_err(&pdev->dev, "FLR completed\n");
-}
-#else
 static void ipu_pci_reset_prepare(struct pci_dev *pdev)
 {
 	struct ipu_device *isp = pci_get_drvdata(pdev);
@@ -804,7 +868,6 @@ static void ipu_pci_reset_done(struct pci_dev *pdev)
 
 	dev_warn(&pdev->dev, "FLR completed\n");
 }
-#endif
 
 #ifdef CONFIG_PM
 
@@ -905,12 +968,8 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
 
 static const struct pci_error_handlers pci_err_handlers = {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
-	.reset_notify = ipu_pci_reset_notify,
-#else
 	.reset_prepare = ipu_pci_reset_prepare,
 	.reset_done = ipu_pci_reset_done,
-#endif
 };
 
 static struct pci_driver ipu_pci_driver = {
@@ -956,10 +1015,6 @@ static void __exit ipu_exit(void)
 module_init(ipu_init);
 module_exit(ipu_exit);
 
-#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
-LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
-MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
-#endif
 MODULE_AUTHOR("Sakari Ailus <sakari.ailus@linux.intel.com>");
 MODULE_AUTHOR("Jouni Högander <jouni.hogander@intel.com>");
 MODULE_AUTHOR("Antti Laakso <antti.laakso@intel.com>");

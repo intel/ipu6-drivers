@@ -22,12 +22,18 @@
 #define IPU6EPADLN_FIRMWARE_NAME_NEW	"intel/ipu/ipu6epadln_fw.bin"
 #define IPU6EPMTLES_FIRMWARE_NAME_NEW	"intel/ipu/ipu6epmtles_fw.bin"
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+/* array of struct ipu_spdata_rep terminated by NULL */
+#define IPU_SPDATA_NAME		"ipu6v1_spdata.bin"
+#endif
+
 /*
  * The following definitions are encoded to the media_device's model field so
  * that the software components which uses IPU driver can get the hw stepping
  * information.
  */
-#define IPU_MEDIA_DEV_MODEL_NAME		"ipu6"
+#define IPU_MEDIA_DEV_MODEL_NAME		"ipu6-downstream"
 
 #define IPU6SE_ISYS_NUM_STREAMS          IPU6SE_NONSECURE_STREAM_ID_MAX
 #define IPU6_ISYS_NUM_STREAMS            IPU6_NONSECURE_STREAM_ID_MAX

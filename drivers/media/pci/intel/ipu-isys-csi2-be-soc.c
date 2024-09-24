@@ -15,6 +15,8 @@
 #include "ipu-isys-subdev.h"
 #include "ipu-isys-video.h"
 
+extern int vnode_num;
+
 /*
  * Raw bayer format pixel order MUST BE MAINTAINED in groups of four codes.
  * Otherwise pixel order calculation below WILL BREAK!
@@ -39,6 +41,7 @@ static const u32 csi2_be_soc_supported_codes_pad[] = {
 	MEDIA_BUS_FMT_SGRBG8_1X8,
 	MEDIA_BUS_FMT_SRGGB8_1X8,
 	MEDIA_BUS_FMT_Y8_1X8,
+	MEDIA_BUS_FMT_FIXED,
 	0,
 };
 
@@ -120,11 +123,7 @@ __subdev_link_validate(struct v4l2_subdev *sd, struct media_link *link,
 
 static int
 ipu_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-			     struct v4l2_subdev_pad_config *cfg,
-#else
 			     struct v4l2_subdev_state *state,
-#endif
 			     struct v4l2_subdev_selection *sel)
 {
 	struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
@@ -135,13 +134,8 @@ ipu_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
 	    asd->valid_tgts[sel->pad].crop) {
 		enum isys_subdev_prop_tgt tgt =
 		    IPU_ISYS_SUBDEV_PROP_TGT_SOURCE_CROP;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		struct v4l2_mbus_framefmt *ffmt =
-			__ipu_isys_get_ffmt(sd, cfg, sel->pad, sel->which);
-#else
 		struct v4l2_mbus_framefmt *ffmt =
 			__ipu_isys_get_ffmt(sd, state, sel->pad, sel->which);
-#endif
 
 		if (get_supported_code_index(ffmt->code) < 0) {
 			/* Non-bayer formats can't be odd lines cropped */
@@ -155,17 +149,10 @@ ipu_isys_csi2_be_soc_set_sel(struct v4l2_subdev *sd,
 		sel->r.height = clamp(sel->r.height, IPU_ISYS_MIN_HEIGHT,
 				      IPU_ISYS_MAX_HEIGHT);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		*__ipu_isys_get_selection(sd, cfg, sel->target, sel->pad,
-					  sel->which) = sel->r;
-		ipu_isys_subdev_fmt_propagate(sd, cfg, NULL, &sel->r,
-					      tgt, sel->pad, sel->which);
-#else
 		*__ipu_isys_get_selection(sd, state, sel->target, sel->pad,
 					  sel->which) = sel->r;
 		ipu_isys_subdev_fmt_propagate(sd, state, NULL, &sel->r,
 					      tgt, sel->pad, sel->which);
-#endif
 		return 0;
 	}
 	return -EINVAL;
@@ -187,63 +174,34 @@ static struct v4l2_subdev_ops csi2_be_soc_sd_ops = {
 };
 
 static struct media_entity_operations csi2_be_soc_entity_ops = {
-	.link_validate = v4l2_subdev_link_validate,
 };
 
 static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 1, 0)
-				 struct v4l2_subdev_fh *cfg,
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-				 struct v4l2_subdev_pad_config *cfg,
-#else
 				 struct v4l2_subdev_state *state,
-#endif
 				 struct v4l2_subdev_format *fmt)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-	struct v4l2_mbus_framefmt *ffmt =
-		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
-				    fmt->which);
-#else
 	struct v4l2_mbus_framefmt *ffmt =
 		__ipu_isys_get_ffmt(sd, state, fmt->pad,
 				    fmt->which);
-#endif
 
 	if (sd->entity.pads[fmt->pad].flags & MEDIA_PAD_FL_SINK) {
 		if (fmt->format.field != V4L2_FIELD_ALTERNATE)
 			fmt->format.field = V4L2_FIELD_NONE;
 		*ffmt = fmt->format;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format,
-					      NULL,
-					      IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
-					      fmt->pad, fmt->which);
-#else
 		ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format,
 					      NULL,
 					      IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT,
 					      fmt->pad, fmt->which);
-#endif
 	} else if (sd->entity.pads[fmt->pad].flags & MEDIA_PAD_FL_SOURCE) {
 		struct v4l2_mbus_framefmt *sink_ffmt;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		struct v4l2_rect *r = __ipu_isys_get_selection(sd, cfg,
-			V4L2_SEL_TGT_CROP, fmt->pad, fmt->which);
-#else
 		struct v4l2_rect *r = __ipu_isys_get_selection(sd, state,
 			V4L2_SEL_TGT_CROP, fmt->pad, fmt->which);
-#endif
 		struct ipu_isys_subdev *asd = to_ipu_isys_subdev(sd);
 		u32 code;
 		int idx;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-		sink_ffmt = __ipu_isys_get_ffmt(sd, cfg, 0, fmt->which);
-#else
 		sink_ffmt = __ipu_isys_get_ffmt(sd, state, 0, fmt->which);
-#endif
 		code = sink_ffmt->code;
 		idx = get_supported_code_index(code);
 
@@ -259,7 +217,7 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 				+ (idx & ~CSI2_BE_CROP_MASK)];
 
 		}
-		ffmt->code = code;
+		ffmt->code = fmt->format.code;
 		ffmt->width = r->width;
 		ffmt->height = r->height;
 		ffmt->field = sink_ffmt->field;
@@ -269,10 +227,14 @@ static void csi2_be_soc_set_ffmt(struct v4l2_subdev *sd,
 
 void ipu_isys_csi2_be_soc_cleanup(struct ipu_isys_csi2_be_soc *csi2_be_soc)
 {
+	int i;
+
 	v4l2_device_unregister_subdev(&csi2_be_soc->asd.sd);
 	ipu_isys_subdev_cleanup(&csi2_be_soc->asd);
-	v4l2_ctrl_handler_free(&csi2_be_soc->av.ctrl_handler);
-	ipu_isys_video_cleanup(&csi2_be_soc->av);
+	for (i = 0; i < vnode_num; i++) {
+		v4l2_ctrl_handler_free(&csi2_be_soc->av[i].ctrl_handler);
+		ipu_isys_video_cleanup(&csi2_be_soc->av[i]);
+	}
 }
 
 int ipu_isys_csi2_be_soc_init(struct ipu_isys_csi2_be_soc *csi2_be_soc,
@@ -296,12 +258,16 @@ int ipu_isys_csi2_be_soc_init(struct ipu_isys_csi2_be_soc *csi2_be_soc,
 				    NR_OF_CSI2_BE_SOC_PADS,
 				    NR_OF_CSI2_BE_SOC_SOURCE_PADS,
 				    NR_OF_CSI2_BE_SOC_SINK_PADS, 0,
-				    CSI2_BE_SOC_PAD_SOURCE,
+				    CSI2_BE_SOC_PAD_SOURCE(0),
 				    CSI2_BE_SOC_PAD_SINK);
 	if (rval)
 		goto fail;
 
-	csi2_be_soc->asd.valid_tgts[CSI2_BE_SOC_PAD_SOURCE].crop = true;
+	for (i = CSI2_BE_SOC_PAD_SOURCE(0);
+	     i < NR_OF_CSI2_BE_SOC_SOURCE_PADS + CSI2_BE_SOC_PAD_SOURCE(0);
+	     i++) {
+		csi2_be_soc->asd.valid_tgts[i].crop = true;
+	}
 
 	for (i = 0; i < NR_OF_CSI2_BE_SOC_PADS; i++)
 		csi2_be_soc_supported_codes[i] =
@@ -312,8 +278,6 @@ int ipu_isys_csi2_be_soc_init(struct ipu_isys_csi2_be_soc *csi2_be_soc,
 	csi2_be_soc->asd.set_ffmt = csi2_be_soc_set_ffmt;
 
 	fmt.pad = CSI2_BE_SOC_PAD_SINK;
-	ipu_isys_subdev_set_ffmt(&csi2_be_soc->asd.sd, NULL, &fmt);
-	fmt.pad = CSI2_BE_SOC_PAD_SOURCE;
 	ipu_isys_subdev_set_ffmt(&csi2_be_soc->asd.sd, NULL, &fmt);
 	csi2_be_soc->asd.sd.internal_ops = &csi2_be_soc_sd_internal_ops;
 
@@ -328,55 +292,66 @@ int ipu_isys_csi2_be_soc_init(struct ipu_isys_csi2_be_soc *csi2_be_soc,
 		goto fail;
 	}
 
-	snprintf(csi2_be_soc->av.vdev.name, sizeof(csi2_be_soc->av.vdev.name),
-		 IPU_ISYS_ENTITY_PREFIX " BE SOC capture %d", index);
+	for (i = 0; i < vnode_num; i++) {
+		if (!index)
+			snprintf(csi2_be_soc->av[i].vdev.name,
+				 sizeof(csi2_be_soc->av[i].vdev.name),
+				 IPU_ISYS_ENTITY_PREFIX " BE SOC capture %d", i);
+		else
+			snprintf(csi2_be_soc->av[i].vdev.name,
+				 sizeof(csi2_be_soc->av[i].vdev.name),
+				 IPU_ISYS_ENTITY_PREFIX " BE SOC %d capture %d", index, i);
+		/*
+		 * Pin type could be overwritten for YUV422 to I420 case, at
+		 * set_format phase
+		 */
+		csi2_be_soc->av[i].aq.css_pin_type =
+		    IPU_FW_ISYS_PIN_TYPE_RAW_SOC;
+		csi2_be_soc->av[i].isys = isys;
+		csi2_be_soc->av[i].pfmts = ipu_isys_pfmts_be_soc;
 
-	/*
-	 * Pin type could be overwritten for YUV422 to I420 case, at
-	 * set_format phase
-	 */
-	csi2_be_soc->av.aq.css_pin_type = IPU_FW_ISYS_PIN_TYPE_RAW_SOC;
-	csi2_be_soc->av.isys = isys;
-	csi2_be_soc->av.pfmts = ipu_isys_pfmts_be_soc;
-	csi2_be_soc->av.try_fmt_vid_mplane =
-		ipu_isys_video_try_fmt_vid_mplane_default;
-	csi2_be_soc->av.prepare_fw_stream =
-		ipu_isys_prepare_fw_cfg_default;
-	csi2_be_soc->av.aq.buf_prepare = ipu_isys_buf_prepare;
-	csi2_be_soc->av.aq.fill_frame_buff_set_pin =
-		ipu_isys_buffer_to_fw_frame_buff_pin;
-	csi2_be_soc->av.aq.link_fmt_validate = ipu_isys_link_fmt_validate;
-	csi2_be_soc->av.aq.vbq.buf_struct_size =
-		sizeof(struct ipu_isys_video_buffer);
+		csi2_be_soc->av[i].try_fmt_vid_mplane =
+		    ipu_isys_video_try_fmt_vid_mplane_default;
+		csi2_be_soc->av[i].prepare_fw_stream =
+		    ipu_isys_prepare_fw_cfg_default;
+		csi2_be_soc->av[i].aq.buf_prepare = ipu_isys_buf_prepare;
+		csi2_be_soc->av[i].aq.fill_frame_buff_set_pin =
+		    ipu_isys_buffer_to_fw_frame_buff_pin;
+		csi2_be_soc->av[i].aq.link_fmt_validate =
+		    ipu_isys_link_fmt_validate;
+		csi2_be_soc->av[i].aq.vbq.buf_struct_size =
+		    sizeof(struct ipu_isys_video_buffer);
 
-	/* create v4l2 ctrl for be-soc video node */
-	rval = v4l2_ctrl_handler_init(&csi2_be_soc->av.ctrl_handler, 0);
-	if (rval) {
-		dev_err(&isys->adev->dev,
-			"failed to init v4l2 ctrl handler for be_soc\n");
-		goto fail;
-	}
+		/* create v4l2 ctrl for be-soc video node */
+		rval =
+		  v4l2_ctrl_handler_init(&csi2_be_soc->av[i].ctrl_handler, 0);
+		if (rval) {
+			dev_err(&isys->adev->dev,
+				"failed to init v4l2 ctrl hdl for be_soc\n");
+			goto fail;
+		}
 
-	csi2_be_soc->av.compression_ctrl =
-		v4l2_ctrl_new_custom(&csi2_be_soc->av.ctrl_handler,
-				     &compression_ctrl_cfg, NULL);
-	if (!csi2_be_soc->av.compression_ctrl) {
-		dev_err(&isys->adev->dev,
-			"failed to create BE-SOC cmprs ctrl\n");
-		goto fail;
-	}
-	csi2_be_soc->av.compression = 0;
-	csi2_be_soc->av.vdev.ctrl_handler =
-		&csi2_be_soc->av.ctrl_handler;
+		csi2_be_soc->av[i].compression_ctrl =
+			v4l2_ctrl_new_custom(&csi2_be_soc->av[i].ctrl_handler,
+					     &compression_ctrl_cfg, NULL);
+		if (!csi2_be_soc->av[i].compression_ctrl) {
+			dev_err(&isys->adev->dev,
+				"failed to create BE-SOC cmprs ctrl\n");
+			goto fail;
+		}
+		csi2_be_soc->av[i].compression = 0;
+		csi2_be_soc->av[i].vdev.ctrl_handler =
+			&csi2_be_soc->av[i].ctrl_handler;
 
-	rval = ipu_isys_video_init(&csi2_be_soc->av,
-				   &csi2_be_soc->asd.sd.entity,
-				   CSI2_BE_SOC_PAD_SOURCE,
-				   MEDIA_PAD_FL_SINK,
-				   MEDIA_LNK_FL_DYNAMIC);
-	if (rval) {
-		dev_info(&isys->adev->dev, "can't init video node\n");
-		goto fail;
+		rval = ipu_isys_video_init(&csi2_be_soc->av[i],
+					   &csi2_be_soc->asd.sd.entity,
+					   CSI2_BE_SOC_PAD_SOURCE(i),
+					   MEDIA_PAD_FL_SINK,
+					   MEDIA_LNK_FL_DYNAMIC);
+		if (rval) {
+			dev_info(&isys->adev->dev, "can't init video node\n");
+			goto fail;
+		}
 	}
 
 	return 0;
