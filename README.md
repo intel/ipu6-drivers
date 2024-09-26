@@ -44,7 +44,12 @@ There are 4 repositories:
                         CONFIG_VIDEO_IMX390=m
 
         d.	Follow GSG to build kernel driver.
+
   # ADL-P/ADL-PS/ADL-N Refer to 778598_ADL_N_MIPI_Setup_GSG section 5.0
+
+  NOTE: Cannot insure IPU build can work well if not based on kernel source in GSG.
+        Anyway user can try community kernel source follow the readme under kernel patches folder.
+        Such as 'kernel_patches/patch_6.11_mainline/README'.
 ```
 ### Build with dkms
 ```sh

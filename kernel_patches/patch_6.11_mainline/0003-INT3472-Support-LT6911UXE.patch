@@ -1,0 +1,73 @@
+From 732579bc9711cc86227bc5de5bbd61949d99dced Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Tue, 25 Jun 2024 11:34:04 +0800
+Subject: [PATCH 3/7] INT3472: Support LT6911UXE
+
+Signed-off-by: linya14x <linx.yang@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/platform/x86/intel/int3472/common.h   |  2 ++
+ drivers/platform/x86/intel/int3472/discrete.c | 18 ++++++++++++++++--
+ 2 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/platform/x86/intel/int3472/common.h b/drivers/platform/x86/intel/int3472/common.h
+index 145dec66df64..1d667e1187d2 100644
+--- a/drivers/platform/x86/intel/int3472/common.h
++++ b/drivers/platform/x86/intel/int3472/common.h
+@@ -22,6 +22,8 @@
+ #define INT3472_GPIO_TYPE_POWER_ENABLE				0x0b
+ #define INT3472_GPIO_TYPE_CLK_ENABLE				0x0c
+ #define INT3472_GPIO_TYPE_PRIVACY_LED				0x0d
++#define INT3472_GPIO_TYPE_READY_STAT                            0x13
++#define INT3472_GPIO_TYPE_HDMI_DETECT                           0x14
+
+ #define INT3472_PDEV_MAX_NAME_LEN				23
+ #define INT3472_MAX_SENSOR_GPIOS				3
+diff --git a/drivers/platform/x86/intel/int3472/discrete.c b/drivers/platform/x86/intel/int3472/discrete.c
+index 07b302e09340..94095fdc09e5 100644
+--- a/drivers/platform/x86/intel/int3472/discrete.c
++++ b/drivers/platform/x86/intel/int3472/discrete.c
+@@ -148,6 +148,14 @@ static void int3472_get_func_and_polarity(u8 type, const char **func, u32 *polar
+ 		*func = "power-enable";
+ 		*polarity = GPIO_ACTIVE_HIGH;
+ 		break;
++	case INT3472_GPIO_TYPE_READY_STAT:
++		*func = "readystat";
++		*polarity = GPIO_LOOKUP_FLAGS_DEFAULT;
++		break;
++	case INT3472_GPIO_TYPE_HDMI_DETECT:
++		*func = "hdmidetect";
++		*polarity = GPIO_LOOKUP_FLAGS_DEFAULT;
++		break;
+ 	default:
+ 		*func = "unknown";
+ 		*polarity = GPIO_ACTIVE_HIGH;
+@@ -239,9 +247,15 @@ static int skl_int3472_handle_gpio_resources(struct acpi_resource *ares,
+ 	switch (type) {
+ 	case INT3472_GPIO_TYPE_RESET:
+ 	case INT3472_GPIO_TYPE_POWERDOWN:
++        case INT3472_GPIO_TYPE_READY_STAT:
++	case INT3472_GPIO_TYPE_HDMI_DETECT:
+ 		ret = skl_int3472_map_gpio_to_sensor(int3472, agpio, func, polarity);
+-		if (ret)
++		if (ret) {
+ 			err_msg = "Failed to map GPIO pin to sensor\n";
++			dev_warn(int3472->dev,
++				"Failed to map GPIO pin to sensor, type %02x, func %s, polarity %u\n",
++				type, func, polarity);
++		}
+
+ 		break;
+ 	case INT3472_GPIO_TYPE_CLK_ENABLE:
+@@ -345,7 +359,7 @@ static int skl_int3472_discrete_probe(struct platform_device *pdev)
+ 		return ret;
+ 	}
+
+-	if (cldb.control_logic_type != 1) {
++	if (cldb.control_logic_type != 1 && cldb.control_logic_type != 5) {
+ 		dev_err(&pdev->dev, "Unsupported control logic type %u\n",
+ 			cldb.control_logic_type);
+ 		return -EINVAL;
+--
+2.34.1
+

@@ -1,0 +1,29 @@
+From a8bfef077f17aa36f687d4af24d6ea3687973260 Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Thu, 15 Aug 2024 11:27:28 +0800
+Subject: [PATCH 1/2] pinctrl: intel: add acpi id for arrow lake
+
+Test Platform:
+ARL
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: linya14x <linx.yang@intel.com>
+---
+ drivers/pinctrl/intel/pinctrl-meteorlake.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/pinctrl/intel/pinctrl-meteorlake.c b/drivers/pinctrl/intel/pinctrl-meteorlake.c
+index cc44890c6699..b95435e456e3 100644
+--- a/drivers/pinctrl/intel/pinctrl-meteorlake.c
++++ b/drivers/pinctrl/intel/pinctrl-meteorlake.c
+@@ -586,6 +586,7 @@ static const struct intel_pinctrl_soc_data mtls_soc_data = {
+ static const struct acpi_device_id mtl_pinctrl_acpi_match[] = {
+ 	{ "INTC1083", (kernel_ulong_t)&mtlp_soc_data },
+ 	{ "INTC1082", (kernel_ulong_t)&mtls_soc_data },
++	{ "INTC105E", (kernel_ulong_t)&mtlp_soc_data },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(acpi, mtl_pinctrl_acpi_match);
+--
+2.34.1
+

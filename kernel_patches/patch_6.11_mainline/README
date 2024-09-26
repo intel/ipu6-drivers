@@ -1,0 +1,34 @@
+build kernel driver with community kernel version 6.11
+
+1. checkout community kernel 6.11-rc3 or later 6.11 version
+2. copy patches to kernel source tree and apply them
+    a. for ar0234 & lt6911uxe:
+       git am 0001-media-i2c-Add-ar0234-camera-sensor-driver.patch
+       git am 0002-media-i2c-add-support-for-lt6911uxe.patch
+       git am 0003-INT3472-Support-LT6911UXE.patch
+       git am 0004-upstream-Use-module-parameter-to-set-isys-freq.patch
+       git am 0005-upstream-Use-module-parameter-to-set-psys-freq.patch
+       git am 0006-media-pci-Enable-ISYS-reset.patch
+       git am 0007-media-i2c-add-support-for-ar0234-and-lt6911uxe.patch
+
+    b. for arl (these patches be included in NEX kernel 6.11-rc3, 
+                but not be included in community kernel 6.11):
+       git am 0001-pinctrl-intel-add-acpi-id-for-arrow-lake.patch
+       git am 0002-mfd-add-ARL-H-PCI-driver-ID.patch
+
+
+3. copy psys driver
+   cp drivers/media/pci/intel/ipu6/psys/ drivers/media/pci/intel/ipu6 -rf
+   cp include/uapi/linux/ipu-psys.h include/uapi/linux/
+
+4. add psys driver to makefile
+   echo "obj-\$(CONFIG_VIDEO_INTEL_IPU6)  += psys/" >> drivers/media/pci/intel/ipu6/Makefile
+
+5. build kernel driver
+   copy kernel config to kernel source tree
+
+   KERNEL_BUILD_LABEL="-for-upstream"
+   make kernelversion
+   echo "" | make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL} oldconfig
+   make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL}
+   make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL} bindeb-pkg
