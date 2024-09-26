@@ -27,6 +27,8 @@ build kernel driver with community kernel version 6.11
 5. build kernel driver
    copy kernel config to kernel source tree
 
-   make -j48 oldconfig
-   make -j48 
-   make -j48 bindeb-pkg
+   KERNEL_BUILD_LABEL="-for-upstream"
+   make kernelversion
+   echo "" | make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL} oldconfig
+   make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL}
+   make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL} bindeb-pkg

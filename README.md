@@ -49,7 +49,7 @@ There are 4 repositories:
 
   NOTE: Cannot insure IPU build can work well if not based on kernel source in GSG.
         Anyway user can try community kernel source follow the readme under kernel patches folder.
-        Such as 'kernel_patches/patch_6.11_mainline/readme'.
+        Such as 'kernel_patches/patch_6.11_mainline/README'.
 ```
 ### Build with dkms
 ```sh
