@@ -1,0 +1,1198 @@
+From cec333719e0f91769395e20ddc166b971327c97c Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Sun, 29 Sep 2024 15:34:50 +0800
+Subject: [PATCH] v6.10 IPU6 headers used by PSYS
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-bus.h       |  58 +++
+ drivers/media/pci/intel/ipu6/ipu6-buttress.h  |  92 +++++
+ drivers/media/pci/intel/ipu6/ipu6-cpd.h       | 105 ++++++
+ drivers/media/pci/intel/ipu6/ipu6-fw-com.h    |  47 +++
+ drivers/media/pci/intel/ipu6/ipu6-mmu.h       |  73 ++++
+ .../intel/ipu6/ipu6-platform-buttress-regs.h  | 226 ++++++++++++
+ .../media/pci/intel/ipu6/ipu6-platform-regs.h | 179 +++++++++
+ drivers/media/pci/intel/ipu6/ipu6.h           | 342 ++++++++++++++++++
+ 8 files changed, 1122 insertions(+)
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6-bus.h
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6-buttress.h
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6-cpd.h
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6-fw-com.h
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6-mmu.h
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6-platform-buttress-regs.h
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6-platform-regs.h
+ create mode 100644 drivers/media/pci/intel/ipu6/ipu6.h
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-bus.h b/drivers/media/pci/intel/ipu6/ipu6-bus.h
+new file mode 100644
+index 000000000..b26c6aee1
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6-bus.h
+@@ -0,0 +1,58 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2013 - 2024 Intel Corporation */
++
++#ifndef IPU6_BUS_H
++#define IPU6_BUS_H
++
++#include <linux/auxiliary_bus.h>
++#include <linux/container_of.h>
++#include <linux/device.h>
++#include <linux/irqreturn.h>
++#include <linux/list.h>
++#include <linux/scatterlist.h>
++#include <linux/types.h>
++
++struct firmware;
++struct pci_dev;
++
++#define IPU6_BUS_NAME	IPU6_NAME "-bus"
++
++struct ipu6_buttress_ctrl;
++
++struct ipu6_bus_device {
++	struct auxiliary_device auxdev;
++	struct auxiliary_driver *auxdrv;
++	const struct ipu6_auxdrv_data *auxdrv_data;
++	struct list_head list;
++	void *pdata;
++	struct ipu6_mmu *mmu;
++	struct ipu6_device *isp;
++	struct ipu6_buttress_ctrl *ctrl;
++	u64 dma_mask;
++	const struct firmware *fw;
++	struct sg_table fw_sgt;
++	u64 *pkg_dir;
++	dma_addr_t pkg_dir_dma_addr;
++	unsigned int pkg_dir_size;
++};
++
++struct ipu6_auxdrv_data {
++	irqreturn_t (*isr)(struct ipu6_bus_device *adev);
++	irqreturn_t (*isr_threaded)(struct ipu6_bus_device *adev);
++	bool wake_isr_thread;
++};
++
++#define to_ipu6_bus_device(_dev) \
++	container_of(to_auxiliary_dev(_dev), struct ipu6_bus_device, auxdev)
++#define auxdev_to_adev(_auxdev) \
++	container_of(_auxdev, struct ipu6_bus_device, auxdev)
++#define ipu6_bus_get_drvdata(adev) dev_get_drvdata(&(adev)->auxdev.dev)
++
++struct ipu6_bus_device *
++ipu6_bus_initialize_device(struct pci_dev *pdev, struct device *parent,
++			   void *pdata, struct ipu6_buttress_ctrl *ctrl,
++			   char *name);
++int ipu6_bus_add_device(struct ipu6_bus_device *adev);
++void ipu6_bus_del_devices(struct pci_dev *pdev);
++
++#endif
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-buttress.h b/drivers/media/pci/intel/ipu6/ipu6-buttress.h
+new file mode 100644
+index 000000000..9b6f56958
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6-buttress.h
+@@ -0,0 +1,92 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2013--2024 Intel Corporation */
++
++#ifndef IPU6_BUTTRESS_H
++#define IPU6_BUTTRESS_H
++
++#include <linux/completion.h>
++#include <linux/irqreturn.h>
++#include <linux/list.h>
++#include <linux/mutex.h>
++
++struct device;
++struct firmware;
++struct ipu6_device;
++struct ipu6_bus_device;
++
++#define BUTTRESS_PS_FREQ_STEP		25U
++#define BUTTRESS_MIN_FORCE_PS_FREQ	(BUTTRESS_PS_FREQ_STEP * 8)
++#define BUTTRESS_MAX_FORCE_PS_FREQ	(BUTTRESS_PS_FREQ_STEP * 32)
++
++#define BUTTRESS_IS_FREQ_STEP		25U
++#define BUTTRESS_MIN_FORCE_IS_FREQ	(BUTTRESS_IS_FREQ_STEP * 8)
++#define BUTTRESS_MAX_FORCE_IS_FREQ	(BUTTRESS_IS_FREQ_STEP * 22)
++
++struct ipu6_buttress_ctrl {
++	u32 freq_ctl, pwr_sts_shift, pwr_sts_mask, pwr_sts_on, pwr_sts_off;
++	unsigned int ratio;
++	unsigned int qos_floor;
++	bool started;
++};
++
++struct ipu6_buttress_ipc {
++	struct completion send_complete;
++	struct completion recv_complete;
++	u32 nack;
++	u32 nack_mask;
++	u32 recv_data;
++	u32 csr_out;
++	u32 csr_in;
++	u32 db0_in;
++	u32 db0_out;
++	u32 data0_out;
++	u32 data0_in;
++};
++
++struct ipu6_buttress {
++	struct mutex power_mutex, auth_mutex, cons_mutex, ipc_mutex;
++	struct ipu6_buttress_ipc cse;
++	struct ipu6_buttress_ipc ish;
++	struct list_head constraints;
++	u32 wdt_cached_value;
++	bool force_suspend;
++	u32 ref_clk;
++};
++
++enum ipu6_buttress_ipc_domain {
++	IPU6_BUTTRESS_IPC_CSE,
++	IPU6_BUTTRESS_IPC_ISH,
++};
++
++struct ipu6_ipc_buttress_bulk_msg {
++	u32 cmd;
++	u32 expected_resp;
++	bool require_resp;
++	u8 cmd_size;
++};
++
++int ipu6_buttress_ipc_reset(struct ipu6_device *isp,
++			    struct ipu6_buttress_ipc *ipc);
++int ipu6_buttress_map_fw_image(struct ipu6_bus_device *sys,
++			       const struct firmware *fw,
++			       struct sg_table *sgt);
++void ipu6_buttress_unmap_fw_image(struct ipu6_bus_device *sys,
++				  struct sg_table *sgt);
++int ipu6_buttress_power(struct device *dev, struct ipu6_buttress_ctrl *ctrl,
++			bool on);
++bool ipu6_buttress_get_secure_mode(struct ipu6_device *isp);
++int ipu6_buttress_authenticate(struct ipu6_device *isp);
++int ipu6_buttress_reset_authentication(struct ipu6_device *isp);
++bool ipu6_buttress_auth_done(struct ipu6_device *isp);
++int ipu6_buttress_start_tsc_sync(struct ipu6_device *isp);
++void ipu6_buttress_tsc_read(struct ipu6_device *isp, u64 *val);
++u64 ipu6_buttress_tsc_ticks_to_ns(u64 ticks, const struct ipu6_device *isp);
++
++irqreturn_t ipu6_buttress_isr(int irq, void *isp_ptr);
++irqreturn_t ipu6_buttress_isr_threaded(int irq, void *isp_ptr);
++int ipu6_buttress_init(struct ipu6_device *isp);
++void ipu6_buttress_exit(struct ipu6_device *isp);
++void ipu6_buttress_csi_port_config(struct ipu6_device *isp,
++				   u32 legacy, u32 combo);
++void ipu6_buttress_restore(struct ipu6_device *isp);
++#endif /* IPU6_BUTTRESS_H */
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-cpd.h b/drivers/media/pci/intel/ipu6/ipu6-cpd.h
+new file mode 100644
+index 000000000..e0e4fdeca
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6-cpd.h
+@@ -0,0 +1,105 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2015--2024 Intel Corporation */
++
++#ifndef IPU6_CPD_H
++#define IPU6_CPD_H
++
++struct ipu6_device;
++struct ipu6_bus_device;
++
++#define IPU6_CPD_SIZE_OF_FW_ARCH_VERSION	7
++#define IPU6_CPD_SIZE_OF_SYSTEM_VERSION		11
++#define IPU6_CPD_SIZE_OF_COMPONENT_NAME		12
++
++#define IPU6_CPD_METADATA_EXTN_TYPE_IUNIT	0x10
++
++#define IPU6_CPD_METADATA_IMAGE_TYPE_RESERVED		0
++#define IPU6_CPD_METADATA_IMAGE_TYPE_BOOTLOADER		1
++#define IPU6_CPD_METADATA_IMAGE_TYPE_MAIN_FIRMWARE	2
++
++#define IPU6_CPD_PKG_DIR_PSYS_SERVER_IDX	0
++#define IPU6_CPD_PKG_DIR_ISYS_SERVER_IDX	1
++
++#define IPU6_CPD_PKG_DIR_CLIENT_PG_TYPE		3
++
++#define IPU6_CPD_METADATA_HASH_KEY_SIZE		48
++#define IPU6SE_CPD_METADATA_HASH_KEY_SIZE	32
++
++struct ipu6_cpd_module_data_hdr {
++	u32 hdr_len;
++	u32 endian;
++	u32 fw_pkg_date;
++	u32 hive_sdk_date;
++	u32 compiler_date;
++	u32 target_platform_type;
++	u8 sys_ver[IPU6_CPD_SIZE_OF_SYSTEM_VERSION];
++	u8 fw_arch_ver[IPU6_CPD_SIZE_OF_FW_ARCH_VERSION];
++	u8 rsvd[2];
++} __packed;
++
++/*
++ * ipu6_cpd_hdr structure updated as the chksum and
++ * sub_partition_name is unused on host side
++ * CSE layout version 1.6 for IPU6SE (hdr_len = 0x10)
++ * CSE layout version 1.7 for IPU6 (hdr_len = 0x14)
++ */
++struct ipu6_cpd_hdr {
++	u32 hdr_mark;
++	u32 ent_cnt;
++	u8 hdr_ver;
++	u8 ent_ver;
++	u8 hdr_len;
++} __packed;
++
++struct ipu6_cpd_ent {
++	u8 name[IPU6_CPD_SIZE_OF_COMPONENT_NAME];
++	u32 offset;
++	u32 len;
++	u8 rsvd[4];
++} __packed;
++
++struct ipu6_cpd_metadata_cmpnt_hdr {
++	u32 id;
++	u32 size;
++	u32 ver;
++} __packed;
++
++struct ipu6_cpd_metadata_cmpnt {
++	struct ipu6_cpd_metadata_cmpnt_hdr hdr;
++	u8 sha2_hash[IPU6_CPD_METADATA_HASH_KEY_SIZE];
++	u32 entry_point;
++	u32 icache_base_offs;
++	u8 attrs[16];
++} __packed;
++
++struct ipu6se_cpd_metadata_cmpnt {
++	struct ipu6_cpd_metadata_cmpnt_hdr hdr;
++	u8 sha2_hash[IPU6SE_CPD_METADATA_HASH_KEY_SIZE];
++	u32 entry_point;
++	u32 icache_base_offs;
++	u8 attrs[16];
++} __packed;
++
++struct ipu6_cpd_metadata_extn {
++	u32 extn_type;
++	u32 len;
++	u32 img_type;
++	u8 rsvd[16];
++} __packed;
++
++struct ipu6_cpd_client_pkg_hdr {
++	u32 prog_list_offs;
++	u32 prog_list_size;
++	u32 prog_desc_offs;
++	u32 prog_desc_size;
++	u32 pg_manifest_offs;
++	u32 pg_manifest_size;
++	u32 prog_bin_offs;
++	u32 prog_bin_size;
++} __packed;
++
++int ipu6_cpd_create_pkg_dir(struct ipu6_bus_device *adev, const void *src);
++void ipu6_cpd_free_pkg_dir(struct ipu6_bus_device *adev);
++int ipu6_cpd_validate_cpd_file(struct ipu6_device *isp, const void *cpd_file,
++			       unsigned long cpd_file_size);
++#endif /* IPU6_CPD_H */
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-fw-com.h b/drivers/media/pci/intel/ipu6/ipu6-fw-com.h
+new file mode 100644
+index 000000000..b02285a3e
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6-fw-com.h
+@@ -0,0 +1,47 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2013--2024 Intel Corporation */
++
++#ifndef IPU6_FW_COM_H
++#define IPU6_FW_COM_H
++
++struct ipu6_fw_com_context;
++struct ipu6_bus_device;
++
++struct ipu6_fw_syscom_queue_config {
++	unsigned int queue_size;	/* tokens per queue */
++	unsigned int token_size;	/* bytes per token */
++};
++
++#define SYSCOM_BUTTRESS_FW_PARAMS_ISYS_OFFSET	0
++
++struct ipu6_fw_com_cfg {
++	unsigned int num_input_queues;
++	unsigned int num_output_queues;
++	struct ipu6_fw_syscom_queue_config *input;
++	struct ipu6_fw_syscom_queue_config *output;
++
++	unsigned int dmem_addr;
++
++	/* firmware-specific configuration data */
++	void *specific_addr;
++	unsigned int specific_size;
++	int (*cell_ready)(struct ipu6_bus_device *adev);
++	void (*cell_start)(struct ipu6_bus_device *adev);
++
++	unsigned int buttress_boot_offset;
++};
++
++void *ipu6_fw_com_prepare(struct ipu6_fw_com_cfg *cfg,
++			  struct ipu6_bus_device *adev, void __iomem *base);
++
++int ipu6_fw_com_open(struct ipu6_fw_com_context *ctx);
++bool ipu6_fw_com_ready(struct ipu6_fw_com_context *ctx);
++int ipu6_fw_com_close(struct ipu6_fw_com_context *ctx);
++int ipu6_fw_com_release(struct ipu6_fw_com_context *ctx, unsigned int force);
++
++void *ipu6_recv_get_token(struct ipu6_fw_com_context *ctx, int q_nbr);
++void ipu6_recv_put_token(struct ipu6_fw_com_context *ctx, int q_nbr);
++void *ipu6_send_get_token(struct ipu6_fw_com_context *ctx, int q_nbr);
++void ipu6_send_put_token(struct ipu6_fw_com_context *ctx, int q_nbr);
++
++#endif
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-mmu.h b/drivers/media/pci/intel/ipu6/ipu6-mmu.h
+new file mode 100644
+index 000000000..21cdb0f14
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6-mmu.h
+@@ -0,0 +1,73 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2013--2024 Intel Corporation */
++
++#ifndef IPU6_MMU_H
++#define IPU6_MMU_H
++
++#define ISYS_MMID 1
++#define PSYS_MMID 0
++
++#include <linux/list.h>
++#include <linux/spinlock_types.h>
++#include <linux/types.h>
++
++struct device;
++struct page;
++struct ipu6_hw_variants;
++
++struct ipu6_mmu_info {
++	struct device *dev;
++
++	u32 *l1_pt;
++	u32 l1_pt_dma;
++	u32 **l2_pts;
++
++	u32 *dummy_l2_pt;
++	u32 dummy_l2_pteval;
++	void *dummy_page;
++	u32 dummy_page_pteval;
++
++	dma_addr_t aperture_start;
++	dma_addr_t aperture_end;
++	unsigned long pgsize_bitmap;
++
++	spinlock_t lock;	/* Serialize access to users */
++	struct ipu6_dma_mapping *dmap;
++};
++
++struct ipu6_mmu {
++	struct list_head node;
++
++	struct ipu6_mmu_hw *mmu_hw;
++	unsigned int nr_mmus;
++	unsigned int mmid;
++
++	phys_addr_t pgtbl;
++	struct device *dev;
++
++	struct ipu6_dma_mapping *dmap;
++	struct list_head vma_list;
++
++	struct page *trash_page;
++	dma_addr_t pci_trash_page; /* IOVA from PCI DMA services (parent) */
++	dma_addr_t iova_trash_page; /* IOVA for IPU6 child nodes to use */
++
++	bool ready;
++	spinlock_t ready_lock;	/* Serialize access to bool ready */
++
++	void (*tlb_invalidate)(struct ipu6_mmu *mmu);
++};
++
++struct ipu6_mmu *ipu6_mmu_init(struct device *dev,
++			       void __iomem *base, int mmid,
++			       const struct ipu6_hw_variants *hw);
++void ipu6_mmu_cleanup(struct ipu6_mmu *mmu);
++int ipu6_mmu_hw_init(struct ipu6_mmu *mmu);
++void ipu6_mmu_hw_cleanup(struct ipu6_mmu *mmu);
++int ipu6_mmu_map(struct ipu6_mmu_info *mmu_info, unsigned long iova,
++		 phys_addr_t paddr, size_t size);
++size_t ipu6_mmu_unmap(struct ipu6_mmu_info *mmu_info, unsigned long iova,
++		      size_t size);
++phys_addr_t ipu6_mmu_iova_to_phys(struct ipu6_mmu_info *mmu_info,
++				  dma_addr_t iova);
++#endif
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-platform-buttress-regs.h b/drivers/media/pci/intel/ipu6/ipu6-platform-buttress-regs.h
+new file mode 100644
+index 000000000..20f27011d
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6-platform-buttress-regs.h
+@@ -0,0 +1,226 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2023--2024 Intel Corporation */
++
++#ifndef IPU6_PLATFORM_BUTTRESS_REGS_H
++#define IPU6_PLATFORM_BUTTRESS_REGS_H
++
++#include <linux/bits.h>
++
++/* IS_WORKPOINT_REQ */
++#define IPU6_BUTTRESS_REG_IS_FREQ_CTL		0x34
++/* PS_WORKPOINT_REQ */
++#define IPU6_BUTTRESS_REG_PS_FREQ_CTL		0x38
++
++/* should be tuned for real silicon */
++#define IPU6_IS_FREQ_CTL_DEFAULT_RATIO		0x08
++#define IPU6SE_IS_FREQ_CTL_DEFAULT_RATIO	0x0a
++#define IPU6_PS_FREQ_CTL_DEFAULT_RATIO		0x0d
++
++#define IPU6_IS_FREQ_CTL_DEFAULT_QOS_FLOOR_RATIO	0x10
++#define IPU6_PS_FREQ_CTL_DEFAULT_QOS_FLOOR_RATIO	0x0708
++
++#define IPU6_BUTTRESS_PWR_STATE_IS_PWR_SHIFT	3
++#define IPU6_BUTTRESS_PWR_STATE_IS_PWR_MASK	GENMASK(4, 3)
++
++#define IPU6_BUTTRESS_PWR_STATE_PS_PWR_SHIFT	6
++#define IPU6_BUTTRESS_PWR_STATE_PS_PWR_MASK	GENMASK(7, 6)
++
++#define IPU6_BUTTRESS_PWR_STATE_DN_DONE		0x0
++#define IPU6_BUTTRESS_PWR_STATE_UP_PROCESS	0x1
++#define IPU6_BUTTRESS_PWR_STATE_DN_PROCESS	0x2
++#define IPU6_BUTTRESS_PWR_STATE_UP_DONE		0x3
++
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_0	0x270
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_1	0x274
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_2	0x278
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_3	0x27c
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_4	0x280
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_5	0x284
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_6	0x288
++#define IPU6_BUTTRESS_REG_FPGA_SUPPORT_7	0x28c
++
++#define BUTTRESS_REG_WDT			0x8
++#define BUTTRESS_REG_BTRS_CTRL			0xc
++#define BUTTRESS_REG_BTRS_CTRL_STALL_MODE_VC0	BIT(0)
++#define BUTTRESS_REG_BTRS_CTRL_STALL_MODE_VC1	BIT(1)
++#define BUTTRESS_REG_BTRS_CTRL_REF_CLK_IND	GENMASK(9, 8)
++
++#define BUTTRESS_REG_FW_RESET_CTL	0x30
++#define BUTTRESS_FW_RESET_CTL_START	BIT(0)
++#define BUTTRESS_FW_RESET_CTL_DONE	BIT(1)
++
++#define BUTTRESS_REG_IS_FREQ_CTL	0x34
++#define BUTTRESS_REG_PS_FREQ_CTL	0x38
++
++#define BUTTRESS_FREQ_CTL_START		BIT(31)
++#define BUTTRESS_FREQ_CTL_ICCMAX_LEVEL		GENMASK(19, 16)
++#define BUTTRESS_FREQ_CTL_QOS_FLOOR_MASK	GENMASK(15, 8)
++#define BUTTRESS_FREQ_CTL_RATIO_MASK	GENMASK(7, 0)
++
++#define BUTTRESS_REG_PWR_STATE	0x5c
++
++#define BUTTRESS_PWR_STATE_RESET		0x0
++#define BUTTRESS_PWR_STATE_PWR_ON_DONE		0x1
++#define BUTTRESS_PWR_STATE_PWR_RDY		0x3
++#define BUTTRESS_PWR_STATE_PWR_IDLE		0x4
++
++#define BUTTRESS_PWR_STATE_HH_STATUS_MASK	GENMASK(12, 11)
++
++enum {
++	BUTTRESS_PWR_STATE_HH_STATE_IDLE,
++	BUTTRESS_PWR_STATE_HH_STATE_IN_PRGS,
++	BUTTRESS_PWR_STATE_HH_STATE_DONE,
++	BUTTRESS_PWR_STATE_HH_STATE_ERR,
++};
++
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_MASK	GENMASK(23, 19)
++
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_IDLE			0x0
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_WAIT_4_PLL_CMP		0x1
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_WAIT_4_CLKACK		0x2
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_WAIT_4_PG_ACK		0x3
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_RST_ASSRT_CYCLES		0x4
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_STOP_CLK_CYCLES1		0x5
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_STOP_CLK_CYCLES2		0x6
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_RST_DEASSRT_CYCLES	0x7
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_WAIT_4_FUSE_WR_CMP	0x8
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_BRK_POINT			0x9
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_IS_RDY			0xa
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_HALT_HALTED		0xb
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_RST_DURATION_CNT3		0xc
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_WAIT_4_CLKACK_PD		0xd
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_PD_BRK_POINT		0xe
++#define BUTTRESS_PWR_STATE_IS_PWR_FSM_WAIT_4_PD_PG_ACK0		0xf
++
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_MASK	GENMASK(28, 24)
++
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_IDLE			0x0
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_PU_PLL_IP_RDY	0x1
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_RO_PRE_CNT_EXH	0x2
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_PU_VGI_PWRGOOD	0x3
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_RO_POST_CNT_EXH	0x4
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WR_PLL_RATIO		0x5
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_PU_PLL_CMP		0x6
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_PU_CLKACK		0x7
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_RST_ASSRT_CYCLES		0x8
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_STOP_CLK_CYCLES1		0x9
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_STOP_CLK_CYCLES2		0xa
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_RST_DEASSRT_CYCLES	0xb
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_PU_BRK_PNT		0xc
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_FUSE_ACCPT		0xd
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_PS_PWR_UP			0xf
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_4_HALTED		0x10
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_RESET_CNT3		0x11
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_PD_CLKACK		0x12
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_PD_OFF_IND		0x13
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_DVFS_PH4		0x14
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_DVFS_PLL_CMP		0x15
++#define BUTTRESS_PWR_STATE_PS_PWR_FSM_WAIT_DVFS_CLKACK		0x16
++
++#define BUTTRESS_REG_SECURITY_CTL	0x300
++#define BUTTRESS_REG_SKU		0x314
++#define BUTTRESS_REG_SECURITY_TOUCH	0x318
++#define BUTTRESS_REG_CAMERA_MASK	0x84
++
++#define BUTTRESS_SECURITY_CTL_FW_SECURE_MODE	BIT(16)
++#define BUTTRESS_SECURITY_CTL_FW_SETUP_MASK	GENMASK(4, 0)
++
++#define BUTTRESS_SECURITY_CTL_FW_SETUP_DONE		BIT(0)
++#define BUTTRESS_SECURITY_CTL_AUTH_DONE			BIT(1)
++#define BUTTRESS_SECURITY_CTL_AUTH_FAILED		BIT(3)
++
++#define BUTTRESS_REG_FW_SOURCE_BASE_LO	0x78
++#define BUTTRESS_REG_FW_SOURCE_BASE_HI	0x7C
++#define BUTTRESS_REG_FW_SOURCE_SIZE	0x80
++
++#define BUTTRESS_REG_ISR_STATUS		0x90
++#define BUTTRESS_REG_ISR_ENABLED_STATUS	0x94
++#define BUTTRESS_REG_ISR_ENABLE		0x98
++#define BUTTRESS_REG_ISR_CLEAR		0x9C
++
++#define BUTTRESS_ISR_IS_IRQ			BIT(0)
++#define BUTTRESS_ISR_PS_IRQ			BIT(1)
++#define BUTTRESS_ISR_IPC_EXEC_DONE_BY_CSE	BIT(2)
++#define BUTTRESS_ISR_IPC_EXEC_DONE_BY_ISH	BIT(3)
++#define BUTTRESS_ISR_IPC_FROM_CSE_IS_WAITING	BIT(4)
++#define BUTTRESS_ISR_IPC_FROM_ISH_IS_WAITING	BIT(5)
++#define BUTTRESS_ISR_CSE_CSR_SET		BIT(6)
++#define BUTTRESS_ISR_ISH_CSR_SET		BIT(7)
++#define BUTTRESS_ISR_SPURIOUS_CMP		BIT(8)
++#define BUTTRESS_ISR_WATCHDOG_EXPIRED		BIT(9)
++#define BUTTRESS_ISR_PUNIT_2_IUNIT_IRQ		BIT(10)
++#define BUTTRESS_ISR_SAI_VIOLATION		BIT(11)
++#define BUTTRESS_ISR_HW_ASSERTION		BIT(12)
++#define BUTTRESS_ISR_IS_CORRECTABLE_MEM_ERR	BIT(13)
++#define BUTTRESS_ISR_IS_FATAL_MEM_ERR		BIT(14)
++#define BUTTRESS_ISR_IS_NON_FATAL_MEM_ERR	BIT(15)
++#define BUTTRESS_ISR_PS_CORRECTABLE_MEM_ERR	BIT(16)
++#define BUTTRESS_ISR_PS_FATAL_MEM_ERR		BIT(17)
++#define BUTTRESS_ISR_PS_NON_FATAL_MEM_ERR	BIT(18)
++#define BUTTRESS_ISR_PS_FAST_THROTTLE		BIT(19)
++#define BUTTRESS_ISR_UFI_ERROR			BIT(20)
++
++#define BUTTRESS_REG_IU2CSEDB0	0x100
++
++#define BUTTRESS_IU2CSEDB0_BUSY		BIT(31)
++#define BUTTRESS_IU2CSEDB0_IPC_CLIENT_ID_VAL	2
++
++#define BUTTRESS_REG_IU2CSEDATA0	0x104
++
++#define BUTTRESS_IU2CSEDATA0_IPC_BOOT_LOAD		1
++#define BUTTRESS_IU2CSEDATA0_IPC_AUTH_RUN		2
++#define BUTTRESS_IU2CSEDATA0_IPC_AUTH_REPLACE		3
++#define BUTTRESS_IU2CSEDATA0_IPC_UPDATE_SECURE_TOUCH	16
++
++#define BUTTRESS_CSE2IUDATA0_IPC_BOOT_LOAD_DONE			BIT(0)
++#define BUTTRESS_CSE2IUDATA0_IPC_AUTH_RUN_DONE			BIT(1)
++#define BUTTRESS_CSE2IUDATA0_IPC_AUTH_REPLACE_DONE		BIT(2)
++#define BUTTRESS_CSE2IUDATA0_IPC_UPDATE_SECURE_TOUCH_DONE	BIT(4)
++
++#define BUTTRESS_REG_IU2CSECSR		0x108
++
++#define BUTTRESS_IU2CSECSR_IPC_PEER_COMP_ACTIONS_RST_PHASE1		BIT(0)
++#define BUTTRESS_IU2CSECSR_IPC_PEER_COMP_ACTIONS_RST_PHASE2		BIT(1)
++#define BUTTRESS_IU2CSECSR_IPC_PEER_QUERIED_IP_COMP_ACTIONS_RST_PHASE	BIT(2)
++#define BUTTRESS_IU2CSECSR_IPC_PEER_ASSERTED_REG_VALID_REQ		BIT(3)
++#define BUTTRESS_IU2CSECSR_IPC_PEER_ACKED_REG_VALID			BIT(4)
++#define BUTTRESS_IU2CSECSR_IPC_PEER_DEASSERTED_REG_VALID_REQ		BIT(5)
++
++#define BUTTRESS_REG_CSE2IUDB0		0x304
++#define BUTTRESS_REG_CSE2IUCSR		0x30C
++#define BUTTRESS_REG_CSE2IUDATA0	0x308
++
++/* 0x20 == NACK, 0xf == unknown command */
++#define BUTTRESS_CSE2IUDATA0_IPC_NACK      0xf20
++#define BUTTRESS_CSE2IUDATA0_IPC_NACK_MASK GENMASK(15, 0)
++
++#define BUTTRESS_REG_ISH2IUCSR		0x50
++#define BUTTRESS_REG_ISH2IUDB0		0x54
++#define BUTTRESS_REG_ISH2IUDATA0	0x58
++
++#define BUTTRESS_REG_IU2ISHDB0		0x10C
++#define BUTTRESS_REG_IU2ISHDATA0	0x110
++#define BUTTRESS_REG_IU2ISHDATA1	0x114
++#define BUTTRESS_REG_IU2ISHCSR		0x118
++
++#define BUTTRESS_REG_FABRIC_CMD		0x88
++
++#define BUTTRESS_FABRIC_CMD_START_TSC_SYNC	BIT(0)
++#define BUTTRESS_FABRIC_CMD_IS_DRAIN		BIT(4)
++
++#define BUTTRESS_REG_TSW_CTL		0x120
++#define BUTTRESS_TSW_CTL_SOFT_RESET	BIT(8)
++
++#define BUTTRESS_REG_TSC_LO	0x164
++#define BUTTRESS_REG_TSC_HI	0x168
++
++#define BUTTRESS_IRQS		(BUTTRESS_ISR_IPC_FROM_CSE_IS_WAITING | \
++				 BUTTRESS_ISR_IPC_EXEC_DONE_BY_CSE |    \
++				 BUTTRESS_ISR_IS_IRQ | BUTTRESS_ISR_PS_IRQ)
++
++#define BUTTRESS_EVENT		 (BUTTRESS_ISR_IPC_FROM_CSE_IS_WAITING | \
++				  BUTTRESS_ISR_IPC_FROM_ISH_IS_WAITING | \
++				  BUTTRESS_ISR_IPC_EXEC_DONE_BY_CSE |    \
++				  BUTTRESS_ISR_IPC_EXEC_DONE_BY_ISH |    \
++				  BUTTRESS_ISR_SAI_VIOLATION)
++#endif /* IPU6_PLATFORM_BUTTRESS_REGS_H */
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-platform-regs.h b/drivers/media/pci/intel/ipu6/ipu6-platform-regs.h
+new file mode 100644
+index 000000000..b883385ad
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6-platform-regs.h
+@@ -0,0 +1,179 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2018 - 2024 Intel Corporation */
++
++#ifndef IPU6_PLATFORM_REGS_H
++#define IPU6_PLATFORM_REGS_H
++
++#include <linux/bits.h>
++
++/*
++ * IPU6 uses uniform address within IPU6, therefore all subsystem registers
++ * locates in one single space starts from 0 but in different sctions with
++ * different addresses, the subsystem offsets are defined to 0 as the
++ * register definition will have the address offset to 0.
++ */
++#define IPU6_UNIFIED_OFFSET			0
++
++#define IPU6_ISYS_IOMMU0_OFFSET		0x2e0000
++#define IPU6_ISYS_IOMMU1_OFFSET		0x2e0500
++#define IPU6_ISYS_IOMMUI_OFFSET		0x2e0a00
++
++#define IPU6_PSYS_IOMMU0_OFFSET		0x1b0000
++#define IPU6_PSYS_IOMMU1_OFFSET		0x1b0700
++#define IPU6_PSYS_IOMMU1R_OFFSET	0x1b0e00
++#define IPU6_PSYS_IOMMUI_OFFSET		0x1b1500
++
++/* the offset from IOMMU base register */
++#define IPU6_MMU_L1_STREAM_ID_REG_OFFSET	0x0c
++#define IPU6_MMU_L2_STREAM_ID_REG_OFFSET	0x4c
++#define IPU6_PSYS_MMU1W_L2_STREAM_ID_REG_OFFSET	0x8c
++
++#define IPU6_MMU_INFO_OFFSET		0x8
++
++#define IPU6_ISYS_SPC_OFFSET		0x210000
++
++#define IPU6SE_PSYS_SPC_OFFSET		0x110000
++#define IPU6_PSYS_SPC_OFFSET		0x118000
++
++#define IPU6_ISYS_DMEM_OFFSET		0x200000
++#define IPU6_PSYS_DMEM_OFFSET		0x100000
++
++#define IPU6_REG_ISYS_UNISPART_IRQ_EDGE			0x27c000
++#define IPU6_REG_ISYS_UNISPART_IRQ_MASK			0x27c004
++#define IPU6_REG_ISYS_UNISPART_IRQ_STATUS		0x27c008
++#define IPU6_REG_ISYS_UNISPART_IRQ_CLEAR		0x27c00c
++#define IPU6_REG_ISYS_UNISPART_IRQ_ENABLE		0x27c010
++#define IPU6_REG_ISYS_UNISPART_IRQ_LEVEL_NOT_PULSE	0x27c014
++#define IPU6_REG_ISYS_UNISPART_SW_IRQ_REG		0x27c414
++#define IPU6_REG_ISYS_UNISPART_SW_IRQ_MUX_REG		0x27c418
++#define IPU6_ISYS_UNISPART_IRQ_CSI0			BIT(2)
++#define IPU6_ISYS_UNISPART_IRQ_CSI1			BIT(3)
++#define IPU6_ISYS_UNISPART_IRQ_SW			BIT(22)
++
++#define IPU6_REG_ISYS_ISL_TOP_IRQ_EDGE			0x2b0200
++#define IPU6_REG_ISYS_ISL_TOP_IRQ_MASK			0x2b0204
++#define IPU6_REG_ISYS_ISL_TOP_IRQ_STATUS		0x2b0208
++#define IPU6_REG_ISYS_ISL_TOP_IRQ_CLEAR			0x2b020c
++#define IPU6_REG_ISYS_ISL_TOP_IRQ_ENABLE		0x2b0210
++#define IPU6_REG_ISYS_ISL_TOP_IRQ_LEVEL_NOT_PULSE	0x2b0214
++
++#define IPU6_REG_ISYS_CMPR_TOP_IRQ_EDGE			0x2d2100
++#define IPU6_REG_ISYS_CMPR_TOP_IRQ_MASK			0x2d2104
++#define IPU6_REG_ISYS_CMPR_TOP_IRQ_STATUS		0x2d2108
++#define IPU6_REG_ISYS_CMPR_TOP_IRQ_CLEAR		0x2d210c
++#define IPU6_REG_ISYS_CMPR_TOP_IRQ_ENABLE		0x2d2110
++#define IPU6_REG_ISYS_CMPR_TOP_IRQ_LEVEL_NOT_PULSE	0x2d2114
++
++/* CDC Burst collector thresholds for isys - 3 FIFOs i = 0..2 */
++#define IPU6_REG_ISYS_CDC_THRESHOLD(i)		(0x27c400 + ((i) * 4))
++
++#define IPU6_CSI_IRQ_NUM_PER_PIPE			4
++#define IPU6SE_ISYS_CSI_PORT_NUM			4
++#define IPU6_ISYS_CSI_PORT_NUM				8
++
++#define IPU6_ISYS_CSI_PORT_IRQ(irq_num)		BIT(irq_num)
++
++/* PKG DIR OFFSET in IMR in secure mode */
++#define IPU6_PKG_DIR_IMR_OFFSET			0x40
++
++#define IPU6_ISYS_REG_SPC_STATUS_CTRL		0x0
++
++#define IPU6_ISYS_SPC_STATUS_START			BIT(1)
++#define IPU6_ISYS_SPC_STATUS_RUN			BIT(3)
++#define IPU6_ISYS_SPC_STATUS_READY			BIT(5)
++#define IPU6_ISYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE	BIT(12)
++#define IPU6_ISYS_SPC_STATUS_ICACHE_PREFETCH		BIT(13)
++
++#define IPU6_PSYS_REG_SPC_STATUS_CTRL			0x0
++#define IPU6_PSYS_REG_SPC_START_PC			0x4
++#define IPU6_PSYS_REG_SPC_ICACHE_BASE			0x10
++#define IPU6_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER	0x14
++
++#define IPU6_PSYS_SPC_STATUS_START			BIT(1)
++#define IPU6_PSYS_SPC_STATUS_RUN			BIT(3)
++#define IPU6_PSYS_SPC_STATUS_READY			BIT(5)
++#define IPU6_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE	BIT(12)
++#define IPU6_PSYS_SPC_STATUS_ICACHE_PREFETCH		BIT(13)
++
++#define IPU6_PSYS_REG_SPP0_STATUS_CTRL			0x20000
++
++#define IPU6_INFO_ENABLE_SNOOP			BIT(0)
++#define IPU6_INFO_DEC_FORCE_FLUSH		BIT(1)
++#define IPU6_INFO_DEC_PASS_THROUGH		BIT(2)
++#define IPU6_INFO_ZLW				BIT(3)
++#define IPU6_INFO_REQUEST_DESTINATION_IOSF	BIT(9)
++#define IPU6_INFO_IMR_BASE			BIT(10)
++#define IPU6_INFO_IMR_DESTINED			BIT(11)
++
++#define IPU6_INFO_REQUEST_DESTINATION_PRIMARY IPU6_INFO_REQUEST_DESTINATION_IOSF
++
++/*
++ * s2m_pixel_soc_pixel_remapping is dedicated for the enabling of the
++ * pixel s2m remp ability.Remap here  means that s2m rearange the order
++ * of the pixels in each 4 pixels group.
++ * For examle, mirroring remping means that if input's 4 first pixels
++ * are 1 2 3 4 then in output we should see 4 3 2 1 in this 4 first pixels.
++ * 0xE4 is from s2m MAS document. It means no remapping.
++ */
++#define S2M_PIXEL_SOC_PIXEL_REMAPPING_FLAG_NO_REMAPPING 0xe4
++/*
++ * csi_be_soc_pixel_remapping is for the enabling of the pixel remapping.
++ * This remapping is exactly like the stream2mmio remapping.
++ */
++#define CSI_BE_SOC_PIXEL_REMAPPING_FLAG_NO_REMAPPING    0xe4
++
++#define IPU6_REG_DMA_TOP_AB_GROUP1_BASE_ADDR		0x1ae000
++#define IPU6_REG_DMA_TOP_AB_GROUP2_BASE_ADDR		0x1af000
++#define IPU6_REG_DMA_TOP_AB_RING_MIN_OFFSET(n)		(0x4 + (n) * 0xc)
++#define IPU6_REG_DMA_TOP_AB_RING_MAX_OFFSET(n)		(0x8 + (n) * 0xc)
++#define IPU6_REG_DMA_TOP_AB_RING_ACCESS_OFFSET(n)	(0xc + (n) * 0xc)
++
++enum ipu6_device_ab_group1_target_id {
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R0_SPC_DMEM,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R1_SPC_DMEM,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R2_SPC_DMEM,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R3_SPC_STATUS_REG,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R4_SPC_MASTER_BASE_ADDR,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R5_SPC_PC_STALL,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R6_SPC_EQ,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R7_SPC_RESERVED,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R8_SPC_RESERVED,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R9_SPP0,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R10_SPP1,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R11_CENTRAL_R1,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R12_IRQ,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R13_CENTRAL_R2,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R14_DMA,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R15_DMA,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R16_GP,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R17_ZLW_INSERTER,
++	IPU6_DEVICE_AB_GROUP1_TARGET_ID_R18_AB,
++};
++
++enum nci_ab_access_mode {
++	NCI_AB_ACCESS_MODE_RW,	/* read & write */
++	NCI_AB_ACCESS_MODE_RO,	/* read only */
++	NCI_AB_ACCESS_MODE_WO,	/* write only */
++	NCI_AB_ACCESS_MODE_NA,	/* No access at all */
++};
++
++/* IRQ-related registers in PSYS */
++#define IPU6_REG_PSYS_GPDEV_IRQ_EDGE		0x1aa200
++#define IPU6_REG_PSYS_GPDEV_IRQ_MASK		0x1aa204
++#define IPU6_REG_PSYS_GPDEV_IRQ_STATUS		0x1aa208
++#define IPU6_REG_PSYS_GPDEV_IRQ_CLEAR		0x1aa20c
++#define IPU6_REG_PSYS_GPDEV_IRQ_ENABLE		0x1aa210
++#define IPU6_REG_PSYS_GPDEV_IRQ_LEVEL_NOT_PULSE	0x1aa214
++/* There are 8 FW interrupts, n = 0..7 */
++#define IPU6_PSYS_GPDEV_FWIRQ0			5
++#define IPU6_PSYS_GPDEV_FWIRQ1			6
++#define IPU6_PSYS_GPDEV_FWIRQ2			7
++#define IPU6_PSYS_GPDEV_FWIRQ3			8
++#define IPU6_PSYS_GPDEV_FWIRQ4			9
++#define IPU6_PSYS_GPDEV_FWIRQ5			10
++#define IPU6_PSYS_GPDEV_FWIRQ6			11
++#define IPU6_PSYS_GPDEV_FWIRQ7			12
++#define IPU6_PSYS_GPDEV_IRQ_FWIRQ(n)		BIT(n)
++#define IPU6_REG_PSYS_GPDEV_FWIRQ(n)		(4 * (n) + 0x1aa100)
++
++#endif /* IPU6_PLATFORM_REGS_H */
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.h b/drivers/media/pci/intel/ipu6/ipu6.h
+new file mode 100644
+index 000000000..92e3c3414
+--- /dev/null
++++ b/drivers/media/pci/intel/ipu6/ipu6.h
+@@ -0,0 +1,342 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Copyright (C) 2013 - 2024 Intel Corporation */
++
++#ifndef IPU6_H
++#define IPU6_H
++
++#include <linux/list.h>
++#include <linux/pci.h>
++#include <linux/types.h>
++
++#include "ipu6-buttress.h"
++
++struct firmware;
++struct pci_dev;
++struct ipu6_bus_device;
++
++#define IPU6_NAME			"intel-ipu6"
++#define IPU6_MEDIA_DEV_MODEL_NAME	"ipu6"
++
++#define IPU6SE_FIRMWARE_NAME		"intel/ipu/ipu6se_fw.bin"
++#define IPU6EP_FIRMWARE_NAME		"intel/ipu/ipu6ep_fw.bin"
++#define IPU6_FIRMWARE_NAME		"intel/ipu/ipu6_fw.bin"
++#define IPU6EPMTL_FIRMWARE_NAME		"intel/ipu/ipu6epmtl_fw.bin"
++#define IPU6EPADLN_FIRMWARE_NAME	"intel/ipu/ipu6epadln_fw.bin"
++
++enum ipu6_version {
++	IPU6_VER_INVALID = 0,
++	IPU6_VER_6 = 1,
++	IPU6_VER_6SE = 3,
++	IPU6_VER_6EP = 5,
++	IPU6_VER_6EP_MTL = 6,
++};
++
++/*
++ * IPU6 - TGL
++ * IPU6SE - JSL
++ * IPU6EP - ADL/RPL
++ * IPU6EP_MTL - MTL
++ */
++static inline bool is_ipu6se(u8 hw_ver)
++{
++	return hw_ver == IPU6_VER_6SE;
++}
++
++static inline bool is_ipu6ep(u8 hw_ver)
++{
++	return hw_ver == IPU6_VER_6EP;
++}
++
++static inline bool is_ipu6ep_mtl(u8 hw_ver)
++{
++	return hw_ver == IPU6_VER_6EP_MTL;
++}
++
++static inline bool is_ipu6_tgl(u8 hw_ver)
++{
++	return hw_ver == IPU6_VER_6;
++}
++
++/*
++ * ISYS DMA can overshoot. For higher resolutions over allocation is one line
++ * but it must be at minimum 1024 bytes. Value could be different in
++ * different versions / generations thus provide it via platform data.
++ */
++#define IPU6_ISYS_OVERALLOC_MIN		1024
++
++/* Physical pages in GDA is 128, page size is 2K for IPU6, 1K for others */
++#define IPU6_DEVICE_GDA_NR_PAGES		128
++
++/* Virtualization factor to calculate the available virtual pages */
++#define IPU6_DEVICE_GDA_VIRT_FACTOR	32
++
++struct ipu6_device {
++	struct pci_dev *pdev;
++	struct list_head devices;
++	struct ipu6_bus_device *isys;
++	struct ipu6_bus_device *psys;
++	struct ipu6_buttress buttress;
++
++	const struct firmware *cpd_fw;
++	const char *cpd_fw_name;
++	u32 cpd_metadata_cmpnt_size;
++
++	void __iomem *base;
++	bool need_ipc_reset;
++	bool secure_mode;
++	u8 hw_ver;
++	bool bus_ready_to_probe;
++};
++
++#define IPU6_ISYS_NAME "isys"
++#define IPU6_PSYS_NAME "psys"
++
++#define IPU6_MMU_MAX_DEVICES		4
++#define IPU6_MMU_ADDR_BITS		32
++/* The firmware is accessible within the first 2 GiB only in non-secure mode. */
++#define IPU6_MMU_ADDR_BITS_NON_SECURE	31
++
++#define IPU6_MMU_MAX_TLB_L1_STREAMS	32
++#define IPU6_MMU_MAX_TLB_L2_STREAMS	32
++#define IPU6_MAX_LI_BLOCK_ADDR		128
++#define IPU6_MAX_L2_BLOCK_ADDR		64
++
++#define IPU6SE_ISYS_NUM_STREAMS          IPU6SE_NONSECURE_STREAM_ID_MAX
++#define IPU6_ISYS_NUM_STREAMS            IPU6_NONSECURE_STREAM_ID_MAX
++
++/*
++ * To maximize the IOSF utlization, IPU6 need to send requests in bursts.
++ * At the DMA interface with the buttress, there are CDC FIFOs with burst
++ * collection capability. CDC FIFO burst collectors have a configurable
++ * threshold and is configured based on the outcome of performance measurements.
++ *
++ * isys has 3 ports with IOSF interface for VC0, VC1 and VC2
++ * psys has 4 ports with IOSF interface for VC0, VC1w, VC1r and VC2
++ *
++ * Threshold values are pre-defined and are arrived at after performance
++ * evaluations on a type of IPU6
++ */
++#define IPU6_MAX_VC_IOSF_PORTS		4
++
++/*
++ * IPU6 must configure correct arbitration mechanism related to the IOSF VC
++ * requests. There are two options per VC0 and VC1 - > 0 means rearbitrate on
++ * stall and 1 means stall until the request is completed.
++ */
++#define IPU6_BTRS_ARB_MODE_TYPE_REARB	0
++#define IPU6_BTRS_ARB_MODE_TYPE_STALL	1
++
++/* Currently chosen arbitration mechanism for VC0 */
++#define IPU6_BTRS_ARB_STALL_MODE_VC0	\
++			IPU6_BTRS_ARB_MODE_TYPE_REARB
++
++/* Currently chosen arbitration mechanism for VC1 */
++#define IPU6_BTRS_ARB_STALL_MODE_VC1	\
++			IPU6_BTRS_ARB_MODE_TYPE_REARB
++
++/*
++ * MMU Invalidation HW bug workaround by ZLW mechanism
++ *
++ * Old IPU6 MMUV2 has a bug in the invalidation mechanism which might result in
++ * wrong translation or replication of the translation. This will cause data
++ * corruption. So we cannot directly use the MMU V2 invalidation registers
++ * to invalidate the MMU. Instead, whenever an invalidate is called, we need to
++ * clear the TLB by evicting all the valid translations by filling it with trash
++ * buffer (which is guaranteed not to be used by any other processes). ZLW is
++ * used to fill the L1 and L2 caches with the trash buffer translations. ZLW
++ * or Zero length write, is pre-fetch mechanism to pre-fetch the pages in
++ * advance to the L1 and L2 caches without triggering any memory operations.
++ *
++ * In MMU V2, L1 -> 16 streams and 64 blocks, maximum 16 blocks per stream
++ * One L1 block has 16 entries, hence points to 16 * 4K pages
++ * L2 -> 16 streams and 32 blocks. 2 blocks per streams
++ * One L2 block maps to 1024 L1 entries, hence points to 4MB address range
++ * 2 blocks per L2 stream means, 1 stream points to 8MB range
++ *
++ * As we need to clear the caches and 8MB being the biggest cache size, we need
++ * to have trash buffer which points to 8MB address range. As these trash
++ * buffers are not used for any memory transactions, we need only the least
++ * amount of physical memory. So we reserve 8MB IOVA address range but only
++ * one page is reserved from physical memory. Each of this 8MB IOVA address
++ * range is then mapped to the same physical memory page.
++ */
++/* One L2 entry maps 1024 L1 entries and one L1 entry per page */
++#define IPU6_MMUV2_L2_RANGE		(1024 * PAGE_SIZE)
++/* Max L2 blocks per stream */
++#define IPU6_MMUV2_MAX_L2_BLOCKS	2
++/* Max L1 blocks per stream */
++#define IPU6_MMUV2_MAX_L1_BLOCKS	16
++#define IPU6_MMUV2_TRASH_RANGE	(IPU6_MMUV2_L2_RANGE * IPU6_MMUV2_MAX_L2_BLOCKS)
++/* Entries per L1 block */
++#define MMUV2_ENTRIES_PER_L1_BLOCK	16
++#define MMUV2_TRASH_L1_BLOCK_OFFSET	(MMUV2_ENTRIES_PER_L1_BLOCK * PAGE_SIZE)
++#define MMUV2_TRASH_L2_BLOCK_OFFSET	IPU6_MMUV2_L2_RANGE
++
++/*
++ * In some of the IPU6 MMUs, there is provision to configure L1 and L2 page
++ * table caches. Both these L1 and L2 caches are divided into multiple sections
++ * called streams. There is maximum 16 streams for both caches. Each of these
++ * sections are subdivided into multiple blocks. When nr_l1streams = 0 and
++ * nr_l2streams = 0, means the MMU is of type MMU_V1 and do not support
++ * L1/L2 page table caches.
++ *
++ * L1 stream per block sizes are configurable and varies per usecase.
++ * L2 has constant block sizes - 2 blocks per stream.
++ *
++ * MMU1 support pre-fetching of the pages to have less cache lookup misses. To
++ * enable the pre-fetching, MMU1 AT (Address Translator) device registers
++ * need to be configured.
++ *
++ * There are four types of memory accesses which requires ZLW configuration.
++ * ZLW(Zero Length Write) is a mechanism to enable VT-d pre-fetching on IOMMU.
++ *
++ * 1. Sequential Access or 1D mode
++ *	Set ZLW_EN -> 1
++ *	set ZLW_PAGE_CROSS_1D -> 1
++ *	Set ZLW_N to "N" pages so that ZLW will be inserte N pages ahead where
++ *		  N is pre-defined and hardcoded in the platform data
++ *	Set ZLW_2D -> 0
++ *
++ * 2. ZLW 2D mode
++ *	Set ZLW_EN -> 1
++ *	set ZLW_PAGE_CROSS_1D -> 1,
++ *	Set ZLW_N -> 0
++ *	Set ZLW_2D -> 1
++ *
++ * 3. ZLW Enable (no 1D or 2D mode)
++ *	Set ZLW_EN -> 1
++ *	set ZLW_PAGE_CROSS_1D -> 0,
++ *	Set ZLW_N -> 0
++ *	Set ZLW_2D -> 0
++ *
++ * 4. ZLW disable
++ *	Set ZLW_EN -> 0
++ *	set ZLW_PAGE_CROSS_1D -> 0,
++ *	Set ZLW_N -> 0
++ *	Set ZLW_2D -> 0
++ *
++ * To configure the ZLW for the above memory access, four registers are
++ * available. Hence to track these four settings, we have the following entries
++ * in the struct ipu6_mmu_hw. Each of these entries are per stream and
++ * available only for the L1 streams.
++ *
++ * a. l1_zlw_en -> To track zlw enabled per stream (ZLW_EN)
++ * b. l1_zlw_1d_mode -> Track 1D mode per stream. ZLW inserted at page boundary
++ * c. l1_ins_zlw_ahead_pages -> to track how advance the ZLW need to be inserted
++ *			Insert ZLW request N pages ahead address.
++ * d. l1_zlw_2d_mode -> To track 2D mode per stream (ZLW_2D)
++ *
++ *
++ * Currently L1/L2 streams, blocks, AT ZLW configurations etc. are pre-defined
++ * as per the usecase specific calculations. Any change to this pre-defined
++ * table has to happen in sync with IPU6 FW.
++ */
++struct ipu6_mmu_hw {
++	union {
++		unsigned long offset;
++		void __iomem *base;
++	};
++	u32 info_bits;
++	u8 nr_l1streams;
++	/*
++	 * L1 has variable blocks per stream - total of 64 blocks and maximum of
++	 * 16 blocks per stream. Configurable by using the block start address
++	 * per stream. Block start address is calculated from the block size
++	 */
++	u8 l1_block_sz[IPU6_MMU_MAX_TLB_L1_STREAMS];
++	/* Is ZLW is enabled in each stream */
++	bool l1_zlw_en[IPU6_MMU_MAX_TLB_L1_STREAMS];
++	bool l1_zlw_1d_mode[IPU6_MMU_MAX_TLB_L1_STREAMS];
++	u8 l1_ins_zlw_ahead_pages[IPU6_MMU_MAX_TLB_L1_STREAMS];
++	bool l1_zlw_2d_mode[IPU6_MMU_MAX_TLB_L1_STREAMS];
++
++	u32 l1_stream_id_reg_offset;
++	u32 l2_stream_id_reg_offset;
++
++	u8 nr_l2streams;
++	/*
++	 * L2 has fixed 2 blocks per stream. Block address is calculated
++	 * from the block size
++	 */
++	u8 l2_block_sz[IPU6_MMU_MAX_TLB_L2_STREAMS];
++	/* flag to track if WA is needed for successive invalidate HW bug */
++	bool insert_read_before_invalidate;
++};
++
++struct ipu6_mmu_pdata {
++	u32 nr_mmus;
++	struct ipu6_mmu_hw mmu_hw[IPU6_MMU_MAX_DEVICES];
++	int mmid;
++};
++
++struct ipu6_isys_csi2_pdata {
++	void __iomem *base;
++};
++
++struct ipu6_isys_internal_csi2_pdata {
++	u32 nports;
++	u32 irq_mask;
++	u32 ctrl0_irq_edge;
++	u32 ctrl0_irq_clear;
++	u32 ctrl0_irq_mask;
++	u32 ctrl0_irq_enable;
++	u32 ctrl0_irq_lnp;
++	u32 ctrl0_irq_status;
++	u32 fw_access_port_ofs;
++};
++
++struct ipu6_isys_internal_tpg_pdata {
++	u32 ntpgs;
++	u32 *offsets;
++	u32 *sels;
++};
++
++struct ipu6_hw_variants {
++	unsigned long offset;
++	u32 nr_mmus;
++	struct ipu6_mmu_hw mmu_hw[IPU6_MMU_MAX_DEVICES];
++	u8 cdc_fifos;
++	u8 cdc_fifo_threshold[IPU6_MAX_VC_IOSF_PORTS];
++	u32 dmem_offset;
++	u32 spc_offset;
++};
++
++struct ipu6_isys_internal_pdata {
++	struct ipu6_isys_internal_csi2_pdata csi2;
++	struct ipu6_hw_variants hw_variant;
++	u32 num_parallel_streams;
++	u32 isys_dma_overshoot;
++	u32 sram_gran_shift;
++	u32 sram_gran_size;
++	u32 max_sram_size;
++	u32 max_streams;
++	u32 max_send_queues;
++	u32 max_sram_blocks;
++	u32 max_devq_size;
++	u32 sensor_type_start;
++	u32 sensor_type_end;
++	u32 ltr;
++	u32 memopen_threshold;
++	bool enhanced_iwake;
++};
++
++struct ipu6_isys_pdata {
++	void __iomem *base;
++	const struct ipu6_isys_internal_pdata *ipdata;
++};
++
++struct ipu6_psys_internal_pdata {
++	struct ipu6_hw_variants hw_variant;
++};
++
++struct ipu6_psys_pdata {
++	void __iomem *base;
++	const struct ipu6_psys_internal_pdata *ipdata;
++};
++
++int ipu6_fw_authenticate(void *data, u64 val);
++void ipu6_configure_spc(struct ipu6_device *isp,
++			const struct ipu6_hw_variants *hw_variant,
++			int pkg_dir_idx, void __iomem *base, u64 *pkg_dir,
++			dma_addr_t pkg_dir_dma_addr);
++#endif /* IPU6_H */
+-- 
+2.43.0
+

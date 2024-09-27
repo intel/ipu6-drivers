@@ -5,7 +5,7 @@ ifneq ($(EXTERNAL_BUILD), 1)
 srcpath := $(srctree)
 endif
 
-ccflags-y += -DIPU_TPG_FRAME_SYNC -DIPU_PSYS_GPC \
+ccflags-y += -DIPU_TPG_FRAME_SYNC \
 		-DIPU_ISYS_GPC
 
 intel-ipu6-objs				+= ../ipu.o \
@@ -38,25 +38,9 @@ intel-ipu6-isys-objs			+= ../ipu-isys.o \
 
 obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6-isys.o
 
-intel-ipu6-psys-objs			+= ../ipu-psys.o \
-					   ipu6-psys.o \
-					   ipu-resources.o \
-					   ipu6-psys-gpc.o \
-					   ipu6-l-scheduler.o \
-					   ipu6-ppg.o
-
-intel-ipu6-psys-objs			+= ipu-fw-resources.o \
-					   ipu6-fw-resources.o \
-					   ipu6se-fw-resources.o \
-					   ipu6ep-fw-resources.o \
-					   ../ipu-fw-psys.o
-
-ifeq ($(CONFIG_COMPAT),y)
-intel-ipu6-psys-objs			+= ../ipu-psys-compat32.o
-endif
-
-obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6-psys.o
+obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= psys/
 
 ccflags-y += -I$(srcpath)/$(src)/../../../../../include/
+ccflags-y += -I$(srcpath)/$(src)/psys/
 ccflags-y += -I$(srcpath)/$(src)/../
 ccflags-y += -I$(srcpath)/$(src)/
