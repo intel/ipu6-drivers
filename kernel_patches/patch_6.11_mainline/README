@@ -17,15 +17,17 @@ build kernel driver with community kernel version 6.11
        git am 0002-mfd-add-ARL-H-PCI-driver-ID.patch
 
 
-3. copy psys driver
-   cp drivers/media/pci/intel/ipu6/psys/ drivers/media/pci/intel/ipu6 -rf
-   cp include/uapi/linux/ipu-psys.h include/uapi/linux/
+3. copy psys driver to kernel source
+   cd ipu6-drivers
+   cp drivers/media/pci/intel/ipu6/psys/ <kernel source dir>/drivers/media/pci/intel/ipu6 -rf
+   cp include/uapi/linux/ipu-psys.h <kernel source dir>/include/uapi/linux/
 
 4. add psys driver to makefile
+   cd <kernel source dir>
    echo "obj-\$(CONFIG_VIDEO_INTEL_IPU6)  += psys/" >> drivers/media/pci/intel/ipu6/Makefile
 
 5. build kernel driver
-   copy kernel config to kernel source tree
+   copy kernel config to kernel source dir
 
    KERNEL_BUILD_LABEL="-for-upstream"
    make kernelversion
