@@ -24,4 +24,5 @@ There are 4 repositories that provide the complete setup:
 	CONFIG_VIDEO_INTEL_IPU6=m
 	CONFIG_VIDEO_IMX390=m
 	CONFIG_VIDEO_ISX031=m
+ 	CONFIG_VIDEO_TI960=m
 	```
