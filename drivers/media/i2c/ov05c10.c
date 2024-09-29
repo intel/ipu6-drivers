@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2024 Intel Corporation.
 
-#include <linux/clk.h>
 #include <asm/unaligned.h>
 #include <linux/acpi.h>
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
@@ -46,7 +46,7 @@
 #define OV05C10_DGTL_GAIN_DEFAULT	0x40
 
 #define OV05C10_VTS_MAX			0xffff
-#define OV05C10_PPL			3234
+#define OV05C10_PPL			3236
 #define OV05C10_DEFAULT_VTS		1860
 #define PIXEL_RATE			192000000ULL
 #define OV05C10_NATIVE_WIDTH		2888
@@ -300,17 +300,16 @@ struct ov05c10 {
 	struct clk *img_clk;
 	struct regulator *avdd;
 	struct gpio_desc *reset;
-	struct gpio_desc *pwdn_gpio;
 };
 
-static int ov05c10_test_pattern(struct ov05c10 *ov05c10, u32 pattern_menu)
+static int ov05c10_test_pattern(struct ov05c10 *ov05c10, u32 pattern)
 {
 	int ret;
 
 	ret = cci_write(ov05c10->regmap, REG_PAGE_FLAG, 0x04, NULL);
 	if (ret)
 		return ret;
-	if (pattern_menu)
+	if (pattern)
 		return cci_multi_reg_write(ov05c10->regmap,
 					   ov05c10_test_enable,
 					   ARRAY_SIZE(ov05c10_test_enable),
@@ -330,6 +329,7 @@ static int ov05c10_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct v4l2_subdev_state *state;
 	const struct v4l2_mbus_framefmt *format;
 	s64 exposure_max;
+	u64 vts;
 	int ret;
 
 	state = v4l2_subdev_get_locked_active_state(&ov05c10->sd);
@@ -344,6 +344,16 @@ static int ov05c10_set_ctrl(struct v4l2_ctrl *ctrl)
 			ov05c10->exposure->minimum, exposure_max,
 			ov05c10->exposure->step,
 			ov05c10->cur_mode->height - OV05C10_EXPOSURE_MARGIN);
+
+		/*
+		 * REG_TIMING_VTS is read-only and increased by writing to
+		 * REG_DUMMY_LINE in ov05c10. The calculation formula is
+		 * required VTS = dummyline + current VTS.
+		 * Here get the current VTS and calculate the required dummyline.
+		 */
+		cci_read(ov05c10->regmap, REG_TIMING_VTS, &vts, NULL);
+		ctrl->val += format->height;
+		ctrl->val = (ctrl->val > vts) ? ctrl->val - vts : 0;
 	}
 	/* V4L2 controls values will be applied only when power is already up */
 	if (!pm_runtime_get_if_in_use(&client->dev))
@@ -369,8 +379,6 @@ static int ov05c10_set_ctrl(struct v4l2_ctrl *ctrl)
 				ctrl->val, NULL);
 		break;
 	case V4L2_CID_VBLANK:
-		ctrl->val = ctrl->val -
-			(OV05C10_DEFAULT_VTS - ov05c10->cur_mode->height);
 		ret = cci_write(ov05c10->regmap, REG_DUMMY_LINE,
 				ctrl->val, NULL);
 		break;
@@ -936,10 +944,9 @@ static int ov05c10_probe(struct i2c_client *client)
 	 * Device is already turned on by i2c-core with ACPI domain PM.
 	 * Enable runtime PM and turn off the device.
 	 */
-	pm_runtime_set_active(&client->dev);
+	if (full_power)
+		pm_runtime_set_active(&client->dev);
 	pm_runtime_enable(&client->dev);
-	pm_runtime_set_autosuspend_delay(&client->dev, 1000);
-	pm_runtime_use_autosuspend(&client->dev);
 	pm_runtime_idle(&client->dev);
 	ret = v4l2_async_register_subdev_sensor(&ov05c10->sd);
 	if (ret < 0) {

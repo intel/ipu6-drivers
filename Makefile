@@ -24,6 +24,7 @@ KV_IVSC := 6.6.0
 KV_IPU_BRIDGE := 6.6.0
 KV_OV2740 := 6.8.0
 KV_OV05C10 := 6.8.0
+KV_IPU6_ISYS := 6.10.0
 
 KERNEL_SRC ?= /lib/modules/$(KERNELRELEASE)/build
 MODSRC := $(shell pwd)
@@ -74,7 +75,11 @@ export CONFIG_IPU_ISYS_BRIDGE = y
 export CONFIG_IPU_BRIDGE = n
 endif
 export EXTERNAL_BUILD = 1
-obj-y += drivers/media/pci/intel/
+ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_IPU6_ISYS)),true)
+obj-y += drivers/media/pci/intel/ipu6/
+else
+obj-y += drivers/media/pci/intel/ipu6/psys/
+endif
 
 export CONFIG_VIDEO_HM11B1 = m
 export CONFIG_VIDEO_OV01A1S = m

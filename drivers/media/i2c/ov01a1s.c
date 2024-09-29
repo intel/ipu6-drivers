@@ -18,8 +18,16 @@
 #include "power_ctrl_logic.h"
 #endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 #include <linux/vsc.h>
+
+static const struct acpi_device_id cvfd_ids[] = {
+	{ "INTC1059", 0 },
+	{ "INTC1095", 0 },
+	{ "INTC100A", 0 },
+	{ "INTC10CF", 0 },
+	{ }
+};
 #endif
 
 #define OV01A1S_LINK_FREQ_400MHZ	400000000ULL
@@ -304,7 +312,7 @@ struct ov01a1s {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	struct v4l2_ctrl *privacy_status;
 
 	/* VSC settings */
@@ -338,7 +346,7 @@ struct ov01a1s {
 		OV01A1S_USE_INT3472 = 1,
 #endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 		OV01A1S_USE_INTEL_VSC = 2,
 #endif
 	} power_type;
@@ -352,7 +360,8 @@ static inline struct ov01a1s *to_ov01a1s(struct v4l2_subdev *subdev)
 	return container_of(subdev, struct ov01a1s, sd);
 }
 
-static int ov01a1s_read_reg(struct ov01a1s *ov01a1s, u16 reg, u16 len, u32 *val)
+static int ov01a1s_read_reg(struct ov01a1s *ov01a1s, u16 reg, u16 len,
+			    u32 *val)
 {
 	struct i2c_client *client = ov01a1s->client;
 	struct i2c_msg msgs[2];
@@ -430,23 +439,27 @@ static int ov01a1s_update_digital_gain(struct ov01a1s *ov01a1s, u32 d_gain)
 
 	ret = ov01a1s_write_reg(ov01a1s, OV01A1S_REG_DIGILAL_GAIN_B, 3, real);
 	if (ret) {
-		dev_err(&client->dev, "failed to set OV01A1S_REG_DIGITAL_GAIN_B");
+		dev_err(&client->dev,
+			"failed to set OV01A1S_REG_DIGITAL_GAIN_B");
 		return ret;
 	}
 	ret = ov01a1s_write_reg(ov01a1s, OV01A1S_REG_DIGITAL_GAIN_GB, 3, real);
 	if (ret) {
-		dev_err(&client->dev, "failed to set OV01A1S_REG_DIGITAL_GAIN_GB");
+		dev_err(&client->dev,
+			"failed to set OV01A1S_REG_DIGITAL_GAIN_GB");
 		return ret;
 	}
 	ret = ov01a1s_write_reg(ov01a1s, OV01A1S_REG_DIGITAL_GAIN_GR, 3, real);
 	if (ret) {
-		dev_err(&client->dev, "failed to set OV01A1S_REG_DIGITAL_GAIN_GR");
+		dev_err(&client->dev,
+			"failed to set OV01A1S_REG_DIGITAL_GAIN_GR");
 		return ret;
 	}
 
 	ret = ov01a1s_write_reg(ov01a1s, OV01A1S_REG_DIGITAL_GAIN_R, 3, real);
 	if (ret) {
-		dev_err(&client->dev, "failed to set OV01A1S_REG_DIGITAL_GAIN_R");
+		dev_err(&client->dev,
+			"failed to set OV01A1S_REG_DIGITAL_GAIN_R");
 		return ret;
 	}
 	return ret;
@@ -509,7 +522,7 @@ static int ov01a1s_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	case V4L2_CID_PRIVACY:
 		dev_dbg(&client->dev, "set privacy to %d", ctrl->val);
 		break;
@@ -540,7 +553,7 @@ static int ov01a1s_init_controls(struct ov01a1s *ov01a1s)
 
 	ctrl_hdlr = &ov01a1s->ctrl_handler;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 9);
 #else
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 8);
@@ -578,11 +591,12 @@ static int ov01a1s_init_controls(struct ov01a1s *ov01a1s)
 	if (ov01a1s->hblank)
 		ov01a1s->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 	ov01a1s->privacy_status = v4l2_ctrl_new_std(ctrl_hdlr,
 						    &ov01a1s_ctrl_ops,
 						    V4L2_CID_PRIVACY,
-						    0, 1, 1, 0);
+						    0, 1, 1,
+						    !(ov01a1s->status.status));
 #endif
 
 	v4l2_ctrl_new_std(ctrl_hdlr, &ov01a1s_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
@@ -620,9 +634,9 @@ static void ov01a1s_update_pad_format(const struct ov01a1s_mode *mode,
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
+IS_ENABLED(CONFIG_INTEL_VSC)
 static void ov01a1s_vsc_privacy_callback(void *handle,
-				       enum vsc_privacy_status status)
+					 enum vsc_privacy_status status)
 {
 	struct ov01a1s *ov01a1s = handle;
 
@@ -716,6 +730,14 @@ static int ov01a1s_power_off(struct device *dev)
 	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
 	int ret = 0;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+IS_ENABLED(CONFIG_INTEL_VSC)
+	if (ov01a1s->power_type == OV01A1S_USE_INTEL_VSC) {
+		ret = vsc_release_camera_sensor(&ov01a1s->status);
+		if (ret && ret != -EAGAIN)
+			dev_err(dev, "Release VSC failed");
+	}
+#endif
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	if (ov01a1s->power_type == OV01A1S_USE_INT3472) {
 		gpiod_set_value_cansleep(ov01a1s->reset_gpio, 1);
@@ -729,14 +751,6 @@ static int ov01a1s_power_off(struct device *dev)
 	if (ov01a1s->power_type == OV01A1S_USE_INT3472)
 		ret = power_ctrl_logic_set_power(0);
 #endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
-	if (ov01a1s->power_type == OV01A1S_USE_INTEL_VSC) {
-		ret = vsc_release_camera_sensor(&ov01a1s->status);
-		if (ret && ret != -EAGAIN)
-			dev_err(dev, "Release VSC failed");
-	}
-#endif
 
 	return ret;
 }
@@ -747,6 +761,28 @@ static int ov01a1s_power_on(struct device *dev)
 	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
 	int ret = 0;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+IS_ENABLED(CONFIG_INTEL_VSC)
+	if (ov01a1s->power_type == OV01A1S_USE_INTEL_VSC) {
+		ov01a1s->conf.lane_num = OV01A1S_DATA_LANES;
+		/* frequency unit 100k */
+		ov01a1s->conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
+		ret = vsc_acquire_camera_sensor(&ov01a1s->conf,
+						ov01a1s_vsc_privacy_callback,
+						ov01a1s, &ov01a1s->status);
+		if (ret == -EAGAIN)
+			return -EPROBE_DEFER;
+		if (ret) {
+			dev_err(dev, "Acquire VSC failed");
+			return ret;
+		}
+		if (ov01a1s->privacy_status)
+			__v4l2_ctrl_s_ctrl(ov01a1s->privacy_status,
+					   !(ov01a1s->status.status));
+
+		return ret;
+	}
+#endif
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
 	if (ov01a1s->power_type == OV01A1S_USE_INT3472) {
 		ret = clk_prepare_enable(ov01a1s->clk);
@@ -763,20 +799,6 @@ static int ov01a1s_power_on(struct device *dev)
 #elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
 	if (ov01a1s->power_type == OV01A1S_USE_INT3472)
 		ret = power_ctrl_logic_set_power(1);
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
-	if (ov01a1s->power_type == OV01A1S_USE_INTEL_VSC) {
-		ret = vsc_acquire_camera_sensor(&ov01a1s->conf,
-						ov01a1s_vsc_privacy_callback,
-						ov01a1s, &ov01a1s->status);
-		if (ret && ret != -EAGAIN) {
-			dev_err(dev, "Acquire VSC failed");
-			return ret;
-		}
-		__v4l2_ctrl_s_ctrl(ov01a1s->privacy_status,
-				   !(ov01a1s->status.status));
-	}
 #endif
 
 	return ret;
@@ -1082,77 +1104,70 @@ static void ov01a1s_remove(struct i2c_client *client)
 #endif
 }
 
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-static int ov01a1s_parse_gpio(struct ov01a1s *ov01a1s)
+/* This function tries to get power control resources */
+static int ov01a1s_get_pm_resources(struct device *dev)
 {
-	struct device *dev = &ov01a1s->client->dev;
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct ov01a1s *ov01a1s = to_ov01a1s(sd);
+	int ret;
 
-	ov01a1s->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
-	if (IS_ERR(ov01a1s->reset_gpio)) {
-		dev_warn(dev, "error while getting reset gpio: %ld\n",
-			 PTR_ERR(ov01a1s->reset_gpio));
-		ov01a1s->reset_gpio = NULL;
-		return -EPROBE_DEFER;
-	}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
+IS_ENABLED(CONFIG_INTEL_VSC)
+	acpi_handle handle = ACPI_HANDLE(dev);
+	struct acpi_handle_list deps;
+	acpi_status status;
+	int i = 0;
 
-	/* For optional, don't return or print warn if can't get it */
-	ov01a1s->powerdown_gpio =
-		devm_gpiod_get_optional(dev, "powerdown", GPIOD_OUT_LOW);
-	if (IS_ERR(ov01a1s->powerdown_gpio)) {
-		dev_dbg(dev, "no powerdown gpio: %ld\n",
-			PTR_ERR(ov01a1s->powerdown_gpio));
-		ov01a1s->powerdown_gpio = NULL;
+	if (!acpi_has_method(handle, "_DEP"))
+		return false;
+
+	status = acpi_evaluate_reference(handle, "_DEP", NULL, &deps);
+	if (ACPI_FAILURE(status)) {
+		acpi_handle_debug(handle, "Failed to evaluate _DEP.\n");
+		return false;
 	}
+	for (i = 0; i < deps.count; i++) {
+		struct acpi_device *dep = NULL;
+
+		if (deps.handles[i])
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+			acpi_bus_get_device(deps.handles[i], &dep);
+#else
+			dep = acpi_fetch_acpi_dev(deps.handles[i]);
+#endif
+
+		if (dep && !acpi_match_device_ids(dep, cvfd_ids)) {
+			ov01a1s->power_type = OV01A1S_USE_INTEL_VSC;
+			return 0;
+		}
+	}
+#endif
+#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
+	ov01a1s->reset_gpio =
+		devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(ov01a1s->reset_gpio))
+		return dev_err_probe(dev, PTR_ERR(ov01a1s->reset_gpio),
+				     "failed to get reset gpio\n");
+
+	ov01a1s->clk = devm_clk_get_optional(dev, NULL);
+	if (IS_ERR(ov01a1s->clk))
+		return dev_err_probe(dev, PTR_ERR(ov01a1s->clk),
+				     "failed to get imaging clock\n");
 
 	ov01a1s->avdd = devm_regulator_get_optional(dev, "avdd");
 	if (IS_ERR(ov01a1s->avdd)) {
-		dev_dbg(dev, "no regulator avdd: %ld\n",
-			PTR_ERR(ov01a1s->avdd));
+		ret = PTR_ERR(ov01a1s->avdd);
 		ov01a1s->avdd = NULL;
+		if (ret != -ENODEV)
+			return dev_err_probe(dev, ret,
+					     "failed to get avdd regulator\n");
 	}
-
-	ov01a1s->clk = devm_clk_get_optional(dev, "clk");
-	if (IS_ERR(ov01a1s->clk)) {
-		dev_dbg(dev, "no clk: %ld\n", PTR_ERR(ov01a1s->clk));
-		ov01a1s->clk = NULL;
-	}
-
-	return 0;
-}
-#endif
-
-static int ov01a1s_parse_power(struct ov01a1s *ov01a1s)
-{
-	int ret = 0;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0) && \
-    IS_ENABLED(CONFIG_INTEL_VSC)
-	ov01a1s->conf.lane_num = OV01A1S_DATA_LANES;
-	/* frequency unit 100k */
-	ov01a1s->conf.freq = OV01A1S_LINK_FREQ_400MHZ / 100000;
-	ret = vsc_acquire_camera_sensor(&ov01a1s->conf, NULL, NULL, &ov01a1s->status);
-	if (!ret) {
-		ov01a1s->power_type = OV01A1S_USE_INTEL_VSC;
-		return 0;
-	} else if (ret != -EAGAIN) {
-		return ret;
-	}
-#endif
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-	ret = ov01a1s_parse_gpio(ov01a1s);
-#elif IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
-	ret = power_ctrl_logic_set_power(1);
 #endif
 #if IS_ENABLED(CONFIG_INTEL_SKL_INT3472) || IS_ENABLED(CONFIG_POWER_CTRL_LOGIC)
-	if (!ret) {
-		ov01a1s->power_type = OV01A1S_USE_INT3472;
-		return 0;
-	}
+	ov01a1s->power_type = OV01A1S_USE_INT3472;
 #endif
-	if (ret == -EAGAIN)
-		return -EPROBE_DEFER;
 
-	return ret;
+	return 0;
 }
 
 static int ov01a1s_probe(struct i2c_client *client)
@@ -1172,16 +1187,15 @@ static int ov01a1s_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	ov01a1s->client = client;
-	ret = ov01a1s_parse_power(ov01a1s);
-	if (ret)
-		return ret;
-
 	v4l2_i2c_subdev_init(&ov01a1s->sd, client, &ov01a1s_subdev_ops);
-#if IS_ENABLED(CONFIG_INTEL_SKL_INT3472)
-	/* In other cases, power is up in ov01a1s_parse_power */
-	if (ov01a1s->power_type == OV01A1S_USE_INT3472)
-		ov01a1s_power_on(&client->dev);
-#endif
+	ov01a1s_get_pm_resources(&client->dev);
+
+	ret = ov01a1s_power_on(&client->dev);
+	if (ret) {
+		dev_err_probe(&client->dev, ret, "failed to power on\n");
+		return ret;
+	}
+
 	ret = ov01a1s_identify_module(ov01a1s);
 	if (ret) {
 		dev_err(&client->dev, "failed to find sensor: %d", ret);

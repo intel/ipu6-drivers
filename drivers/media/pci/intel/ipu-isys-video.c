@@ -1788,23 +1788,6 @@ out_media_entity_graph_init:
 	return rval;
 }
 
-#ifdef CONFIG_COMPAT
-static long ipu_isys_compat_ioctl(struct file *file, unsigned int cmd,
-				  unsigned long arg)
-{
-	long ret = -ENOIOCTLCMD;
-	void __user *up = compat_ptr(arg);
-
-	/*
-	 * at present, there is not any private IOCTL need to compat handle
-	 */
-	if (file->f_op->unlocked_ioctl)
-		ret = file->f_op->unlocked_ioctl(file, cmd, (unsigned long)up);
-
-	return ret;
-}
-#endif
-
 static const struct v4l2_ioctl_ops ioctl_ops_mplane = {
 	.vidioc_querycap = ipu_isys_vidioc_querycap,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
@@ -1838,9 +1821,6 @@ static const struct v4l2_file_operations isys_fops = {
 	.owner = THIS_MODULE,
 	.poll = vb2_fop_poll,
 	.unlocked_ioctl = video_ioctl2,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl32 = ipu_isys_compat_ioctl,
-#endif
 	.mmap = vb2_fop_mmap,
 	.open = video_open,
 	.release = video_release,

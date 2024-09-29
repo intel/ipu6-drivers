@@ -7,10 +7,115 @@
 #include <linux/cdev.h>
 #include <linux/workqueue.h>
 
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #include "ipu.h"
 #include "ipu-pdata.h"
+#else
+#include "ipu6.h"
+#include "ipu6-bus.h"
+#endif
 #include "ipu-fw-psys.h"
 #include "ipu-platform-psys.h"
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+/* PSYS Info bits*/
+#define IPU_REG_PSYS_INFO_SEG_CMEM_MASTER(a)	(0x2c + ((a) * 12))
+#define IPU_REG_PSYS_INFO_SEG_XMEM_MASTER(a)	(0x5c + ((a) * 12))
+
+#define IPU_PSYS_REG_SPC_STATUS_CTRL		0x0
+#define IPU_PSYS_REG_SPC_START_PC		0x4
+#define IPU_PSYS_REG_SPC_ICACHE_BASE		0x10
+#define IPU_REG_PSYS_INFO_SEG_0_CONFIG_ICACHE_MASTER	0x14
+
+#define IPU_PSYS_SPC_STATUS_START			BIT(1)
+#define IPU_PSYS_SPC_STATUS_RUN				BIT(3)
+#define IPU_PSYS_SPC_STATUS_READY			BIT(5)
+#define IPU_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE	BIT(12)
+#define IPU_PSYS_SPC_STATUS_ICACHE_PREFETCH		BIT(13)
+
+#define IPU_PSYS_REG_SPP0_STATUS_CTRL			0x20000
+
+#define IPU_INFO_ENABLE_SNOOP			BIT(0)
+#define IPU_INFO_DEC_FORCE_FLUSH		BIT(1)
+#define IPU_INFO_DEC_PASS_THRU			BIT(2)
+#define IPU_INFO_ZLW                            BIT(3)
+#define IPU_INFO_STREAM_ID_SET(id)		(((id) & 0x1f) << 4)
+#define IPU_INFO_REQUEST_DESTINATION_IOSF	BIT(9)
+#define IPU_INFO_IMR_BASE			BIT(10)
+#define IPU_INFO_IMR_DESTINED			BIT(11)
+
+#define IPU_INFO_REQUEST_DESTINATION_PRIMARY IPU_INFO_REQUEST_DESTINATION_IOSF
+
+#define IPU_REG_DMA_TOP_AB_GROUP1_BASE_ADDR         0x1ae000
+#define IPU_REG_DMA_TOP_AB_GROUP2_BASE_ADDR         0x1af000
+#define IPU_REG_DMA_TOP_AB_RING_MIN_OFFSET(n)       (0x4 + (n) * 0xc)
+#define IPU_REG_DMA_TOP_AB_RING_MAX_OFFSET(n)       (0x8 + (n) * 0xc)
+#define IPU_REG_DMA_TOP_AB_RING_ACCESS_OFFSET(n)    (0xc + (n) * 0xc)
+
+enum ipu_device_ab_group1_target_id {
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R0_SPC_DMEM,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R1_SPC_DMEM,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R2_SPC_DMEM,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R3_SPC_STATUS_REG,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R4_SPC_MASTER_BASE_ADDR,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R5_SPC_PC_STALL,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R6_SPC_EQ,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R7_SPC_RESERVED,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R8_SPC_RESERVED,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R9_SPP0,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R10_SPP1,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R11_CENTRAL_R1,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R12_IRQ,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R13_CENTRAL_R2,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R14_DMA,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R15_DMA,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R16_GP,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R17_ZLW_INSERTER,
+	IPU_DEVICE_AB_GROUP1_TARGET_ID_R18_AB,
+};
+
+/* IRQ-related registers in PSYS */
+#define IPU_REG_PSYS_GPDEV_IRQ_EDGE		0x1aa200
+#define IPU_REG_PSYS_GPDEV_IRQ_MASK		0x1aa204
+#define IPU_REG_PSYS_GPDEV_IRQ_STATUS		0x1aa208
+#define IPU_REG_PSYS_GPDEV_IRQ_CLEAR		0x1aa20c
+#define IPU_REG_PSYS_GPDEV_IRQ_ENABLE		0x1aa210
+#define IPU_REG_PSYS_GPDEV_IRQ_LEVEL_NOT_PULSE	0x1aa214
+/* There are 8 FW interrupts, n = 0..7 */
+#define IPU_PSYS_GPDEV_FWIRQ0			5
+#define IPU_PSYS_GPDEV_FWIRQ1			6
+#define IPU_PSYS_GPDEV_FWIRQ2			7
+#define IPU_PSYS_GPDEV_FWIRQ3			8
+#define IPU_PSYS_GPDEV_FWIRQ4			9
+#define IPU_PSYS_GPDEV_FWIRQ5			10
+#define IPU_PSYS_GPDEV_FWIRQ6			11
+#define IPU_PSYS_GPDEV_FWIRQ7			12
+#define IPU_PSYS_GPDEV_IRQ_FWIRQ(n)		(1 << (n))
+#define IPU_REG_PSYS_GPDEV_FWIRQ(n)		(4 * (n) + 0x1aa100)
+
+/*
+ * psys subdomains power request regs
+ */
+enum ipu_device_buttress_psys_domain_pos {
+	IPU_PSYS_SUBDOMAIN_ISA		= 0,
+	IPU_PSYS_SUBDOMAIN_PSA		= 1,
+	IPU_PSYS_SUBDOMAIN_BB		= 2,
+	IPU_PSYS_SUBDOMAIN_IDSP1	= 3, /* only in IPU6M */
+	IPU_PSYS_SUBDOMAIN_IDSP2	= 4, /* only in IPU6M */
+};
+
+#define IPU_PSYS_SUBDOMAINS_POWER_MASK  (BIT(IPU_PSYS_SUBDOMAIN_ISA) | \
+					 BIT(IPU_PSYS_SUBDOMAIN_PSA) | \
+					 BIT(IPU_PSYS_SUBDOMAIN_BB))
+
+#define IPU_PSYS_SUBDOMAINS_POWER_REQ                   0xa0
+#define IPU_PSYS_SUBDOMAINS_POWER_STATUS                0xa4
+
+#define IPU_PSYS_CMD_TIMEOUT_MS	2000
+#define IPU_PSYS_OPEN_TIMEOUT_US	   50
+#define IPU_PSYS_OPEN_RETRY (10000 / IPU_PSYS_OPEN_TIMEOUT_US)
+#endif
 
 #define IPU_PSYS_PG_POOL_SIZE 16
 #define IPU_PSYS_PG_MAX_SIZE 8192
@@ -21,6 +126,10 @@
 #define IPU_PSYS_CLOSE_TIMEOUT (100000 / IPU_PSYS_CLOSE_TIMEOUT_US)
 #define IPU_MAX_RESOURCES 128
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+extern enum ipu6_version ipu_ver;
+
+#endif
 /* Opaque structure. Do not access fields. */
 struct ipu_resource {
 	u32 id;
@@ -90,16 +199,23 @@ struct ipu_psys {
 	struct list_head fhs;
 	struct list_head pgs;
 	struct list_head started_kcmds_list;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct ipu_psys_pdata *pdata;
 	struct ipu_bus_device *adev;
+#else
+	struct ipu6_psys_pdata *pdata;
+	struct ipu6_bus_device *adev;
+#endif
 	struct ia_css_syscom_context *dev_ctx;
 	struct ia_css_syscom_config *syscom_config;
 	struct ia_css_psys_server_init *server_init;
 	struct task_struct *sched_cmd_thread;
 	wait_queue_head_t sched_cmd_wq;
 	atomic_t wakeup_count;  /* Psys schedule thread wakeup count */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfsdir;
+#endif
 #endif
 
 	/* Resources needed to be managed for process groups */
@@ -144,6 +260,13 @@ struct ipu_psys_pg {
 	struct ipu_psys_resource_alloc resource_alloc;
 };
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+struct ipu6_psys_constraint {
+	struct list_head list;
+	unsigned int min_freq;
+};
+#endif
+
 struct ipu_psys_kcmd {
 	struct ipu_psys_fh *fh;
 	struct list_head list;
@@ -163,7 +286,11 @@ struct ipu_psys_kcmd {
 	u32 terminal_enable_bitmap[4];
 	u32 routing_enable_bitmap[4];
 	u32 rbm[5];
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct ipu_buttress_constraint constraint;
+#else
+	struct ipu6_psys_constraint constraint;
+#endif
 	struct ipu_psys_event ev;
 	struct timer_list watchdog;
 };
@@ -173,7 +300,9 @@ struct ipu_dma_buf_attach {
 	u64 len;
 	void *userptr;
 	struct sg_table *sgt;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	bool vma_is_io;
+#endif
 	struct page **pages;
 	size_t npages;
 };
@@ -202,11 +331,6 @@ struct ipu_psys_desc {
 #define inode_to_ipu_psys(inode) \
 	container_of((inode)->i_cdev, struct ipu_psys, cdev)
 
-#ifdef CONFIG_COMPAT
-long ipu_psys_compat_ioctl32(struct file *file, unsigned int cmd,
-			     unsigned long arg);
-#endif
-
 void ipu_psys_setup_hw(struct ipu_psys *psys);
 void ipu_psys_subdomains_power(struct ipu_psys *psys, bool on);
 void ipu_psys_handle_events(struct ipu_psys *psys);
@@ -219,9 +343,6 @@ struct ipu_psys_kbuffer *
 ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh);
 struct ipu_psys_kbuffer *
 ipu_psys_lookup_kbuffer_by_kaddr(struct ipu_psys_fh *fh, void *kaddr);
-#ifdef IPU_PSYS_GPC
-int ipu_psys_gpc_init_debugfs(struct ipu_psys *psys);
-#endif
 int ipu_psys_resource_pool_init(struct ipu_psys_resource_pool *pool);
 void ipu_psys_resource_pool_cleanup(struct ipu_psys_resource_pool *pool);
 struct ipu_psys_kcmd *ipu_get_completed_kcmd(struct ipu_psys_fh *fh);

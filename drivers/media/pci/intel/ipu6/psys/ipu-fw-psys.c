@@ -5,7 +5,12 @@
 
 #include <uapi/linux/ipu-psys.h>
 
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #include "ipu-fw-com.h"
+#else
+#include "ipu6-fw-com.h"
+#endif
 #include "ipu-fw-psys.h"
 #include "ipu-psys.h"
 
@@ -15,6 +20,7 @@ int ipu_fw_psys_pg_start(struct ipu_psys_kcmd *kcmd)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 int ipu_fw_psys_pg_disown(struct ipu_psys_kcmd *kcmd)
 {
 	struct ipu_fw_psys_cmd *psys_cmd;
@@ -123,12 +129,125 @@ int ipu_fw_psys_rcv_event(struct ipu_psys *psys,
 	ipu_recv_put_token(psys->fwcom, 0);
 	return 1;
 }
+#else
+int ipu_fw_psys_pg_disown(struct ipu_psys_kcmd *kcmd)
+{
+	struct ipu_fw_psys_cmd *psys_cmd;
+	struct device *dev = &kcmd->fh->psys->adev->auxdev.dev;
+	int ret = 0;
+
+	psys_cmd = ipu6_send_get_token(kcmd->fh->psys->fwcom, 0);
+	if (!psys_cmd) {
+		dev_err(dev, "%s failed to get token!\n", __func__);
+		kcmd->pg_user = NULL;
+		ret = -ENODATA;
+		goto out;
+	}
+	psys_cmd->command = IPU_FW_PSYS_PROCESS_GROUP_CMD_START;
+	psys_cmd->msg = 0;
+	psys_cmd->context_handle = kcmd->kpg->pg->ipu_virtual_address;
+	ipu6_send_put_token(kcmd->fh->psys->fwcom, 0);
+
+out:
+	return ret;
+}
+
+int ipu_fw_psys_ppg_suspend(struct ipu_psys_kcmd *kcmd)
+{
+	struct device *dev = &kcmd->fh->psys->adev->auxdev.dev;
+	struct ipu_fw_psys_cmd *psys_cmd;
+	int ret = 0;
+
+	/* ppg suspend cmd uses QUEUE_DEVICE_ID instead of QUEUE_COMMAND_ID */
+	psys_cmd = ipu6_send_get_token(kcmd->fh->psys->fwcom, 1);
+	if (!psys_cmd) {
+		dev_err(dev, "%s failed to get token!\n", __func__);
+		kcmd->pg_user = NULL;
+		ret = -ENODATA;
+		goto out;
+	}
+	psys_cmd->command = IPU_FW_PSYS_PROCESS_GROUP_CMD_SUSPEND;
+	psys_cmd->msg = 0;
+	psys_cmd->context_handle = kcmd->kpg->pg->ipu_virtual_address;
+	ipu6_send_put_token(kcmd->fh->psys->fwcom, 1);
+
+out:
+	return ret;
+}
+
+int ipu_fw_psys_ppg_resume(struct ipu_psys_kcmd *kcmd)
+{
+	struct device *dev = &kcmd->fh->psys->adev->auxdev.dev;
+	struct ipu_fw_psys_cmd *psys_cmd;
+	int ret = 0;
+
+	psys_cmd = ipu6_send_get_token(kcmd->fh->psys->fwcom, 0);
+	if (!psys_cmd) {
+		dev_err(dev, "%s failed to get token!\n", __func__);
+		kcmd->pg_user = NULL;
+		ret = -ENODATA;
+		goto out;
+	}
+	psys_cmd->command = IPU_FW_PSYS_PROCESS_GROUP_CMD_RESUME;
+	psys_cmd->msg = 0;
+	psys_cmd->context_handle = kcmd->kpg->pg->ipu_virtual_address;
+	ipu6_send_put_token(kcmd->fh->psys->fwcom, 0);
+
+out:
+	return ret;
+}
+
+int ipu_fw_psys_pg_abort(struct ipu_psys_kcmd *kcmd)
+{
+	struct device *dev = &kcmd->fh->psys->adev->auxdev.dev;
+	struct ipu_fw_psys_cmd *psys_cmd;
+	int ret = 0;
+
+	psys_cmd = ipu6_send_get_token(kcmd->fh->psys->fwcom, 0);
+	if (!psys_cmd) {
+		dev_err(dev, "%s failed to get token!\n", __func__);
+		kcmd->pg_user = NULL;
+		ret = -ENODATA;
+		goto out;
+	}
+	psys_cmd->command = IPU_FW_PSYS_PROCESS_GROUP_CMD_STOP;
+	psys_cmd->msg = 0;
+	psys_cmd->context_handle = kcmd->kpg->pg->ipu_virtual_address;
+	ipu6_send_put_token(kcmd->fh->psys->fwcom, 0);
+
+out:
+	return ret;
+}
+
+int ipu_fw_psys_pg_submit(struct ipu_psys_kcmd *kcmd)
+{
+	kcmd->kpg->pg->state = IPU_FW_PSYS_PROCESS_GROUP_BLOCKED;
+	return 0;
+}
+
+int ipu_fw_psys_rcv_event(struct ipu_psys *psys,
+			  struct ipu_fw_psys_event *event)
+{
+	void *rcv;
+
+	rcv = ipu6_recv_get_token(psys->fwcom, 0);
+	if (!rcv)
+		return 0;
+
+	memcpy(event, rcv, sizeof(*event));
+	ipu6_recv_put_token(psys->fwcom, 0);
+	return 1;
+}
+#endif
 
 int ipu_fw_psys_terminal_set(struct ipu_fw_psys_terminal *terminal,
 			     int terminal_idx,
 			     struct ipu_psys_kcmd *kcmd,
 			     u32 buffer, unsigned int size)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	struct device *dev = &kcmd->fh->psys->adev->auxdev.dev;
+#endif
 	u32 type;
 	u32 buffer_state;
 
@@ -155,8 +274,12 @@ int ipu_fw_psys_terminal_set(struct ipu_fw_psys_terminal *terminal,
 		buffer_state = IPU_FW_PSYS_BUFFER_EMPTY;
 		break;
 	default:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_err(&kcmd->fh->psys->adev->dev,
 			"unknown terminal type: 0x%x\n", type);
+#else
+		dev_err(dev, "unknown terminal type: 0x%x\n", type);
+#endif
 		return -EAGAIN;
 	}
 
@@ -243,10 +366,18 @@ int ipu_fw_psys_ppg_set_buffer_set(struct ipu_psys_kcmd *kcmd,
 				   struct ipu_fw_psys_terminal *terminal,
 				   int terminal_idx, u32 buffer)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	u32 type;
 	u32 buffer_state;
 	u32 *buffer_ptr;
 	struct ipu_fw_psys_buffer_set *buf_set = kcmd->kbuf_set->buf_set;
+#else
+	struct device *dev = &kcmd->fh->psys->adev->auxdev.dev;
+	struct ipu_fw_psys_buffer_set *buf_set = kcmd->kbuf_set->buf_set;
+	u32 buffer_state;
+	u32 *buffer_ptr;
+	u32 type;
+#endif
 
 	type = terminal->terminal_type;
 
@@ -271,8 +402,12 @@ int ipu_fw_psys_ppg_set_buffer_set(struct ipu_psys_kcmd *kcmd,
 		buffer_state = IPU_FW_PSYS_BUFFER_EMPTY;
 		break;
 	default:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_err(&kcmd->fh->psys->adev->dev,
 			"unknown terminal type: 0x%x\n", type);
+#else
+		dev_err(dev, "unknown terminal type: 0x%x\n", type);
+#endif
 		return -EAGAIN;
 	}
 
@@ -347,12 +482,19 @@ ipu_fw_psys_ppg_create_buffer_set(struct ipu_psys_kcmd *kcmd,
 
 int ipu_fw_psys_ppg_enqueue_bufs(struct ipu_psys_kcmd *kcmd)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	struct device *dev = &kcmd->fh->psys->adev->auxdev.dev;
+#endif
 	struct ipu_fw_psys_cmd *psys_cmd;
 	unsigned int queue_id;
 	int ret = 0;
 	unsigned int size;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	if (ipu_ver == IPU_VER_6SE)
+#else
+	if (ipu_ver == IPU6_VER_6SE)
+#endif
 		size = IPU6SE_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
 	else
 		size = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
@@ -361,6 +503,7 @@ int ipu_fw_psys_ppg_enqueue_bufs(struct ipu_psys_kcmd *kcmd)
 	if (queue_id >= size)
 		return -EINVAL;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	psys_cmd = ipu_send_get_token(kcmd->fh->psys->fwcom, queue_id);
 	if (!psys_cmd) {
 		dev_err(&kcmd->fh->psys->adev->dev,
@@ -368,12 +511,24 @@ int ipu_fw_psys_ppg_enqueue_bufs(struct ipu_psys_kcmd *kcmd)
 		kcmd->pg_user = NULL;
 		return -ENODATA;
 	}
+#else
+	psys_cmd = ipu6_send_get_token(kcmd->fh->psys->fwcom, queue_id);
+	if (!psys_cmd) {
+		dev_err(dev, "%s failed to get token!\n", __func__);
+		kcmd->pg_user = NULL;
+		return -ENODATA;
+	}
+#endif
 
 	psys_cmd->command = IPU_FW_PSYS_PROCESS_GROUP_CMD_RUN;
 	psys_cmd->msg = 0;
 	psys_cmd->context_handle = kcmd->kbuf_set->buf_set->ipu_virtual_address;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	ipu_send_put_token(kcmd->fh->psys->fwcom, queue_id);
+#else
+	ipu6_send_put_token(kcmd->fh->psys->fwcom, queue_id);
+#endif
 
 	return ret;
 }
@@ -388,6 +543,7 @@ void ipu_fw_psys_ppg_set_base_queue_id(struct ipu_psys_kcmd *kcmd, u8 queue_id)
 	kcmd->kpg->pg->base_queue_id = queue_id;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 int ipu_fw_psys_open(struct ipu_psys *psys)
 {
 	int retry = IPU_PSYS_OPEN_RETRY, retval;
@@ -428,3 +584,48 @@ int ipu_fw_psys_close(struct ipu_psys *psys)
 	}
 	return retval;
 }
+#else
+int ipu_fw_psys_open(struct ipu_psys *psys)
+{
+	struct device *dev = &psys->adev->auxdev.dev;
+	int retry = IPU_PSYS_OPEN_RETRY, retval;
+
+	retval = ipu6_fw_com_open(psys->fwcom);
+	if (retval) {
+		dev_err(dev, "fw com open failed.\n");
+		return retval;
+	}
+
+	do {
+		usleep_range(IPU_PSYS_OPEN_TIMEOUT_US,
+			     IPU_PSYS_OPEN_TIMEOUT_US + 10);
+		retval = ipu6_fw_com_ready(psys->fwcom);
+		if (retval) {
+			dev_dbg(dev, "psys port open ready!\n");
+			break;
+		}
+		retry--;
+	} while (retry > 0);
+
+	if (!retry) {
+		dev_err(dev, "psys port open ready failed\n");
+		ipu6_fw_com_close(psys->fwcom);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+int ipu_fw_psys_close(struct ipu_psys *psys)
+{
+	struct device *dev = &psys->adev->auxdev.dev;
+	int retval;
+
+	retval = ipu6_fw_com_close(psys->fwcom);
+	if (retval) {
+		dev_err(dev, "fw com close failed.\n");
+		return retval;
+	}
+	return retval;
+}
+#endif
