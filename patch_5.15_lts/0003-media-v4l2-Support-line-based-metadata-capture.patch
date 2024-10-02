@@ -1,0 +1,46 @@
+From a21922f7ad1acd008e15b0ff570178ca6a372ae5 Mon Sep 17 00:00:00 2001
+From: Hongju Wang <hongju.wang@intel.com>
+Date: Wed, 19 Apr 2023 15:35:29 +0800
+Subject: [PATCH 3/3] media: v4l2:Support line-based metadata capture
+
+Signed-off-by: Hongju Wang <hongju.wang@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ include/uapi/linux/videodev2.h | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/include/uapi/linux/videodev2.h b/include/uapi/linux/videodev2.h
+index 61c5011dfc13..41e9a7e69efa 100644
+--- a/include/uapi/linux/videodev2.h
++++ b/include/uapi/linux/videodev2.h
+@@ -801,6 +801,7 @@ struct v4l2_fmtdesc {
+ #define V4L2_FMT_FLAG_CSC_YCBCR_ENC		0x0080
+ #define V4L2_FMT_FLAG_CSC_HSV_ENC		V4L2_FMT_FLAG_CSC_YCBCR_ENC
+ #define V4L2_FMT_FLAG_CSC_QUANTIZATION		0x0100
++#define V4L2_FMT_FLAG_META_LINE_BASED		0x0200
+ 
+ 	/* Frame Size and frame rate enumeration */
+ /*
+@@ -2311,10 +2312,19 @@ struct v4l2_sdr_format {
+  * struct v4l2_meta_format - metadata format definition
+  * @dataformat:		little endian four character code (fourcc)
+  * @buffersize:		maximum size in bytes required for data
++ * @width:		number of bytes of data per line (valid for line based
++ *			formats only, see format documentation)
++ * @height:		number of lines of data per buffer (valid for line based
++ *			formats only)
++ * @bytesperline:	offset between the beginnings of two adjacent lines in
++ *			bytes (valid for line based formats only)
+  */
+ struct v4l2_meta_format {
+ 	__u32				dataformat;
+ 	__u32				buffersize;
++	__u32				width;
++	__u32				height;
++	__u32				bytesperline;
+ } __attribute__ ((packed));
+ 
+ /**
+-- 
+2.17.1
+
