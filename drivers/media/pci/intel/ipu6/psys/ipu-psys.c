@@ -288,7 +288,7 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 	int nr = 0;
 	u32 flags;
 
-	start = attach->userptr;
+	start = (unsigned long)attach->userptr;
 	end = PAGE_ALIGN(start + attach->len);
 	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
 	array_size = npages * sizeof(struct page *);
@@ -732,7 +732,7 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 	ipu_buffer_add(fh, kbuf);
 	mutex_unlock(&fh->mutex);
 
-	dev_dbg(dev, "IOC_GETBUF: userptr %llu size %llu to fd %d",
+	dev_dbg(dev, "IOC_GETBUF: userptr %p size %llu to fd %d",
 		buf->base.userptr, buf->len, buf->base.fd);
 
 	return 0;
