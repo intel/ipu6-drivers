@@ -28,7 +28,7 @@ Three ways are available:
 ### 1. Build with kernel source tree
 - Tested with kernel v6.10
 - Check out kernel
-- Apply patches:
+- Apply patches (please check detail comments below):
 	```sh
 	# For Meteor Lake B stepping only
 	patch/0002-iommu-Add-passthrough-for-MTL-IPU.patch
@@ -45,25 +45,40 @@ Three ways are available:
 	# For kernel version >= 6.3 and using ov13b10
 	patch/ov13b10-v6.3/*.patch
 
-	# For kernel version v6.8
+	# For kernel version v6.8,
+	# patch/v6.8/0002-media-Add-IPU6-and-supported-sensors-config.patch
+	# will change the related Kconfig & Makefile.
 	patch/v6.8/*.patch
 
-	# For kernel version v6.10
-	patch/v6.10/in-tree-build/*.patch
-	patch/v6.10/*.patch
+	# For kernel version v6.10+,
+	# patch/<version>/in-tree-build/0001-media-ipu6-Workaround-to-build-PSYS.patch
+	# will change the Makefile to build IPU6 PSYS driver, and
+	# patch/<version>/in-tree-build/0002-media-i2c-Add-sensors-config.patch
+	# will change the Makefile & Kconfig for I2C sensor drivers.
+	patch/<version>/in-tree-build/*.patch
+	patch/<version>/*.patch
 	```
-- For kernel v6.8. patch/v6.8/0002-media-Add-IPU6-and-supported-sensors-config.patch will change the related Kconfig & Makefile.
-- For kernel v6.10. patch/v6.10/in-tree-build/0001-workaround-patch-to-build-psys.patch will change the Makefile to build IPU6 PSYS driver.
-- For latest linux-firmware repo, apply patch/linux-firmware/0001-Add-symbolic-link-for-Intel-IPU6-firmwares.patch to it to make driver work.
-- For kernel v6.10 and above, copy only drivers you need to kernel source:
-```sh
-# Out-Of-Tree IPU6 PSYS driver
-cp -r drivers/media/pci/intel/ipu6/psys <your-kernel>/drivers/media/pci/intel/ipu6/
-cp include/uapi/linux/ipu-psys.h <your-kernel>/include/uapi/linux/
-# Out-Of-Tree I2C sensor drivers
-cp -r drivers/media/i2c <your-kernel>/drivers/media/i2c
-```
-- For kernel version less than v6.10, copy `drivers` and `include` folders to kernel source **(except Kconfig & Makefile at drivers/media/pci/intel and drivers/media/i2c as they are modified by patches in previous step. You can delete them before you copy folders.)**.
+
+- Copy IPU6 drivers to kernel source:
+	- For kernel < 6.10, need all IPU6 drivers:
+	```sh
+	cp -r drivers/media/pci/intel/ <your-kernel>/drivers/media/pci/
+	cp -r include/* <your-kernel>/include/
+	```
+	- For kernel >= 6.10, only IPU6 PSYS driver needed:
+	```sh
+	# Out-Of-Tree IPU6 PSYS driver
+	cp -r drivers/media/pci/intel/ipu6/psys <your-kernel>/drivers/media/pci/intel/ipu6/
+	cp include/uapi/linux/ipu-psys.h <your-kernel>/include/uapi/linux/
+	```
+
+- Copy I2C sensor drivers to kernel source (depending on your need):
+	```sh
+	# Remove ipu6-drivers/drivers/media/i2c/{Kconfig,Makefile}
+	# as corresponding files in your kernel was changed by patches before
+	rm drivers/media/i2c/Kconfig drivers/media/i2c/Makefile
+	cp -r drivers/media/i2c <your-kernel>/drivers/media/
+	```
 
 - Enable the following settings in .config
 	```conf

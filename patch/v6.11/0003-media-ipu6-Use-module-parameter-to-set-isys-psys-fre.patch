@@ -1,7 +1,7 @@
-From c1eb35f7316fc54b67442dfe6880f57f93728a3c Mon Sep 17 00:00:00 2001
+From cde3265769fe1ad857137367dea4ec16fcb80548 Mon Sep 17 00:00:00 2001
 From: Dongcheng Yan <dongcheng.yan@intel.com>
 Date: Tue, 30 Jul 2024 11:03:10 +0800
-Subject: [PATCH 2/3] use module parameter to set isys/psys freq
+Subject: [PATCH 3/5] media: ipu6: Use module parameter to set isys/psys freq
 
 Signed-off-by: Hongju Wang <hongju.wang@intel.com>
 Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
