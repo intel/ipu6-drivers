@@ -1,8 +1,12 @@
-From c2bad048dcd547c41edb1858259fb672c0db98d4 Mon Sep 17 00:00:00 2001
+From ee48e82af9634b4b7da6767a897504331016daf6 Mon Sep 17 00:00:00 2001
 From: Hao Yao <hao.yao@intel.com>
 Date: Wed, 18 Sep 2024 14:47:40 +0800
-Subject: [PATCH 3/3] media: ipu6: Don't disable ATS when CPU is not Metero
+Subject: [PATCH 4/5] media: ipu6: Don't disable ATS when CPU is not Meteor
  Lake
+
+IPU6 on Arrow Lake shares the same PCI ID with Meteor Lake, so we
+can't use PCI ID to distinguish whether the hardware is Meteor Lake.
+Use boot_cpu_data.x86_vfm instead.
 
 Signed-off-by: Hao Yao <hao.yao@intel.com>
 ---
