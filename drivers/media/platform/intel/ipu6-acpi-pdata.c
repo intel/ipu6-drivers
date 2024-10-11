@@ -580,30 +580,20 @@ static void set_i2c(struct ipu_isys_subdev_info **sensor_sd,
 }
 
 static void set_serdes_sd_pdata(struct serdes_module_pdata **module_pdata, char sensor_name[I2C_NAME_SIZE],
-			const char *hid_name, unsigned int lanes)
+			unsigned int lanes)
 {
 	/* general */
 	(*module_pdata)->lanes = lanes;
 	strscpy((*module_pdata)->module_name, sensor_name, I2C_NAME_SIZE);
 
 	/* TI960 and IMX390 specific */
-	if (!strcmp(sensor_name, IMX390_NAME) && !strcmp(hid_name, "INTC10C1")) {
+	if (!strcmp(sensor_name, IMX390_NAME)) {
 		(*module_pdata)->gpio_powerup_seq[0] = 0;
 		(*module_pdata)->gpio_powerup_seq[1] = 0x9;
 		(*module_pdata)->gpio_powerup_seq[2] = -1;
 		(*module_pdata)->gpio_powerup_seq[3] = -1;
 		(*module_pdata)->module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK;
 		(*module_pdata)->fsin = 3;
-	}
-
-	/* TI960 and IMX390 specific */
-	if (!strcmp(sensor_name, IMX390_NAME) && !strcmp(hid_name, "INTC10CM")) {
-		(*module_pdata)->gpio_powerup_seq[0] = 0;
-		(*module_pdata)->gpio_powerup_seq[1] = 0xa;
-		(*module_pdata)->gpio_powerup_seq[2] = -1;
-		(*module_pdata)->gpio_powerup_seq[3] = -1;
-		(*module_pdata)->module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK;
-		(*module_pdata)->fsin = 0;
 	}
 
 	/* TI960 and ISX031 specific */
@@ -623,7 +613,6 @@ static int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 		struct device *dev,
 		struct serdes_platform_data **pdata,
 		char sensor_name[I2C_NAME_SIZE],
-		const char *hid_name,
 		unsigned int lanes,
 		unsigned int addr,
 		unsigned int subdev_port)
@@ -644,7 +633,7 @@ static int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 			return -ENOMEM;
 		}
 
-		set_serdes_sd_pdata(&module_pdata[i], sensor_name, hid_name, lanes);
+		set_serdes_sd_pdata(&module_pdata[i], sensor_name, lanes);
 
 		/* board info */
 		strscpy(serdes_sdinfo[i].board_info.type, sensor_name, I2C_NAME_SIZE);
@@ -684,7 +673,6 @@ static u8 suffix_offset = 1;
 static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		struct device *dev,
 		char sensor_name[I2C_NAME_SIZE],
-		const char *hid_name,
 		struct control_logic_data *ctl_data,
 		unsigned int port,
 		unsigned int lanes,
@@ -752,7 +740,7 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		}
 		pdata->deser_nlanes = deser_lanes;
 		pdata->ser_nlanes = lanes;
-		set_serdes_subdev(sensor_sd, dev, &pdata, sensor_name, hid_name, lanes, addr, rx_port);
+		set_serdes_subdev(sensor_sd, dev, &pdata, sensor_name, lanes, addr, rx_port);
 
 		(*sensor_sd)->i2c.board_info.platform_data = pdata;
 		pdata->deser_board_info = &(*sensor_sd)->i2c.board_info;
@@ -799,7 +787,6 @@ static void set_serdes_info(struct device *dev, char *sensor_name, const char *s
 
 static int populate_dummy(struct device *dev,
 			char sensor_name[I2C_NAME_SIZE],
-			const char *hid_name,
 			struct sensor_bios_data *cam_data,
 			struct control_logic_data *ctl_data,
 			enum connection_type connect)
@@ -822,7 +809,7 @@ static int populate_dummy(struct device *dev,
 
 	set_i2c(&dummy, dev, sensor_name, addr_dummy);
 
-	ret = set_pdata(&dummy, dev, sensor_name, hid_name, ctl_data, cam_data->pprval,
+	ret = set_pdata(&dummy, dev, sensor_name, ctl_data, cam_data->pprval,
 		cam_data->lanes, addr_dummy, 0, 0, true, connect);
 	if (ret) {
 		kfree(dummy);
@@ -840,8 +827,7 @@ static int populate_sensor_pdata(struct device *dev,
 			struct sensor_bios_data *cam_data,
 			struct control_logic_data *ctl_data,
 			enum connection_type connect,
-			const char *serdes_name,
-			const char *hid_name)
+			const char *serdes_name)
 {
 	int ret;
 
@@ -906,7 +892,7 @@ static int populate_sensor_pdata(struct device *dev,
 	}
 
 	/* Use last I2C device */
-	ret = set_pdata(sensor_sd, dev, sensor_name, hid_name, ctl_data, cam_data->link,
+	ret = set_pdata(sensor_sd, dev, sensor_name, ctl_data, cam_data->link,
 		cam_data->lanes, cam_data->i2c[cam_data->i2c_num - 1].addr,
 		cam_data->pprunit, cam_data->pprval, false, connect);
 
@@ -918,7 +904,7 @@ static int populate_sensor_pdata(struct device *dev,
 	/* Lontium specific */
 	if (!strcmp(sensor_name, LT6911UXC_NAME) || !strcmp(sensor_name, LT6911UXE_NAME)) {
 		if (cam_data->pprval != cam_data->link) {
-			ret = populate_dummy(dev, sensor_name, hid_name, cam_data, ctl_data, connect);
+			ret = populate_dummy(dev, sensor_name, cam_data, ctl_data, connect);
 			if (ret)
 				return ret;
 		}
@@ -931,7 +917,7 @@ int get_sensor_pdata(struct i2c_client *client,
 			struct ipu_camera_module_data *data,
 			struct ipu_i2c_helper *helper,
 			void *priv, size_t size,
-			enum connection_type connect, const char *serdes_name, const char *hid_name)
+			enum connection_type connect, const char *serdes_name)
 {
 	struct sensor_bios_data *cam_data;
 	struct control_logic_data *ctl_data;
@@ -979,7 +965,7 @@ int get_sensor_pdata(struct i2c_client *client,
 
 	/* populate pdata */
 	rval = populate_sensor_pdata(&client->dev, &sensor_sd,
-				client->name, cam_data, ctl_data, connect, serdes_name, hid_name);
+				client->name, cam_data, ctl_data, connect, serdes_name);
 	if (rval) {
 		kfree(sensor_sd);
 		kfree(cam_data);

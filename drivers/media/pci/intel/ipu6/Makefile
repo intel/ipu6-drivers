@@ -37,9 +37,9 @@ intel-ipu6-isys-objs			+= ../ipu-isys-csi2-be.o
 
 obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6-isys.o
 
-obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= ../psys/
+obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= psys/
 
 ccflags-y += -I$(srcpath)/$(src)/../../../../../include/
-ccflags-y += -I$(srcpath)/$(src)/../psys/
+ccflags-y += -I$(srcpath)/$(src)/psys/
 ccflags-y += -I$(srcpath)/$(src)/../
 ccflags-y += -I$(srcpath)/$(src)/

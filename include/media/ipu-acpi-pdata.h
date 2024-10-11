@@ -22,8 +22,7 @@ int get_sensor_pdata(struct i2c_client *client,
 			struct ipu_i2c_helper *helper,
 			void *priv, size_t size,
 			enum connection_type connect,
-			const char *serdes_name,
-			const char *hid_name);
+			const char *serdes_name);
 
 struct ipu_isys_subdev_pdata *get_acpi_subdev_pdata(void);
 

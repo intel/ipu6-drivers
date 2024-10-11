@@ -367,8 +367,9 @@ static int ipu_pci_config_setup(struct pci_dev *dev)
 	pci_write_config_word(dev, PCI_COMMAND, pci_command);
 
 	/* disable IPU6 PCI ATS on mtl ES2 */
-	if (ipu_ver == IPU_VER_6EP_MTL && boot_cpu_data.x86_stepping == 0x2 &&
-	    pci_ats_supported(dev))
+	if ((boot_cpu_data.x86_model == 0xac ||
+	     boot_cpu_data.x86_model == 0xaa) &&
+	    boot_cpu_data.x86_stepping == 0x2 && pci_ats_supported(dev))
 		pci_disable_ats(dev);
 
 	/* no msi pci capability for IPU6EP */
