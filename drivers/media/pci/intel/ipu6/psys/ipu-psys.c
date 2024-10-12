@@ -484,7 +484,7 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 	int nr = 0;
 	u32 flags;
 
-	start = attach->userptr;
+	start = (unsigned long)attach->userptr;
 	end = PAGE_ALIGN(start + attach->len);
 	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
 	array_size = npages * sizeof(struct page *);
@@ -1122,7 +1122,7 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	dev_dbg(&psys->adev->dev, "IOC_GETBUF: userptr %p size %llu to fd %d",
 #else
-	dev_dbg(dev, "IOC_GETBUF: userptr %llu size %llu to fd %d",
+	dev_dbg(dev, "IOC_GETBUF: userptr %p size %llu to fd %d",
 #endif
 		buf->base.userptr, buf->len, buf->base.fd);
 
