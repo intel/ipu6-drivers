@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2019-2024 Intel Corporation.
 
-#include <asm/unaligned.h>
 #include <linux/acpi.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
@@ -9,6 +8,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/gpio.h>
 #include <linux/version.h>
+#include <asm/unaligned.h>
 #include <linux/interrupt.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>

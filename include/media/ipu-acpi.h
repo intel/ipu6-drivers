@@ -195,7 +195,8 @@ struct ipu_acpi_devices {
 				 void *priv,
 				 size_t size,
 				 enum connection_type type,
-				 const char *serdes_name);
+				 const char *serdes_name,
+				 const char *hid_name);
 	void *priv_data;
 	size_t priv_size;
 	enum connection_type connect;

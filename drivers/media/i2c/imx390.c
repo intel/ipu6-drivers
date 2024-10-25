@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2021-2024 Intel Corporation.
 
-#include <asm/unaligned.h>
 #include <linux/acpi.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
@@ -9,10 +8,11 @@
 #include <linux/pm_runtime.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
+#include <linux/version.h>
+#include <asm/unaligned.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
-#include <linux/version.h>
 #include <media/imx390.h>
 
 #define IMX390_LINK_FREQ_360MHZ		360000000ULL
@@ -26,7 +26,6 @@
 #define IMX390_REG_VALUE_16BIT		2
 
 #define IMX390_REG_CHIP_ID		0x0330
-#define IMX390_CHIP_ID			0x0
 
 /* vertical-timings from sensor */
 #define IMX390_REG_VTS			0x300A
@@ -1366,6 +1365,10 @@ static int imx390_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
 	int ret = 0;
 
+	/* V4L2 controls values will be applied only when power is already up */
+	if (!pm_runtime_get_if_in_use(&client->dev))
+		return 0;
+
 	switch (ctrl->id) {
 	case IMX390_CID_EXPOSURE_SHS1:
 	case IMX390_CID_EXPOSURE_SHS2:
@@ -1895,21 +1898,21 @@ static int imx390_identify_module(struct imx390 *imx390)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
 	int ret;
+	int retry = 50;
 	u32 val;
 
-	ret = imx390_read_reg(imx390, IMX390_REG_CHIP_ID,
-			      IMX390_REG_VALUE_08BIT, &val);
+	while (retry--) {
+		ret = imx390_read_reg(imx390, IMX390_REG_CHIP_ID,
+				      IMX390_REG_VALUE_16BIT, &val);
+		if (ret == 0)
+			break;
+		usleep_range(10000, 10500);
+	}
+
 	if (ret)
 		return ret;
 
-	return 0;
-
-	/* chip id not known yet */
-	if (val != IMX390_CHIP_ID) {
-		dev_err(&client->dev, "chip id mismatch: %x!=%x",
-			IMX390_CHIP_ID, val);
-		return -ENXIO;
-	}
+	dev_info(&client->dev, "chip id: %04x", val);
 
 	return 0;
 }
