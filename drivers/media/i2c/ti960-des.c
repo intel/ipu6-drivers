@@ -22,8 +22,21 @@
 #include "ti960-reg.h"
 #include "ti953.h"
 
+// FIXME: Move these to platform data
+#define D3_BUS_SWITCH_ADDR 0x70
+#define D3_GPIO_EXP_ADDR 0x70
+#define D3_GPIO_EXP_ALIAS(rx_port) (0x60+rx_port)
+
+#define NUM_ALIASES 8
+
 #define MIPI_CSI2_TYPE_RAW12   0x2c
 #define MIPI_CSI2_TYPE_YUV422_8	0x1e
+
+struct ti960_slave {
+	unsigned short addr;
+	unsigned short alias;
+	bool auto_ack;
+};
 
 struct ti960_subdev {
 	struct v4l2_subdev *sd;
@@ -32,6 +45,9 @@ struct ti960_subdev {
 	unsigned short phy_i2c_addr;
 	unsigned short alias_i2c_addr;
 	unsigned short ser_i2c_addr;
+	struct i2c_client *serializer;
+	struct i2c_client *gpio_exp;
+	struct ti960_slave slaves[NUM_ALIASES];
 	char sd_name[16];
 };
 
@@ -42,6 +58,7 @@ struct ti960 {
 	struct ti960_pdata *pdata;
 	struct ti960_subdev sub_devs[NR_OF_TI960_SINK_PADS];
 	struct ti960_subdev_pdata subdev_pdata[NR_OF_TI960_SINK_PADS];
+	struct i2c_client *bus_switch;
 	const char *name;
 
 	struct mutex mutex;
@@ -179,12 +196,13 @@ static int bus_switch(struct ti960 *va)
 {
 	int ret;
 	int retry, timeout = 10;
-	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
-	unsigned short addr_backup;
+	struct i2c_client *client = va->bus_switch;
+
+	if (!va->bus_switch)
+		return 0;
 
 	dev_dbg(&client->dev, "try to set bus switch\n");
-	addr_backup = client->addr;
-	client->addr = 0x70;
+
 	for (retry = 0; retry < timeout; retry++) {
 		ret = i2c_smbus_write_byte(client, 0x01);
 		if (ret < 0)
@@ -193,7 +211,6 @@ static int bus_switch(struct ti960 *va)
 			break;
 	}
 
-	client->addr = addr_backup;
 	if (retry >= timeout) {
 		dev_err(&client->dev, "bus switch failed, maybe no bus switch\n");
 	}
@@ -267,30 +284,77 @@ static int ti960_reg_set_bit(struct ti960 *va, unsigned char reg,
 	return ti960_reg_write(va, reg, reg_val);
 }
 
-static int ti960_map_phy_i2c_addr(struct ti960 *va, unsigned short rx_port,
-			      unsigned short addr)
+static int ti960_map_i2c_slave(struct ti960 *va, struct ti960_subdev *sd,
+			       unsigned short addr, unsigned int alias_addr)
 {
 	int rval;
+	int index;
+	struct ti960_slave *slaves = sd->slaves;
+
+	for (index = 0; index < NUM_ALIASES; index++)
+		if (slaves[index].addr == 0)
+			break;
+
+	if (index >= NUM_ALIASES)
+		return -ENOMEM;
+	if (addr != 0)
+		slaves[index].addr = addr;
+
+	if (alias_addr != 0)
+		slaves[index].alias = alias_addr;
+
+	if (addr != 0 && alias_addr != 0)
+		dev_dbg(va->sd.dev, "%s rx port %d: map %02x to alias %02x\n",
+				__func__, sd->rx_port, addr, alias_addr);
 
 	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
-		(rx_port << 4) + (1 << rx_port));
+		(sd->rx_port << 4) + (1 << sd->rx_port));
 	if (rval)
 		return rval;
 
-	return ti960_reg_write(va, TI960_SLAVE_ID0, addr);
+	if (addr != 0) {
+		rval = ti960_reg_write(va, TI960_SLAVE_ID0 + index, addr << 1);
+		if (rval)
+			return rval;
+	}
+
+	if (alias_addr != 0) {
+		rval = ti960_reg_write(va, TI960_SLAVE_ALIAS_ID0 + index, alias_addr << 1);
+		if (rval)
+			return rval;
+	}
+
+	return 0;
 }
 
-static int ti960_map_alias_i2c_addr(struct ti960 *va, unsigned short rx_port,
-			      unsigned short addr)
+static int ti960_unmap_i2c_slave(struct ti960 *va, struct ti960_subdev *sd,
+				 unsigned short addr)
 {
 	int rval;
+	int index;
+	struct ti960_slave *slaves = sd->slaves;
 
-	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
-		(rx_port << 4) + (1 << rx_port));
+	for (index = 0; index < NUM_ALIASES; index++)
+		if (slaves[index].addr == addr)
+			break;
+
+	if (index >= NUM_ALIASES)
+		return 0;
+
+	dev_dbg(va->sd.dev, "rx port %d: unmap %02x from alias %02x\n",
+			sd->rx_port, addr, slaves[index].alias);
+	slaves[index].addr = 0;
+	slaves[index].alias = 0;
+
+	rval = ti960_reg_write(va, TI960_SLAVE_ID0 + index, 0);
 	if (rval)
 		return rval;
 
-	return ti960_reg_write(va, TI960_SLAVE_ALIAS_ID0, addr);
+	rval = ti960_reg_write(va, TI960_SLAVE_ALIAS_ID0 + index, 0);
+	if (rval)
+		return rval;
+
+	return 0;
 }
 
 static int ti960_map_ser_alias_addr(struct ti960 *va, unsigned short rx_port,
@@ -298,21 +362,24 @@ static int ti960_map_ser_alias_addr(struct ti960 *va, unsigned short rx_port,
 {
 	int rval;
 
-	dev_dbg(va->sd.dev, "%s port %d, ser_alias %x\n", __func__, rx_port, ser_alias);
+	dev_err(va->sd.dev, "%s port %d, ser_alias %x\n", __func__, rx_port, ser_alias);
 	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
 		(rx_port << 4) + (1 << rx_port));
 	if (rval)
 		return rval;
 
-	return ti960_reg_write(va, TI960_SER_ALIAS_ID, ser_alias);
+	return ti960_reg_write(va, TI960_SER_ALIAS_ID, ser_alias << 1);
 }
 
-static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
-		unsigned short ser_alias, unsigned short fsin_gpio)
+static int ti960_fsin_gpio_init(struct ti960 *va, struct ti960_subdev *subdev)
 {
 	unsigned char gpio_data;
 	int rval;
 	int reg_val;
+	unsigned short rx_port = subdev->rx_port;
+	unsigned short ser_alias = subdev->ser_i2c_addr;
+	unsigned short fsin_gpio = subdev->fsin_gpio;
+	struct i2c_client *serializer = subdev->serializer;
 
 	dev_dbg(va->sd.dev, "%s\n", __func__);
 	rval = regmap_read(va->regmap8, TI960_FS_CTL, &reg_val);
@@ -375,12 +442,12 @@ static int ti960_fsin_gpio_init(struct ti960 *va, unsigned short rx_port,
 	}
 
 	/* enable output and remote control */
-	ti953_reg_write(&va->sd, rx_port, ser_alias, TI953_GPIO_INPUT_CTRL, TI953_GPIO_OUT_EN);
-	rval = ti953_reg_read(&va->sd, rx_port, ser_alias, TI953_LOCAL_GPIO_DATA,
+	ti953_reg_write(serializer, TI953_GPIO_INPUT_CTRL, TI953_GPIO_OUT_EN);
+	rval = ti953_reg_read(serializer, TI953_LOCAL_GPIO_DATA,
 			&gpio_data);
 	if (rval)
 		return rval;
-	ti953_reg_write(&va->sd, rx_port, ser_alias, TI953_LOCAL_GPIO_DATA,
+	ti953_reg_write(serializer, TI953_LOCAL_GPIO_DATA,
 			gpio_data | TI953_GPIO0_RMTEN << fsin_gpio);
 
 	return rval;
@@ -564,13 +631,8 @@ static int ti960_map_subdevs_addr(struct ti960 *va)
 		if (!phy_i2c_addr || !alias_i2c_addr)
 			continue;
 
-		rval = ti960_map_phy_i2c_addr(va, rx_port, phy_i2c_addr);
-		if (rval)
-			return rval;
-
-		/* set 7bit alias i2c addr */
-		rval = ti960_map_alias_i2c_addr(va, rx_port,
-						alias_i2c_addr << 1);
+		rval = ti960_map_i2c_slave(va, &va->sub_devs[i],
+				phy_i2c_addr, alias_i2c_addr);
 		if (rval)
 			return rval;
 	}
@@ -578,36 +640,81 @@ static int ti960_map_subdevs_addr(struct ti960 *va)
 	return 0;
 }
 
-/*
- * FIXME: workaround, reset to avoid block.
- */
-static int reset_sensor(struct ti960 *va, unsigned short rx_port,
-		unsigned short ser_alias, int reset)
+static int gpio_exp_reset_sensor(struct i2c_client *client, int reset)
 {
-	int rval;
-	unsigned char gpio_data;
+	s32 gpio_cfg;
+	s32 gpio_out;
 
-	rval = ti953_reg_read(&va->sd, rx_port, ser_alias,
-			TI953_LOCAL_GPIO_DATA,
-			&gpio_data);
-	if (rval)
-		return rval;
+	dev_dbg(&client->dev, "reset gpio %d", reset);
 
-	ti953_reg_write(&va->sd, rx_port, ser_alias, TI953_GPIO_INPUT_CTRL,
-			TI953_GPIO_OUT_EN);
-	gpio_data &= ~(TI953_GPIO0_RMTEN << reset);
-	gpio_data &= ~(TI953_GPIO0_OUT << reset);
-	ti953_reg_write(&va->sd, rx_port, ser_alias, TI953_LOCAL_GPIO_DATA,
-			gpio_data);
-	msleep(50);
-	gpio_data |= TI953_GPIO0_OUT << reset;
-	ti953_reg_write(&va->sd, rx_port, ser_alias, TI953_LOCAL_GPIO_DATA,
-			gpio_data);
+	gpio_cfg = i2c_smbus_read_byte_data(client, 0x03);
+	if (gpio_cfg < 0)
+		return gpio_cfg;
+	gpio_cfg &= ~(1u << reset);
+	i2c_smbus_write_byte_data(client, 0x03, gpio_cfg);
+
+	gpio_out = i2c_smbus_read_byte_data(client, 0x01);
+	gpio_out &= ~(1u << reset);
+	i2c_smbus_write_byte_data(client, 0x01, gpio_out);
+	msleep(500);
+	gpio_out |= (1u << reset);
+	i2c_smbus_write_byte_data(client, 0x01, gpio_out);
 
 	return 0;
 }
 
-static int ti960_config_ser(struct ti960 *va, struct ti960_subdev *subdev,
+/*
+ * FIXME: workaround, reset to avoid block.
+ */
+static int ti953_reset_sensor(struct i2c_client *client, int reset)
+{
+	int rval;
+	unsigned char gpio_data;
+
+	rval = ti953_reg_read(client, TI953_LOCAL_GPIO_DATA,
+			&gpio_data);
+	if (rval)
+		return rval;
+
+	ti953_reg_write(client, TI953_GPIO_INPUT_CTRL,
+			TI953_GPIO_OUT_EN);
+	gpio_data &= ~(TI953_GPIO0_RMTEN << reset);
+	gpio_data &= ~(TI953_GPIO0_OUT << reset);
+	ti953_reg_write(client, TI953_LOCAL_GPIO_DATA,
+			gpio_data);
+	msleep(50);
+	gpio_data |= TI953_GPIO0_OUT << reset;
+	ti953_reg_write(client, TI953_LOCAL_GPIO_DATA,
+			gpio_data);
+	msleep(500);
+	return 0;
+}
+
+static int reset_sensor(struct ti960 *va, struct ti960_subdev *sd,
+			struct ti960_subdev_pdata *pdata)
+{
+	if (sd->gpio_exp)
+		return gpio_exp_reset_sensor(sd->gpio_exp, pdata->reset);
+
+	if (sd->serializer)
+		return ti953_reset_sensor(sd->serializer, pdata->reset);
+
+	return -ENODEV;
+}
+
+static bool gpio_exp_detect(struct i2c_client *client)
+{
+	int rval;
+
+	rval = i2c_smbus_read_byte_data(client, 0x03);
+	if (rval < 0)
+		return false;
+
+	return (rval == 0xFF);
+}
+
+static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
+			    struct ti960_subdev *subdev,
 			    struct ti960_subdev_pdata *pdata)
 {
 	unsigned short rx_port, phy_i2c_addr, alias_i2c_addr, ser_i2c_addr;
@@ -621,38 +728,72 @@ static int ti960_config_ser(struct ti960 *va, struct ti960_subdev *subdev,
 	ser_i2c_addr = subdev->ser_i2c_addr;
 
 	rval = ti960_map_ser_alias_addr(va, rx_port,
-			ser_i2c_addr << 1);
+			ser_i2c_addr);
 	if (rval)
 		return rval;
 
-	if (!ti953_detect(&va->sd, rx_port, ser_i2c_addr))
+	subdev->serializer = i2c_new_dummy_device(client->adapter, ser_i2c_addr);
+	if (IS_ERR(subdev->serializer)) {
+		dev_err(va->sd.dev, "rx port %d: Failed to allocate serializer client: %ld",
+				rx_port, PTR_ERR(subdev->serializer));
 		return -ENODEV;
+	}
 
-	ti953_reg_write(&va->sd, rx_port, ser_i2c_addr,
+	if (!ti953_detect(subdev->serializer)) {
+		dev_warn(va->sd.dev, "rx port %d: No link detected",
+				rx_port);
+		i2c_unregister_device(subdev->serializer);
+		subdev->serializer = NULL;
+		return -ENODEV;
+	}
+	dev_info(va->sd.dev, "rx port: %d: Found serializer", rx_port);
+	va->sub_devs[k].serializer = subdev->serializer;
+
+	rval = ti960_map_i2c_slave(va, &va->sub_devs[k],
+					D3_GPIO_EXP_ADDR, D3_GPIO_EXP_ALIAS(rx_port));
+	if (rval)
+		return rval;
+
+	subdev->gpio_exp = i2c_new_dummy_device(client->adapter, D3_GPIO_EXP_ALIAS(rx_port));
+	if (IS_ERR(subdev->gpio_exp)) {
+		dev_err(va->sd.dev, "rx port %d: Failed to allocate gpio-expander client: %ld",
+				rx_port, PTR_ERR(subdev->gpio_exp));
+	} else {
+		if (!gpio_exp_detect(subdev->gpio_exp)) {
+			dev_err(va->sd.dev, "rx port: %d: Missing gpio-expander", rx_port);
+			i2c_unregister_device(subdev->gpio_exp);
+			subdev->gpio_exp = NULL;
+		} else {
+			dev_info(va->sd.dev, "rx port: %d: Found gpio-expander", rx_port);
+			va->sub_devs[k].gpio_exp = subdev->gpio_exp;
+		}
+	}
+
+	ti953_reg_write(subdev->serializer,
 			TI953_RESET_CTL, TI953_DIGITAL_RESET_1);
 	msleep(50);
 
 	if (pdata->module_flags & TI960_FL_INIT_SER) {
-		rval = ti953_init(&va->sd, rx_port, ser_i2c_addr);
+		rval = ti953_init(subdev->serializer);
 		if (rval)
 			return rval;
 	}
 
 	if (pdata->module_flags & TI960_FL_INIT_SER_CLK) {
-		rval = ti953_init_clk(&va->sd, rx_port, ser_i2c_addr);
+		rval = ti953_init_clk(subdev->serializer);
 		if (rval)
 			return rval;
 	}
 
 	if (pdata->module_flags & TI960_FL_POWERUP) {
-		ti953_reg_write(&va->sd, rx_port, ser_i2c_addr,
+		ti953_reg_write(subdev->serializer,
 				TI953_GPIO_INPUT_CTRL, TI953_GPIO_OUT_EN);
 
 		/* boot sequence */
 		for (i = 0; i < TI960_MAX_GPIO_POWERUP_SEQ; i++) {
 			if (pdata->gpio_powerup_seq[i] == (char)-1)
 				break;
-			ti953_reg_write(&va->sd, rx_port, ser_i2c_addr,
+			ti953_reg_write(subdev->serializer,
 					TI953_LOCAL_GPIO_DATA,
 					pdata->gpio_powerup_seq[i]);
 			msleep(50);
@@ -660,7 +801,7 @@ static int ti960_config_ser(struct ti960 *va, struct ti960_subdev *subdev,
 	}
 
 	/* Configure ti953 CSI lane */
-	rval = ti953_reg_read(&va->sd, rx_port, ser_i2c_addr,
+	rval = ti953_reg_read(subdev->serializer,
 			      TI953_GENERAL_CFG, &val);
 	dev_dbg(va->sd.dev, "ti953 read default general CFG (%x)\n", val);
 	if (va->pdata->ser_nlanes == 2)
@@ -669,35 +810,31 @@ static int ti960_config_ser(struct ti960 *va, struct ti960_subdev *subdev,
 		val |= TI953_CSI_4LANE;
 	else
 		dev_err(va->sd.dev, "not expected csi lane\n");
-	rval = ti953_reg_write(&va->sd, rx_port, ser_i2c_addr,
+	rval = ti953_reg_write(subdev->serializer,
 			       TI953_GENERAL_CFG, val);
 	if (rval != 0) {
 		dev_err(va->sd.dev, "ti953 write failed(%d)\n", rval);
 		return rval;
 	}
 
-	ti953_bus_speed(&va->sd, rx_port, ser_i2c_addr,
+	ti953_bus_speed(subdev->serializer,
 			TI953_I2C_SPEED_FAST_PLUS);
 	speed_detect_fail =
-		ti953_reg_read(&va->sd, rx_port,
-			       alias_i2c_addr, 0, &val);
+		ti953_reg_read(subdev->serializer, 0, &val);
 	if (speed_detect_fail) {
-		ti953_bus_speed(&va->sd, rx_port, ser_i2c_addr,
+		ti953_bus_speed(subdev->serializer,
 				TI953_I2C_SPEED_FAST);
 		speed_detect_fail =
-			ti953_reg_read(&va->sd, rx_port,
-				       alias_i2c_addr, 0, &val);
+			ti953_reg_read(subdev->serializer, 0, &val);
 	}
 	if (speed_detect_fail) {
-		ti953_bus_speed(&va->sd, rx_port, ser_i2c_addr,
+		ti953_bus_speed(subdev->serializer,
 				TI953_I2C_SPEED_STANDARD);
 		speed_detect_fail =
-			ti953_reg_read(&va->sd, rx_port,
-				       alias_i2c_addr, 0, &val);
+			ti953_reg_read(subdev->serializer, 0, &val);
 	}
 	if (speed_detect_fail)
 		dev_err(va->sd.dev, "i2c bus speed standard failed!");
-
 	return 0;
 }
 
@@ -711,7 +848,6 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 
 	for (i = 0 ; i < NR_OF_TI960_SINK_PADS; i++)
 		port_registered[i] = false;
-
 	for (i = 0, k = 0; i < va->pdata->subdev_num; i++) {
 		struct ti960_subdev_info *info =
 			&va->pdata->subdev_info[i];
@@ -719,12 +855,10 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 			(struct ti960_subdev_pdata *)
 			info->board_info.platform_data;
 		struct ti960_subdev sensor_subdev;
-
 		sensor_subdev.rx_port = info->rx_port;
 		sensor_subdev.phy_i2c_addr = info->phy_i2c_addr;
 		sensor_subdev.alias_i2c_addr = info->board_info.addr;
 		sensor_subdev.ser_i2c_addr = info->ser_alias;
-
 		if (k >= va->nsinks)
 			break;
 
@@ -742,7 +876,7 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 		memcpy(&va->subdev_pdata[k], pdata, sizeof(*pdata));
 
 		va->sub_devs[k].fsin_gpio = va->subdev_pdata[k].fsin;
-
+		va->sub_devs[k].rx_port = info->rx_port;
 		/* Spin sensor subdev suffix name */
 		va->subdev_pdata[k].suffix = info->suffix;
 
@@ -759,22 +893,17 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 			dev_err(va->sd.dev, "can't find the physical and alias addr.\n");
 			return -EINVAL;
 		}
-
-		rval = ti960_config_ser(va, &sensor_subdev, pdata);
+		rval = ti960_config_ser(va, client, k, &sensor_subdev, pdata);
 		if (rval)
 			continue;
 
-		/* Map PHY I2C address. */
-		rval = ti960_map_phy_i2c_addr(va, info->rx_port,
-					info->phy_i2c_addr);
-		if (rval)
-			return rval;
+		reset_sensor(va, &va->sub_devs[k], &va->subdev_pdata[k]);
 
-		/* Map 7bit ALIAS I2C address. */
-		rval = ti960_map_alias_i2c_addr(va, info->rx_port,
-				info->board_info.addr << 1);
+		/* Map slave I2C address. */
+		rval = ti960_map_i2c_slave(va, &va->sub_devs[k],
+				info->phy_i2c_addr, info->board_info.addr);
 		if (rval)
-			return rval;
+			continue;
 
 		va->sub_devs[k].sd = v4l2_i2c_new_subdev_board(
 			va->sd.v4l2_dev, client->adapter,
@@ -785,7 +914,6 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 				info->suffix);
 			continue;
 		}
-		va->sub_devs[k].rx_port = info->rx_port;
 		va->sub_devs[k].phy_i2c_addr = info->phy_i2c_addr;
 		va->sub_devs[k].alias_i2c_addr = info->board_info.addr;
 		va->sub_devs[k].ser_i2c_addr = info->ser_alias;
@@ -812,8 +940,8 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 
 		for (l = 0; l < va->nsinks; l++) {
 			rval = media_create_pad_link(
-				&va->sub_devs[k].sd->entity, j,
-				&va->sd.entity, l, MEDIA_LNK_FL_DYNAMIC);
+			&va->sub_devs[k].sd->entity, j,
+			&va->sd.entity, l, MEDIA_LNK_FL_DYNAMIC);
 			if (rval) {
 				dev_err(va->sd.dev,
 					"can't create link to %c\n",
@@ -1047,8 +1175,8 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 		if (broadcast && sd_idx == -1) {
 			sd_idx = j;
 		} else if (broadcast) {
-			rval = ti960_map_alias_i2c_addr(va, rx_port,
-				va->sub_devs[sd_idx].alias_i2c_addr << 1);
+			rval = ti960_map_i2c_slave(va, rx_port, 0,
+				va->sub_devs[sd_idx].alias_i2c_addr);
 			if (rval < 0)
 				return rval;
 		} else {
@@ -1074,8 +1202,7 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 				return rval;
 			}
 			if (va->subdev_pdata[j].module_flags & TI960_FL_RESET) {
-				rval = reset_sensor(va, rx_port, ser_alias,
-						va->subdev_pdata[j].reset);
+				rval = reset_sensor(va, &va->sub_devs[j], &va->subdev_pdata[j]);
 				if (rval)
 					return rval;
 			}
@@ -1105,10 +1232,7 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 
 		for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
 			if (enable && test_bit(i, rx_port_enabled)) {
-				rval = ti960_fsin_gpio_init(va,
-						va->sub_devs[i].rx_port,
-						va->sub_devs[i].ser_i2c_addr,
-						va->sub_devs[i].fsin_gpio);
+				rval = ti960_fsin_gpio_init(va, &va->sub_devs[i]);
 				if (rval) {
 					dev_err(va->sd.dev,
 						"Failed to enable frame sync gpio init.\n");
@@ -1118,8 +1242,8 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 				if (va->subdev_pdata[i].module_flags & TI960_FL_RESET) {
 					rx_port = va->sub_devs[i].rx_port;
 					ser_alias = va->sub_devs[i].ser_i2c_addr;
-					rval = reset_sensor(va, rx_port, ser_alias,
-							va->subdev_pdata[i].reset);
+					rval = reset_sensor(va, &va->sub_devs[i],
+							&va->subdev_pdata[i]);
 					if (rval)
 						return rval;
 				}
@@ -1140,7 +1264,6 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 				return rval;
 			}
 		}
-
 		/*
 		 * Restore each subdev i2c address as we may
 		 * touch it later.
@@ -1192,8 +1315,7 @@ static int ti960_set_stream_vc(struct ti960 *va, u8 vc_id, u8 state)
 		return rval;
 	}
 	if (va->subdev_pdata[i].module_flags & TI960_FL_RESET) {
-		rval = reset_sensor(va, rx_port, ser_alias,
-				va->subdev_pdata[i].reset);
+		rval = reset_sensor(va, &va->sub_devs[i], &va->subdev_pdata[i]);
 		if (rval)
 			return rval;
 	}
@@ -1603,6 +1725,12 @@ static int ti960_probe(struct i2c_client *client,
 			gpio_set_value(va->pdata->FPD_gpio, 1);
 	}
 
+	va->bus_switch = i2c_new_dummy_device(client->adapter, D3_BUS_SWITCH_ADDR);
+	if (IS_ERR(va->bus_switch)) {
+		dev_warn(&client->dev, "Failed to create client for bus-switch: %ld",
+				PTR_ERR(va->bus_switch));
+		va->bus_switch = 0;
+	}
 	rval = ti960_init(va);
 	if (rval) {
 		dev_err(&client->dev, "Failed to init TI960!\n");
@@ -1667,6 +1795,20 @@ static void ti960_remove(struct i2c_client *client)
 			i2c_unregister_device(sub_client);
 		}
 		va->sub_devs[i].sd = NULL;
+		if (va->sub_devs[i].serializer) {
+			i2c_unregister_device(va->sub_devs[i].serializer);
+			va->sub_devs[i].serializer = NULL;
+		}
+
+		if (va->sub_devs[i].gpio_exp) {
+			i2c_unregister_device(va->sub_devs[i].gpio_exp);
+			va->sub_devs[i].gpio_exp = NULL;
+		}
+	}
+
+	if (va->bus_switch) {
+		i2c_unregister_device(va->bus_switch);
+		va->bus_switch = NULL;
 	}
 
 	gpiochip_remove(&va->gc);
@@ -1701,7 +1843,7 @@ static int ti960_resume(struct device *dev)
 		if (sensor_subdev->sd == NULL)
 			break;
 
-		rval = ti960_config_ser(va, sensor_subdev, pdata);
+		rval = ti960_config_ser(va, client, i, sensor_subdev, pdata);
 		if (rval)
 			dev_warn(va->sd.dev, "resume: failed config subdev");
 	}

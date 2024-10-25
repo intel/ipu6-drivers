@@ -145,16 +145,12 @@ static const struct ti953_register_devid ti953_FPD3_RX_ID[] = {
 	{0xf5, 0x33},
 };
 
-int ti953_reg_write(struct v4l2_subdev *sd, unsigned short rx_port,
-		unsigned short ser_alias, unsigned char reg, unsigned char val);
+int ti953_reg_write(struct i2c_client *client, unsigned char reg, unsigned char val);
+int ti953_reg_read(struct i2c_client *client, unsigned char reg, unsigned char *val);
 
-int ti953_reg_read(struct v4l2_subdev *sd, unsigned short rx_port,
-		unsigned short ser_alias, unsigned char reg, unsigned char *val);
-
-bool ti953_detect(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
-
-int ti953_init(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
-int ti953_init_clk(struct v4l2_subdev *sd, unsigned short rx_port, unsigned short ser_alias);
-int32_t ti953_bus_speed(struct v4l2_subdev *sd, uint16_t rx_port, uint16_t ser_alias, uint8_t i2c_speed);
+bool ti953_detect(struct i2c_client *client);
+int ti953_init(struct i2c_client *client);
+int ti953_init_clk(struct i2c_client *client);
+int32_t ti953_bus_speed(struct i2c_client *client, uint8_t i2c_speed);
 
 #endif
