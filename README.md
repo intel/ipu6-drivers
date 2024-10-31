@@ -28,14 +28,23 @@ There are 4 repositories:
                 and build kernel driver (IPU driver included by default)
 
         c.	Check and enable kernel config list in below
-		Must be enabled (enabled by default):
+                For kernel version < 6.10:
+		Must be enabled:
 	                CONFIG_VIDEO_INTEL_IPU6=m 
 	                CONFIG_INTEL_SKL_INT3472=m
 	                CONFIG_INTEL_IPU6_ACPI=m
 	                CONFIG_VIDEO_INTEL_IPU_SOC=y
 	                CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA=y
 
+                For kernel version >= 6.10:
+                Must be enabled:
+                        CONFIG_VIDEO_INTEL_IPU6=m
+                        CONFIG_IPU_BRIDGE=m
+                        CONFIG_INTEL_SKL_INT3472=m
+
+                For all kernel version:
 		Enabled by needed:
+                        CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET=y
                         CONFIG_VIDEO_AR0234=m 
                         CONFIG_VIDEO_LT6911UXC=m
                         CONFIG_VIDEO_LT6911UXE=m 
