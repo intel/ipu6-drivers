@@ -1,0 +1,67 @@
+From a30c9144c7966898218ba9eca57a49cdd7555b32 Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Tue, 29 Oct 2024 10:55:18 +0800
+Subject: [PATCH] Revert "media: v4l2-subdev: Document and enforce .s_stream()
+ requirements"
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/v4l2-core/v4l2-subdev.c | 17 +----------------
+ include/media/v4l2-subdev.h           |  4 +---
+ 2 files changed, 2 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-subdev.c b/drivers/media/v4l2-core/v4l2-subdev.c
+index f481d1ca32ab..ee159b4341ab 100644
+--- a/drivers/media/v4l2-core/v4l2-subdev.c
++++ b/drivers/media/v4l2-core/v4l2-subdev.c
+@@ -359,18 +359,6 @@ static int call_s_stream(struct v4l2_subdev *sd, int enable)
+ {
+ 	int ret;
+ 
+-	/*
+-	 * The .s_stream() operation must never be called to start or stop an
+-	 * already started or stopped subdev. Catch offenders but don't return
+-	 * an error yet to avoid regressions.
+-	 *
+-	 * As .s_stream() is mutually exclusive with the .enable_streams() and
+-	 * .disable_streams() operation, we can use the enabled_streams field
+-	 * to store the subdev streaming state.
+-	 */
+-	if (WARN_ON(!!sd->enabled_streams == !!enable))
+-		return 0;
+-
+ #if IS_REACHABLE(CONFIG_LEDS_CLASS)
+ 	if (!IS_ERR_OR_NULL(sd->privacy_led)) {
+ 		if (enable)
+@@ -384,12 +372,9 @@ static int call_s_stream(struct v4l2_subdev *sd, int enable)
+ 
+ 	if (!enable && ret < 0) {
+ 		dev_warn(sd->dev, "disabling streaming failed (%d)\n", ret);
+-		ret = 0;
++		return 0;
+ 	}
+ 
+-	if (!ret)
+-		sd->enabled_streams = enable ? BIT(0) : 0;
+-
+ 	return ret;
+ }
+ 
+diff --git a/include/media/v4l2-subdev.h b/include/media/v4l2-subdev.h
+index ab2a7ef61d42..d9fca929c10b 100644
+--- a/include/media/v4l2-subdev.h
++++ b/include/media/v4l2-subdev.h
+@@ -446,9 +446,7 @@ enum v4l2_subdev_pre_streamon_flags {
+  * @s_stream: start (enabled == 1) or stop (enabled == 0) streaming on the
+  *	sub-device. Failure on stop will remove any resources acquired in
+  *	streaming start, while the error code is still returned by the driver.
+- *	The caller shall track the subdev state, and shall not start or stop an
+- *	already started or stopped subdev. Also see call_s_stream wrapper in
+- *	v4l2-subdev.c.
++ *	Also see call_s_stream wrapper in v4l2-subdev.c.
+  *
+  * @g_pixelaspect: callback to return the pixelaspect ratio.
+  *
+-- 
+2.34.1
+

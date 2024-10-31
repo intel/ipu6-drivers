@@ -539,6 +539,76 @@ int ipu6_fw_psys_get_program_manifest_by_process(
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+#if defined(DEBUG) || defined(CONFIG_DYNAMIC_DEBUG) || \
+	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))
+void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
+			  struct ipu_psys_kcmd *kcmd, const char *note)
+{
+	struct ipu_fw_psys_process_group *pg = kcmd->kpg->pg;
+	u32 pgid = pg->ID;
+	u8 processes = pg->process_count;
+	u16 *process_offset_table = (u16 *)((char *)pg + pg->processes_offset);
+	unsigned int p, chn, mem, mem_id;
+	unsigned int mem_type, max_mem_id, dev_chn;
+
+	if (ipu_ver == IPU_VER_6SE) {
+		mem_type = IPU6SE_FW_PSYS_N_DATA_MEM_TYPE_ID;
+		max_mem_id = IPU6SE_FW_PSYS_N_MEM_ID;
+		dev_chn = IPU6SE_FW_PSYS_N_DEV_CHN_ID;
+	} else if (ipu_ver == IPU_VER_6 || ipu_ver == IPU_VER_6EP ||
+		   ipu_ver == IPU_VER_6EP_MTL) {
+		mem_type = IPU6_FW_PSYS_N_DATA_MEM_TYPE_ID;
+		max_mem_id = IPU6_FW_PSYS_N_MEM_ID;
+		dev_chn = IPU6_FW_PSYS_N_DEV_CHN_ID;
+	} else {
+		WARN(1, "%s ipu_ver:[%u] is unsupported!\n", __func__, ipu_ver);
+		return;
+	}
+
+	dev_dbg(&psys->adev->dev, "%s %s pgid %i has %i processes:\n",
+		__func__, note, pgid, processes);
+
+	for (p = 0; p < processes; p++) {
+		struct ipu_fw_psys_process *process =
+		    (struct ipu_fw_psys_process *)
+		    ((char *)pg + process_offset_table[p]);
+		struct ipu6_fw_psys_process_ext *pm_ext =
+		    (struct ipu6_fw_psys_process_ext *)((u8 *)process
+		    + process->process_extension_offset);
+		dev_dbg(&psys->adev->dev, "\t process %i size=%u",
+			p, process->size);
+		if (!process->process_extension_offset)
+			continue;
+
+		for (mem = 0; mem < mem_type; mem++) {
+			mem_id = pm_ext->ext_mem_id[mem];
+			if (mem_id != max_mem_id)
+				dev_dbg(&psys->adev->dev,
+					"\t mem type %u id %d offset=0x%x",
+					mem, mem_id,
+					pm_ext->ext_mem_offset[mem]);
+		}
+		for (chn = 0; chn < dev_chn; chn++) {
+			if (pm_ext->dev_chn_offset[chn] != (u16)(-1))
+				dev_dbg(&psys->adev->dev,
+					"\t dev_chn[%u]=0x%x\n",
+					chn, pm_ext->dev_chn_offset[chn]);
+		}
+	}
+}
+#else
+void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
+			  struct ipu_psys_kcmd *kcmd, const char *note)
+{
+	if (ipu_ver == IPU_VER_6SE || ipu_ver == IPU_VER_6 ||
+	    ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL)
+		return;
+
+	WARN(1, "%s ipu_ver:[%u] is unsupported!\n", __func__, ipu_ver);
+}
+#endif
+#else
 #if defined(DEBUG) || defined(CONFIG_DYNAMIC_DEBUG) || \
 	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))
 void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
@@ -604,4 +674,5 @@ void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
 
 	WARN(1, "%s ipu_ver:[%u] is unsupported!\n", __func__, ipu_ver);
 }
+#endif
 #endif
