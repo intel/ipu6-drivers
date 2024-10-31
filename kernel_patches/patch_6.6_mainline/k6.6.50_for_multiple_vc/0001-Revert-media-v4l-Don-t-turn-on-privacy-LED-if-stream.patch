@@ -1,0 +1,56 @@
+From 64e6ac8ffb29e4807dae7e0f0293690aa0b1b4fa Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Tue, 29 Oct 2024 10:55:09 +0800
+Subject: [PATCH] Revert "media: v4l: Don't turn on privacy LED if streamon
+ fails"
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/v4l2-core/v4l2-subdev.c | 22 ++++++++++------------
+ 1 file changed, 10 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-subdev.c b/drivers/media/v4l2-core/v4l2-subdev.c
+index a32ef739eb44..f481d1ca32ab 100644
+--- a/drivers/media/v4l2-core/v4l2-subdev.c
++++ b/drivers/media/v4l2-core/v4l2-subdev.c
+@@ -371,6 +371,15 @@ static int call_s_stream(struct v4l2_subdev *sd, int enable)
+ 	if (WARN_ON(!!sd->enabled_streams == !!enable))
+ 		return 0;
+ 
++#if IS_REACHABLE(CONFIG_LEDS_CLASS)
++	if (!IS_ERR_OR_NULL(sd->privacy_led)) {
++		if (enable)
++			led_set_brightness(sd->privacy_led,
++					   sd->privacy_led->max_brightness);
++		else
++			led_set_brightness(sd->privacy_led, 0);
++	}
++#endif
+ 	ret = sd->ops->video->s_stream(sd, enable);
+ 
+ 	if (!enable && ret < 0) {
+@@ -378,20 +387,9 @@ static int call_s_stream(struct v4l2_subdev *sd, int enable)
+ 		ret = 0;
+ 	}
+ 
+-	if (!ret) {
++	if (!ret)
+ 		sd->enabled_streams = enable ? BIT(0) : 0;
+ 
+-#if IS_REACHABLE(CONFIG_LEDS_CLASS)
+-		if (!IS_ERR_OR_NULL(sd->privacy_led)) {
+-			if (enable)
+-				led_set_brightness(sd->privacy_led,
+-						   sd->privacy_led->max_brightness);
+-			else
+-				led_set_brightness(sd->privacy_led, 0);
+-		}
+-#endif
+-	}
+-
+ 	return ret;
+ }
+ 
+-- 
+2.34.1
+
