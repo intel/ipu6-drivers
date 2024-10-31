@@ -750,9 +750,8 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 {
 	struct ti960 *va = to_ti960(subdev);
 	struct i2c_client *client = v4l2_get_subdevdata(subdev);
-	int i, j, k, l, m, rval;
+	int i, j, k, l, rval;
 	bool port_registered[NR_OF_TI960_SINK_PADS];
-	unsigned char val;
 
 	for (i = 0 ; i < NR_OF_TI960_SINK_PADS; i++)
 		port_registered[i] = false;
@@ -1786,7 +1785,6 @@ static int ti960_resume(struct device *dev)
 	int i, rval;
 	struct ti960_subdev *sensor_subdev;
 	struct ti960_subdev_pdata *pdata;
-	unsigned char val;
 
 	rval = ti960_init(va);
 	if (rval) {
