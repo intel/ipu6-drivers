@@ -1681,27 +1681,9 @@ static int __maybe_unused imx390_resume(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx390 *imx390 = to_imx390(sd);
-	const struct imx390_reg_list *reg_list;
-	int ret;
-
-	reg_list = &imx390->cur_mode->reg_list;
-	ret = imx390_write_reg_list(imx390, reg_list);
-	if (ret) {
-		dev_err(&client->dev, "resume: failed to apply cur mode");
-		return ret;
-	}
 
 	mutex_lock(&imx390->mutex);
-	if (imx390->streaming) {
-		ret = imx390_start_streaming(imx390);
-		if (ret) {
-			imx390->streaming = false;
-			imx390_stop_streaming(imx390);
-			mutex_unlock(&imx390->mutex);
-			return ret;
-		}
-	}
-
+	imx390->pre_mode = NULL;
 	mutex_unlock(&imx390->mutex);
 
 	return 0;

@@ -1818,6 +1818,21 @@ static void ti960_remove(struct i2c_client *client)
 #ifdef CONFIG_PM
 static int ti960_suspend(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
+	struct ti960 *va = to_ti960(subdev);
+	int i;
+	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+		if (va->sub_devs[i].serializer) {
+			i2c_unregister_device(va->sub_devs[i].serializer);
+			va->sub_devs[i].serializer = NULL;
+		}
+
+		if (va->sub_devs[i].gpio_exp) {
+			i2c_unregister_device(va->sub_devs[i].gpio_exp);
+			va->sub_devs[i].gpio_exp = NULL;
+		}
+	}
 	return 0;
 }
 

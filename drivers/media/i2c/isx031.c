@@ -377,26 +377,9 @@ static int __maybe_unused isx031_resume(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct isx031 *isx031 = to_isx031(sd);
-	const struct isx031_reg_list *reg_list;
-	int ret;
 
-	reg_list = &isx031->cur_mode->reg_list;
-	ret = isx031_write_reg_list(isx031, reg_list);
-	if (ret) {
-		dev_err(&client->dev, "resume: failed to apply cur mode");
-		return ret;
-	}
 	mutex_lock(&isx031->mutex);
-	if (isx031->streaming) {
-		ret = isx031_start_streaming(isx031);
-		if (ret) {
-			isx031->streaming = false;
-			isx031_stop_streaming(isx031);
-			mutex_unlock(&isx031->mutex);
-			return ret;
-		}
-	}
-
+	isx031->pre_mode = NULL;
 	mutex_unlock(&isx031->mutex);
 
 	return 0;
