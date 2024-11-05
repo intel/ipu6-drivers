@@ -675,6 +675,9 @@ static int link_validate(struct media_link *link)
 	struct ipu_isys_pipeline *ip =
 		to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	struct v4l2_subdev *sd;
+	struct media_pad *source_pad = media_entity_remote_pad(&av->pad);
+	struct v4l2_subdev_format fmt = { 0 };
+	fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 
 	if (!link->source->entity)
 		return -EINVAL;
@@ -690,6 +693,20 @@ static int link_validate(struct media_link *link)
 	}
 
 	ip->nr_queues++;
+
+	/* set format for "CSI2 BE SOC" specific pad
+	 * to be "BE SOC capture" av node format.
+	 */
+	fmt.format.width = av->mpix.width;
+	fmt.format.height = av->mpix.height;
+	fmt.format.code = av->pfmt->code;
+	fmt.format.field = av->mpix.field;
+	fmt.format.colorspace = av->mpix.colorspace;
+	fmt.format.ycbcr_enc = av->mpix.ycbcr_enc;
+	fmt.format.quantization = av->mpix.quantization;
+	fmt.format.xfer_func = av->mpix.xfer_func;
+	fmt.pad = source_pad->index;
+	v4l2_subdev_call(sd, pad, set_fmt, NULL, &fmt);
 
 	return 0;
 }
