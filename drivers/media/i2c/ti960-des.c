@@ -31,6 +31,7 @@
 
 #define MIPI_CSI2_TYPE_RAW12   0x2c
 #define MIPI_CSI2_TYPE_YUV422_8	0x1e
+#define SUFFIX_BASE 96
 
 struct ti960_slave {
 	unsigned short addr;
@@ -146,50 +147,56 @@ static struct regmap_config ti960_reg_config16 = {
 	.reg_format_endian = REGMAP_ENDIAN_BIG,
 };
 
-static s64 ti960_query_sub_stream[NR_OF_TI960_SINK_PADS] = {
-	0, 0, 0, 0
+static s64 ti960_query_sub_stream[NR_OF_TI960_DEVS][NR_OF_TI960_SINK_PADS] = {
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
 };
 
-static void set_sub_stream_fmt(int index, u32 code)
+static void set_sub_stream_fmt(int port, int index, u32 code)
 {
-	ti960_query_sub_stream[index] &= 0xFFFFFFFFFFFF0000;
-	ti960_query_sub_stream[index] |= code;
+	ti960_query_sub_stream[port][index] &= 0xFFFFFFFFFFFF0000;
+	ti960_query_sub_stream[port][index] |= code;
 }
 
-static void set_sub_stream_h(int index, u32 height)
+static void set_sub_stream_h(int port, int index, u32 height)
 {
 	s64 val = height & 0xFFFF;
 
-	ti960_query_sub_stream[index] &= 0xFFFFFFFF0000FFFF;
-	ti960_query_sub_stream[index] |= val << 16;
+	ti960_query_sub_stream[port][index] &= 0xFFFFFFFF0000FFFF;
+	ti960_query_sub_stream[port][index] |= val << 16;
 }
 
-static void set_sub_stream_w(int index, u32 width)
+static void set_sub_stream_w(int port, int index, u32 width)
 {
 	s64 val = width & 0xFFFF;
 
-	ti960_query_sub_stream[index] &= 0xFFFF0000FFFFFFFF;
-	ti960_query_sub_stream[index] |= val << 32;
+	ti960_query_sub_stream[port][index] &= 0xFFFF0000FFFFFFFF;
+	ti960_query_sub_stream[port][index] |= val << 32;
 }
 
-static void set_sub_stream_dt(int index, u32 dt)
+static void set_sub_stream_dt(int port, int index, u32 dt)
 {
 	s64 val = dt & 0xFF;
 
-	ti960_query_sub_stream[index] &= 0xFF00FFFFFFFFFFFF;
-	ti960_query_sub_stream[index] |= val << 48;
+	ti960_query_sub_stream[port][index] &= 0xFF00FFFFFFFFFFFF;
+	ti960_query_sub_stream[port][index] |= val << 48;
 }
 
-static void set_sub_stream_vc_id(int index, u32 vc_id)
+static void set_sub_stream_vc_id(int port, int index, u32 vc_id)
 {
 	s64 val = vc_id & 0xFF;
 
-	ti960_query_sub_stream[index] &= 0x00FFFFFFFFFFFFFF;
-	ti960_query_sub_stream[index] |= val << 56;
+	ti960_query_sub_stream[port][index] &= 0x00FFFFFFFFFFFFFF;
+	ti960_query_sub_stream[port][index] |= val << 56;
 }
 
-static u8 ti960_set_sub_stream[] = {
-	0, 0, 0, 0
+static u8 ti960_set_sub_stream[NR_OF_TI960_DEVS][NR_OF_TI960_SINK_PADS] = {
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
 };
 
 static int bus_switch(struct ti960 *va)
@@ -558,6 +565,7 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 	struct ti960 *va = to_ti960(subdev);
 	const struct ti960_csi_data_format *csi_format;
 	struct v4l2_mbus_framefmt *ffmt;
+	u8 port = va->pdata->suffix - SUFFIX_BASE;
 
 	csi_format = ti960_validate_csi_data_format(
 		fmt->format.code);
@@ -577,17 +585,17 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 	fmt->format = *ffmt;
 
 	if (fmt->pad < NR_OF_TI960_SINK_PADS) {
-		set_sub_stream_fmt(fmt->pad, ffmt->code);
-		set_sub_stream_h(fmt->pad, ffmt->height);
-		set_sub_stream_w(fmt->pad, ffmt->width);
+		set_sub_stream_fmt(port, fmt->pad, ffmt->code);
+		set_sub_stream_h(port, fmt->pad, ffmt->height);
+		set_sub_stream_w(port, fmt->pad, ffmt->width);
 
 		/* select correct csi-2 data type id */
 		if (ffmt->code >= MEDIA_BUS_FMT_UYVY8_1X16 &&
 				ffmt->code <= MEDIA_BUS_FMT_YVYU8_1X16)
-			set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_YUV422_8);
+			set_sub_stream_dt(port, fmt->pad, MIPI_CSI2_TYPE_YUV422_8);
 		else
-			set_sub_stream_dt(fmt->pad, MIPI_CSI2_TYPE_RAW12);
-		set_sub_stream_vc_id(fmt->pad, fmt->pad);
+			set_sub_stream_dt(port, fmt->pad, MIPI_CSI2_TYPE_RAW12);
+		set_sub_stream_vc_id(port, fmt->pad, fmt->pad);
 		dev_dbg(subdev->dev,
 			"framefmt: width: %d, height: %d, code: 0x%x.\n",
 			ffmt->width, ffmt->height, ffmt->code);
@@ -842,9 +850,8 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 {
 	struct ti960 *va = to_ti960(subdev);
 	struct i2c_client *client = v4l2_get_subdevdata(subdev);
-	int i, j, k, l, m, rval;
+	int i, j, k, l, rval;
 	bool port_registered[NR_OF_TI960_SINK_PADS];
-	unsigned char val;
 
 	for (i = 0 ; i < NR_OF_TI960_SINK_PADS; i++)
 		port_registered[i] = false;
@@ -1006,6 +1013,7 @@ static bool ti960_broadcast_mode(struct v4l2_subdev *subdev)
 	unsigned int h = 0, w = 0, code = 0;
 	bool single_stream = true;
 	int i, rval;
+	u8 port = va->pdata->suffix - SUFFIX_BASE;
 
 	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
 		struct media_pad *remote_pad =
@@ -1014,7 +1022,7 @@ static bool ti960_broadcast_mode(struct v4l2_subdev *subdev)
 		if (!remote_pad)
 			continue;
 
-		if (!ti960_set_sub_stream[i])
+		if (!ti960_set_sub_stream[port][i])
 			continue;
 
 		sd = media_entity_to_v4l2_subdev(remote_pad->entity);
@@ -1126,7 +1134,8 @@ static int ti960_set_frame_sync(struct ti960 *va, int enable)
 			return rval;
 		}
 	}
-
+	dev_info(va->sd.dev, "Succeed to %s frame sync\n",
+				enable ? "enable" : "disable");
 	return 0;
 }
 
@@ -1139,6 +1148,8 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 	unsigned short rx_port;
 	unsigned short ser_alias;
 	int sd_idx = -1;
+	u8 port = va->pdata->suffix - SUFFIX_BASE;
+
 	DECLARE_BITMAP(rx_port_enabled, 32);
 
 	dev_dbg(va->sd.dev, "TI960 set stream, enable %d\n", enable);
@@ -1156,7 +1167,7 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 		if (!remote_pad)
 			continue;
 
-		if (!ti960_set_sub_stream[i])
+		if (!ti960_set_sub_stream[port][i])
 			continue;
 
 		/* Find ti960 subdev */
@@ -1314,6 +1325,14 @@ static int ti960_set_stream_vc(struct ti960 *va, u8 vc_id, u8 state)
 				i, state);
 		return rval;
 	}
+
+	rval = ti960_fsin_gpio_init(va, &va->sub_devs[i]);
+	if (rval) {
+		dev_err(va->sd.dev,
+			"Failed to enable frame sync gpio init.\n");
+		return rval;
+	}
+
 	if (va->subdev_pdata[i].module_flags & TI960_FL_RESET) {
 		rval = reset_sensor(va, &va->sub_devs[i], &va->subdev_pdata[i]);
 		if (rval)
@@ -1336,16 +1355,16 @@ static const struct v4l2_subdev_core_ops ti960_core_subdev_ops = {
 	.s_power = ti960_set_power,
 };
 
-static u8 ti960_get_nubmer_of_streaming(void)
+static u8 ti960_get_nubmer_of_streaming(struct ti960 *va, u8 port)
 {
 	u8 n = 0;
 	u8 i = 0;
-
+	mutex_lock(&va->mutex);
 	for (; i < ARRAY_SIZE(ti960_set_sub_stream); i++) {
-		if (ti960_set_sub_stream[i])
+		if (ti960_set_sub_stream[port][i])
 			n++;
 	}
-
+	mutex_unlock(&va->mutex);
 	return n;
 }
 
@@ -1356,6 +1375,7 @@ static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 	u32 val;
 	u8 vc_id;
 	u8 state;
+	u8 port = va->pdata->suffix - SUFFIX_BASE;
 
 	switch (ctrl->id) {
 	case V4L2_CID_IPU_SET_SUB_STREAM:
@@ -1371,12 +1391,12 @@ static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 		ti960_reg_write(va, TI960_CSI_PORT_SEL, 0x01);
 		ti960_reg_read(va, TI960_CSI_CTL, &val);
 		if (state) {
-			if (ti960_get_nubmer_of_streaming() == 0)
+			if (ti960_get_nubmer_of_streaming(va, port) == 0)
 				val |= TI960_CSI_CONTS_CLOCK;
-			ti960_set_sub_stream[vc_id] = state;
+			ti960_set_sub_stream[port][vc_id] = state;
 		} else {
-			ti960_set_sub_stream[vc_id] = state;
-			if (ti960_get_nubmer_of_streaming() == 0)
+			ti960_set_sub_stream[port][vc_id] = state;
+			if (ti960_get_nubmer_of_streaming(va, port) == 0)
 				val &= ~TI960_CSI_CONTS_CLOCK;
 		}
 
@@ -1394,7 +1414,7 @@ static const struct v4l2_ctrl_ops ti960_ctrl_ops = {
 	.s_ctrl = ti960_s_ctrl,
 };
 
-static const struct v4l2_ctrl_config ti960_controls[] = {
+static const struct v4l2_ctrl_config ti960_basic_controls[3] = {
 	{
 		.ops = &ti960_ctrl_ops,
 		.id = V4L2_CID_LINK_FREQ,
@@ -1418,17 +1438,6 @@ static const struct v4l2_ctrl_config ti960_controls[] = {
 	},
 	{
 		.ops = &ti960_ctrl_ops,
-		.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
-		.name = "query virtual channel",
-		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
-		.max = ARRAY_SIZE(ti960_query_sub_stream) - 1,
-		.min = 0,
-		.def = 0,
-		.menu_skip_mask = 0,
-		.qmenu_int = ti960_query_sub_stream,
-	},
-	{
-		.ops = &ti960_ctrl_ops,
 		.id = V4L2_CID_IPU_SET_SUB_STREAM,
 		.name = "set virtual channel",
 		.type = V4L2_CTRL_TYPE_INTEGER64,
@@ -1437,6 +1446,54 @@ static const struct v4l2_ctrl_config ti960_controls[] = {
 		.def = 0,
 		.step = 1,
 	},
+};
+
+static const struct v4l2_ctrl_config ti960_query_sub_control[NR_OF_TI960_DEVS] = {
+	{
+		.ops = &ti960_ctrl_ops,
+		.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+		.name = "query virtual channel",
+		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+		.max = ARRAY_SIZE(ti960_query_sub_stream[0]) - 1,
+		.min = 0,
+		.def = 0,
+		.menu_skip_mask = 0,
+		.qmenu_int = ti960_query_sub_stream[0],
+	},
+	{
+		.ops = &ti960_ctrl_ops,
+		.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+		.name = "query virtual channel",
+		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+		.max = ARRAY_SIZE(ti960_query_sub_stream[1]) - 1,
+		.min = 0,
+		.def = 0,
+		.menu_skip_mask = 0,
+		.qmenu_int = ti960_query_sub_stream[1],
+	},
+	{
+		.ops = &ti960_ctrl_ops,
+		.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+		.name = "query virtual channel",
+		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+		.max = ARRAY_SIZE(ti960_query_sub_stream[2]) - 1,
+		.min = 0,
+		.def = 0,
+		.menu_skip_mask = 0,
+		.qmenu_int = ti960_query_sub_stream[2],
+	},
+	{
+		.ops = &ti960_ctrl_ops,
+		.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+		.name = "query virtual channel",
+		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+		.max = ARRAY_SIZE(ti960_query_sub_stream[3]) - 1,
+		.min = 0,
+		.def = 0,
+		.menu_skip_mask = 0,
+		.qmenu_int = ti960_query_sub_stream[3],
+	},
+
 };
 
 static const struct v4l2_subdev_pad_ops ti960_sd_pad_ops = {
@@ -1456,7 +1513,8 @@ static int ti960_register_subdev(struct ti960 *va)
 {
 	int i, rval;
 	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
-
+	u8 port = va->pdata->suffix - SUFFIX_BASE;
+	u8 ctrl_num = ARRAY_SIZE(ti960_basic_controls) + 1;
 	v4l2_subdev_init(&va->sd, &ti960_sd_ops);
 	snprintf(va->sd.name, sizeof(va->sd.name), "TI960 %c",
 		va->pdata->suffix);
@@ -1468,8 +1526,7 @@ static int ti960_register_subdev(struct ti960 *va)
 
 	v4l2_set_subdevdata(&va->sd, client);
 
-	v4l2_ctrl_handler_init(&va->ctrl_handler,
-				ARRAY_SIZE(ti960_controls));
+	v4l2_ctrl_handler_init(&va->ctrl_handler, ctrl_num);
 
 	if (va->ctrl_handler.error) {
 		dev_err(va->sd.dev,
@@ -1480,9 +1537,9 @@ static int ti960_register_subdev(struct ti960 *va)
 
 	va->sd.ctrl_handler = &va->ctrl_handler;
 
-	for (i = 0; i < ARRAY_SIZE(ti960_controls); i++) {
+	for (i = 0; i < ARRAY_SIZE(ti960_basic_controls); i++) {
 		const struct v4l2_ctrl_config *cfg =
-			&ti960_controls[i];
+			&ti960_basic_controls[i];
 		struct v4l2_ctrl *ctrl;
 
 		ctrl = v4l2_ctrl_new_custom(&va->ctrl_handler, cfg, NULL);
@@ -1492,6 +1549,18 @@ static int ti960_register_subdev(struct ti960 *va)
 			rval = va->ctrl_handler.error;
 			goto failed_out;
 		}
+	}
+
+	const struct v4l2_ctrl_config *cfg =
+			&ti960_query_sub_control[port];
+	struct v4l2_ctrl *ctrl;
+
+	ctrl = v4l2_ctrl_new_custom(&va->ctrl_handler, cfg, NULL);
+	if (!ctrl) {
+		dev_err(va->sd.dev,
+			"Failed to create ctrl %s!\n", cfg->name);
+		rval = va->ctrl_handler.error;
+		goto failed_out;
 	}
 
 	va->link_freq = v4l2_ctrl_find(&va->ctrl_handler, V4L2_CID_LINK_FREQ);
@@ -1591,6 +1660,10 @@ static int ti960_init(struct ti960 *va)
 	if (rval)
 		return rval;
 
+	rval = ti960_set_frame_sync(va, 1);
+	if (rval)
+		dev_err(va->sd.dev,
+					"Failed to write TI960 sync setting\n");
 	return 0;
 }
 
@@ -1822,6 +1895,7 @@ static int ti960_suspend(struct device *dev)
 	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
 	struct ti960 *va = to_ti960(subdev);
 	int i;
+
 	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
 		if (va->sub_devs[i].serializer) {
 			i2c_unregister_device(va->sub_devs[i].serializer);
@@ -1833,6 +1907,7 @@ static int ti960_suspend(struct device *dev)
 			va->sub_devs[i].gpio_exp = NULL;
 		}
 	}
+
 	return 0;
 }
 
@@ -1844,7 +1919,6 @@ static int ti960_resume(struct device *dev)
 	int i, rval;
 	struct ti960_subdev *sensor_subdev;
 	struct ti960_subdev_pdata *pdata;
-	unsigned char val;
 
 	rval = ti960_init(va);
 	if (rval) {

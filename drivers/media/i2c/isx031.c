@@ -88,6 +88,14 @@ static const struct isx031_reg isx031_init_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0x0172, 0x00}, // close R_EBD
 	{ISX031_REG_LEN_08BIT, 0x8A01, 0x00}, // mode transition to start-up state
 	{ISX031_REG_LEN_DELAY, 0x0000, 0x64}, // delay 100 ms
+	/* External sync */
+	{ISX031_REG_LEN_08BIT, 0xBF14, 0x01}, /* SG_MODE_APL */
+	{ISX031_REG_LEN_08BIT, 0x8AFF, 0x0c}, /*  Hi-Z (input setting or output disabled) */
+	{ISX031_REG_LEN_08BIT, 0x0153, 0x00},
+	{ISX031_REG_LEN_08BIT, 0x8AF0, 0x01}, /* external pulse-based sync */
+	{ISX031_REG_LEN_08BIT, 0x0144, 0x00},
+	{ISX031_REG_LEN_08BIT, 0x8AF1, 0x00},
+
 };
 
 static const struct isx031_reg isx031_1920_1536_30fps_reg[] = {
@@ -132,6 +140,7 @@ static const struct isx031_reg isx031_1920_1080_30fps_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0xBF0B, 0x04},
 	{ISX031_REG_LEN_08BIT, 0xBF0C, 0xE4},
 	{ISX031_REG_LEN_08BIT, 0xBF0D, 0x00},
+
 };
 
 static const struct isx031_reg isx031_1280_720_30fps_reg[] = {
@@ -273,6 +282,34 @@ static int isx031_write_reg_list(struct isx031 *isx031,
 	return 0;
 }
 
+static int isx031_identify_module(struct isx031 *isx031)
+{
+	struct i2c_client *client = isx031->client;
+	int ret;
+	int retry = 50;
+	u32 val;
+
+	while (retry--) {
+		ret = isx031_read_reg(isx031, ISX031_REG_CHIP_ID,
+			      ISX031_REG_LEN_08BIT, &val);
+		if (ret == 0)
+			break;
+		usleep_range(100000, 100500);
+	}
+
+	if (ret)
+		return ret;
+
+	/* chip id not known yet */
+	if (val != ISX031_CHIP_ID) {
+		dev_err(&client->dev, "read chip id: %x != %x",
+			val, ISX031_CHIP_ID);
+		return -ENXIO;
+	}
+
+	return isx031_write_reg_list(isx031, &isx031_init_reg_list);
+}
+
 static void isx031_update_pad_format(const struct isx031_mode *mode,
 				     struct v4l2_mbus_framefmt *fmt)
 {
@@ -377,9 +414,32 @@ static int __maybe_unused isx031_resume(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct isx031 *isx031 = to_isx031(sd);
+	const struct isx031_reg_list *reg_list;
+	int ret;
+	ret = isx031_identify_module(isx031);
+	if (ret == 0) {
+		reg_list = &isx031->cur_mode->reg_list;
+		ret = isx031_write_reg_list(isx031, reg_list);
+		if (ret) {
+			dev_err(&client->dev, "resume: failed to apply cur mode");
+			return ret;
+		}
+	} else {
+		dev_err(&client->dev, "isx031 resume failed");
+		return ret;
+	}
 
 	mutex_lock(&isx031->mutex);
-	isx031->pre_mode = NULL;
+	if (isx031->streaming) {
+		ret = isx031_start_streaming(isx031);
+		if (ret) {
+			isx031->streaming = false;
+			isx031_stop_streaming(isx031);
+			mutex_unlock(&isx031->mutex);
+			return ret;
+		}
+	}
+
 	mutex_unlock(&isx031->mutex);
 
 	return 0;
@@ -478,26 +538,6 @@ static const struct media_entity_operations isx031_subdev_entity_ops = {
 static const struct v4l2_subdev_internal_ops isx031_internal_ops = {
 	.open = isx031_open,
 };
-
-static int isx031_identify_module(struct isx031 *isx031)
-{
-	struct i2c_client *client = isx031->client;
-	int ret;
-	u32 val;
-
-	ret = isx031_read_reg(isx031, ISX031_REG_CHIP_ID,
-			      ISX031_REG_LEN_08BIT, &val);
-	if (ret)
-		return ret;
-	/* chip id not known yet */
-	if (val != ISX031_CHIP_ID) {
-		dev_err(&client->dev, "read chip id: %x != %x",
-			val, ISX031_CHIP_ID);
-		return -ENXIO;
-	}
-
-	return isx031_write_reg_list(isx031, &isx031_init_reg_list);
-}
 
 static void isx031_remove(struct i2c_client *client)
 {
