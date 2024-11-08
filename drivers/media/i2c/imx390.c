@@ -1706,6 +1706,7 @@ static int __maybe_unused imx390_resume(struct device *dev)
 	struct imx390 *imx390 = to_imx390(sd);
 	const struct imx390_reg_list *reg_list;
 	int ret;
+
 	ret = imx390_identify_module(imx390);
 	if (ret == 0) {
 		reg_list = &imx390->cur_mode->reg_list;

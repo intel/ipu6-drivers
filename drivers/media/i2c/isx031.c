@@ -416,6 +416,7 @@ static int __maybe_unused isx031_resume(struct device *dev)
 	struct isx031 *isx031 = to_isx031(sd);
 	const struct isx031_reg_list *reg_list;
 	int ret;
+
 	ret = isx031_identify_module(isx031);
 	if (ret == 0) {
 		reg_list = &isx031->cur_mode->reg_list;
