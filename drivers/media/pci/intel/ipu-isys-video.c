@@ -1022,6 +1022,7 @@ static void media_pipeline_stop_for_vc(struct ipu_isys_video *av)
 	dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
 			"stream count: %u, av entity name: %s.\n",
 			av->ip.csi2->stream_count, av->vdev.entity.name);
+	mutex_lock(&mdev->graph_mutex);
 	while ((entity = media_graph_walk_next(&graph))) {
 		dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
 				"walk entity name: %s.\n",
@@ -1029,6 +1030,7 @@ static void media_pipeline_stop_for_vc(struct ipu_isys_video *av)
 		if (av->ip.csi2->stream_count == 0 || !strcmp(entity->name, av->vdev.entity.name))
 			entity->pads[0].pipe = NULL;
 	}
+	mutex_unlock(&mdev->graph_mutex);
 
 	media_graph_walk_cleanup(&graph);
 }

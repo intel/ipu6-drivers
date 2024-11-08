@@ -23,10 +23,10 @@ static const struct ti960_register_write ti960_frame_sync_settings[2][5] = {
 		{0x1c, 0x00},
 	},
 	{
-		{0x19, 0x15}, /* Frame sync high time.*/
-		{0x1a, 0xb3},
-		{0x1b, 0xc3}, /* Frame sync low time. */
-		{0x1c, 0x4f},
+		{0x19, 0x0a}, /* Frame sync high time.*/
+		{0x1a, 0xd7},
+		{0x1b, 0xce}, /* Frame sync low time. */
+		{0x1c, 0xac},
 		{0x18, 0x01}, /* Enable frame sync. and use high/low mode */
 	}
 };

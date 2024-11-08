@@ -1149,6 +1149,29 @@ static int imx390_write_reg_list(struct imx390 *imx390,
 	return 0;
 }
 
+static int imx390_identify_module(struct imx390 *imx390)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
+	int ret;
+	int retry = 50;
+	u32 val;
+
+	while (retry--) {
+		ret = imx390_read_reg(imx390, IMX390_REG_CHIP_ID,
+				      IMX390_REG_VALUE_16BIT, &val);
+		if (ret == 0)
+			break;
+		usleep_range(100000, 100500);
+	}
+
+	if (ret)
+		return ret;
+
+	dev_info(&client->dev, "chip id: %04x", val);
+
+	return 0;
+}
+
 static int imx390_is_hdr(struct imx390 *imx390)
 {
 	// int mode_ix = self->s_data->sensor_mode_id;
@@ -1683,11 +1706,16 @@ static int __maybe_unused imx390_resume(struct device *dev)
 	struct imx390 *imx390 = to_imx390(sd);
 	const struct imx390_reg_list *reg_list;
 	int ret;
-
-	reg_list = &imx390->cur_mode->reg_list;
-	ret = imx390_write_reg_list(imx390, reg_list);
-	if (ret) {
-		dev_err(&client->dev, "resume: failed to apply cur mode");
+	ret = imx390_identify_module(imx390);
+	if (ret == 0) {
+		reg_list = &imx390->cur_mode->reg_list;
+		ret = imx390_write_reg_list(imx390, reg_list);
+		if (ret) {
+			dev_err(&client->dev, "resume: failed to apply cur mode");
+			return ret;
+		}
+	} else {
+		dev_err(&client->dev, "imx390 resume failed");
 		return ret;
 	}
 
@@ -1893,29 +1921,6 @@ static const struct media_entity_operations imx390_subdev_entity_ops = {
 static const struct v4l2_subdev_internal_ops imx390_internal_ops = {
 	.open = imx390_open,
 };
-
-static int imx390_identify_module(struct imx390 *imx390)
-{
-	struct i2c_client *client = v4l2_get_subdevdata(&imx390->sd);
-	int ret;
-	int retry = 50;
-	u32 val;
-
-	while (retry--) {
-		ret = imx390_read_reg(imx390, IMX390_REG_CHIP_ID,
-				      IMX390_REG_VALUE_16BIT, &val);
-		if (ret == 0)
-			break;
-		usleep_range(10000, 10500);
-	}
-
-	if (ret)
-		return ret;
-
-	dev_info(&client->dev, "chip id: %04x", val);
-
-	return 0;
-}
 
 static void imx390_remove(struct i2c_client *client)
 {
