@@ -904,7 +904,11 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 		if (rval)
 			continue;
 
-		reset_sensor(va, &va->sub_devs[k], &va->subdev_pdata[k]);
+		rval = reset_sensor(va, &va->sub_devs[k], &va->subdev_pdata[k]);
+		if (rval) {
+			dev_err(va->sd.dev, "sensor failed to reset.\n");
+			return rval;
+		}
 
 		/* Map slave I2C address. */
 		rval = ti960_map_i2c_slave(va, &va->sub_devs[k],
@@ -1935,6 +1939,12 @@ static int ti960_resume(struct device *dev)
 		rval = ti960_config_ser(va, client, i, sensor_subdev, pdata);
 		if (rval)
 			dev_warn(va->sd.dev, "resume: failed config subdev");
+
+		rval = reset_sensor(va, &va->sub_devs[i], &va->subdev_pdata[i]);
+		if (rval) {
+			dev_err(va->sd.dev, "sensor failed to reset.\n");
+			return rval;
+		}
 	}
 
 	return 0;
