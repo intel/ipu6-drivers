@@ -664,7 +664,7 @@ static int gpio_exp_reset_sensor(struct i2c_client *client, int reset)
 	gpio_out = i2c_smbus_read_byte_data(client, 0x01);
 	gpio_out &= ~(1u << reset);
 	i2c_smbus_write_byte_data(client, 0x01, gpio_out);
-	msleep(500);
+	msleep(50);
 	gpio_out |= (1u << reset);
 	i2c_smbus_write_byte_data(client, 0x01, gpio_out);
 
@@ -694,7 +694,7 @@ static int ti953_reset_sensor(struct i2c_client *client, int reset)
 	gpio_data |= TI953_GPIO0_OUT << reset;
 	ti953_reg_write(client, TI953_LOCAL_GPIO_DATA,
 			gpio_data);
-	msleep(500);
+	msleep(50);
 	return 0;
 }
 
@@ -729,6 +729,7 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 	int i, rval;
 	unsigned char val;
 	bool speed_detect_fail;
+	int timeout = 50;
 
 	rx_port = subdev->rx_port;
 	phy_i2c_addr = subdev->phy_i2c_addr;
@@ -779,7 +780,23 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 
 	ti953_reg_write(subdev->serializer,
 			TI953_RESET_CTL, TI953_DIGITAL_RESET_1);
-	msleep(50);
+
+	/*
+	 * ti953 pull down time is at least 3ms
+	 * add 2ms more as buffer
+	 */
+	while (timeout--) {
+		rval = ti953_reg_read(subdev->serializer, TI953_DEVICE_ID, &val);
+		if ((val == 0x30) || (val == 0x32))
+			break;
+
+		usleep_range(100, 110);
+	}
+	if (timeout == 0) {
+		dev_err(va->sd.dev, "ti953 pull down timeout.\n");
+	} else {
+		dev_info(va->sd.dev, "ti953 pull down succeed, loop time %d.\n", (50 - timeout));
+	}
 
 	if (pdata->module_flags & TI960_FL_INIT_SER) {
 		rval = ti953_init(subdev->serializer);
@@ -804,7 +821,6 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 			ti953_reg_write(subdev->serializer,
 					TI953_LOCAL_GPIO_DATA,
 					pdata->gpio_powerup_seq[i]);
-			msleep(50);
 		}
 	}
 
@@ -1657,8 +1673,6 @@ static int ti960_init(struct ti960 *va)
 			return rval;
 		}
 	}
-	/* wait for ti953 ready */
-	msleep(200);
 
 	rval = ti960_map_subdevs_addr(va);
 	if (rval)
