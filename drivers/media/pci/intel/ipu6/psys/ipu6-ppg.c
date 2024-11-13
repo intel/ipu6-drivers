@@ -491,7 +491,6 @@ void ipu_psys_enter_power_gating(struct ipu_psys *psys)
 	struct ipu_psys_scheduler *sched;
 	struct ipu_psys_ppg *kppg, *tmp;
 	struct ipu_psys_fh *fh;
-	int ret = 0;
 
 	list_for_each_entry(fh, &psys->fhs, list) {
 		mutex_lock(&fh->mutex);
@@ -512,13 +511,7 @@ void ipu_psys_enter_power_gating(struct ipu_psys *psys)
 				continue;
 			}
 
-			ret = pm_runtime_put(&psys->adev->dev);
-			if (ret < 0) {
-				dev_err(&psys->adev->dev,
-					"failed to power gating off\n");
-				pm_runtime_get_sync(&psys->adev->dev);
-
-			}
+			pm_runtime_put(&psys->adev->dev);
 			mutex_unlock(&kppg->mutex);
 		}
 		mutex_unlock(&fh->mutex);

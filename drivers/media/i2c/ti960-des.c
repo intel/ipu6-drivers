@@ -664,7 +664,7 @@ static int gpio_exp_reset_sensor(struct i2c_client *client, int reset)
 	gpio_out = i2c_smbus_read_byte_data(client, 0x01);
 	gpio_out &= ~(1u << reset);
 	i2c_smbus_write_byte_data(client, 0x01, gpio_out);
-	msleep(500);
+	msleep(50);
 	gpio_out |= (1u << reset);
 	i2c_smbus_write_byte_data(client, 0x01, gpio_out);
 
@@ -694,7 +694,7 @@ static int ti953_reset_sensor(struct i2c_client *client, int reset)
 	gpio_data |= TI953_GPIO0_OUT << reset;
 	ti953_reg_write(client, TI953_LOCAL_GPIO_DATA,
 			gpio_data);
-	msleep(500);
+	msleep(50);
 	return 0;
 }
 
@@ -729,6 +729,7 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 	int i, rval;
 	unsigned char val;
 	bool speed_detect_fail;
+	int timeout = 50;
 
 	rx_port = subdev->rx_port;
 	phy_i2c_addr = subdev->phy_i2c_addr;
@@ -779,7 +780,23 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 
 	ti953_reg_write(subdev->serializer,
 			TI953_RESET_CTL, TI953_DIGITAL_RESET_1);
-	msleep(50);
+
+	/*
+	 * ti953 pull down time is at least 3ms
+	 * add 2ms more as buffer
+	 */
+	while (timeout--) {
+		rval = ti953_reg_read(subdev->serializer, TI953_DEVICE_ID, &val);
+		if ((val == 0x30) || (val == 0x32))
+			break;
+
+		usleep_range(100, 110);
+	}
+	if (timeout == 0) {
+		dev_err(va->sd.dev, "ti953 pull down timeout.\n");
+	} else {
+		dev_info(va->sd.dev, "ti953 pull down succeed, loop time %d.\n", (50 - timeout));
+	}
 
 	if (pdata->module_flags & TI960_FL_INIT_SER) {
 		rval = ti953_init(subdev->serializer);
@@ -804,7 +821,6 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 			ti953_reg_write(subdev->serializer,
 					TI953_LOCAL_GPIO_DATA,
 					pdata->gpio_powerup_seq[i]);
-			msleep(50);
 		}
 	}
 
@@ -901,10 +917,16 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 			return -EINVAL;
 		}
 		rval = ti960_config_ser(va, client, k, &sensor_subdev, pdata);
-		if (rval)
+		if (rval) {
+			dev_warn(va->sd.dev, "resume: failed config subdev");
 			continue;
+		}
 
-		reset_sensor(va, &va->sub_devs[k], &va->subdev_pdata[k]);
+		rval = reset_sensor(va, &va->sub_devs[k], &va->subdev_pdata[k]);
+		if (rval) {
+			dev_err(va->sd.dev, "sensor failed to reset.\n");
+			continue;
+		}
 
 		/* Map slave I2C address. */
 		rval = ti960_map_i2c_slave(va, &va->sub_devs[k],
@@ -1511,7 +1533,7 @@ static struct v4l2_subdev_ops ti960_sd_ops = {
 
 static int ti960_register_subdev(struct ti960 *va)
 {
-	int i, rval;
+	int i, ret;
 	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
 	u8 port = va->pdata->suffix - SUFFIX_BASE;
 	u8 ctrl_num = ARRAY_SIZE(ti960_basic_controls) + 1;
@@ -1526,9 +1548,9 @@ static int ti960_register_subdev(struct ti960 *va)
 
 	v4l2_set_subdevdata(&va->sd, client);
 
-	v4l2_ctrl_handler_init(&va->ctrl_handler, ctrl_num);
+	ret = v4l2_ctrl_handler_init(&va->ctrl_handler, ctrl_num);
 
-	if (va->ctrl_handler.error) {
+	if (ret < 0) {
 		dev_err(va->sd.dev,
 			"Failed to init ti960 controls. ERR: %d!\n",
 			va->ctrl_handler.error);
@@ -1546,7 +1568,7 @@ static int ti960_register_subdev(struct ti960 *va)
 		if (!ctrl) {
 			dev_err(va->sd.dev,
 				"Failed to create ctrl %s!\n", cfg->name);
-			rval = va->ctrl_handler.error;
+			ret = va->ctrl_handler.error;
 			goto failed_out;
 		}
 	}
@@ -1559,7 +1581,7 @@ static int ti960_register_subdev(struct ti960 *va)
 	if (!ctrl) {
 		dev_err(va->sd.dev,
 			"Failed to create ctrl %s!\n", cfg->name);
-		rval = va->ctrl_handler.error;
+		ret = va->ctrl_handler.error;
 		goto failed_out;
 	}
 
@@ -1586,9 +1608,9 @@ static int ti960_register_subdev(struct ti960 *va)
 	for (i = 0; i < va->nsinks; i++)
 		va->pad[i].flags = MEDIA_PAD_FL_SINK;
 	va->pad[TI960_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
-	rval = media_entity_pads_init(&va->sd.entity,
+	ret = media_entity_pads_init(&va->sd.entity,
 				      NR_OF_TI960_PADS, va->pad);
-	if (rval) {
+	if (ret) {
 		dev_err(va->sd.dev,
 			"Failed to init media entity for ti960!\n");
 		goto failed_out;
@@ -1598,7 +1620,7 @@ static int ti960_register_subdev(struct ti960 *va)
 
 failed_out:
 	v4l2_ctrl_handler_free(&va->ctrl_handler);
-	return rval;
+	return ret;
 }
 
 static int ti960_init(struct ti960 *va)
@@ -1653,8 +1675,6 @@ static int ti960_init(struct ti960 *va)
 			return rval;
 		}
 	}
-	/* wait for ti953 ready */
-	msleep(200);
 
 	rval = ti960_map_subdevs_addr(va);
 	if (rval)
@@ -1935,6 +1955,12 @@ static int ti960_resume(struct device *dev)
 		rval = ti960_config_ser(va, client, i, sensor_subdev, pdata);
 		if (rval)
 			dev_warn(va->sd.dev, "resume: failed config subdev");
+
+		rval = reset_sensor(va, &va->sub_devs[i], &va->subdev_pdata[i]);
+		if (rval) {
+			dev_warn(va->sd.dev, "sensor failed to reset.\n");
+			continue;
+		}
 	}
 
 	return 0;
