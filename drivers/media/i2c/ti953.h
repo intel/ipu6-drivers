@@ -15,6 +15,7 @@ struct ti953_register_devid {
 };
 
 /* register definition */
+#define TI953_DEVICE_ID		0x0U
 #define TI953_RESET_CTL		0x1
 #define TI953_GENERAL_CFG	0x2
 #define TI953_LOCAL_GPIO_DATA	0xd
