@@ -517,7 +517,9 @@ static const struct file_operations ipu_traceconf_fops = {
 	.release = traceconf_release,
 	.read = traceconf_read,
 	.write = traceconf_write,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 	.llseek = no_llseek,
+#endif
 };
 
 static void wptraceconf_dump(struct ipu_device *isp)
@@ -673,7 +675,9 @@ static const struct file_operations ipu_wptraceconf_fops = {
 	.release = wptraceconf_release,
 	.read = wptraceconf_read,
 	.write = wptraceconf_write,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 	.llseek = no_llseek,
+#endif
 };
 
 static int gettrace_open(struct inode *inode, struct file *file)
@@ -740,7 +744,9 @@ static const struct file_operations ipu_gettrace_fops = {
 	.release = gettrace_release,
 	.read = gettrace_read,
 	.write = gettrace_write,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 	.llseek = no_llseek,
+#endif
 };
 
 int ipu_trace_init(struct ipu_device *isp, void __iomem *base,
