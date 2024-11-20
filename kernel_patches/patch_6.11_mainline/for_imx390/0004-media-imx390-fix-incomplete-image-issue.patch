@@ -1,0 +1,224 @@
+From ebeaccd9f432c488fc45b1b9d1acddd672b375ef Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Mon, 4 Nov 2024 09:54:39 +0800
+Subject: [PATCH 4/9] media: imx390: fix incomplete image issue.
+
+When more than 2x IMX390 on 1 MIPI Porti, almost
+every image is incomplete and many str2mmio error occurs.
+The reason is that ti960_set_power isn't called, because
+video_open didn't call v4l2_pipeline_pm_get.
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/i2c/ti960-des.c | 119 +++++++++++++---------------------
+ 1 file changed, 46 insertions(+), 73 deletions(-)
+
+diff --git a/drivers/media/i2c/ti960-des.c b/drivers/media/i2c/ti960-des.c
+index 22846d1b9295..89cfa6c8e280 100644
+--- a/drivers/media/i2c/ti960-des.c
++++ b/drivers/media/i2c/ti960-des.c
+@@ -62,6 +62,8 @@ struct ti960 {
+ 
+ 	struct v4l2_ctrl *link_freq;
+ 	struct v4l2_ctrl *test_pattern;
++
++	int ref_count;
+ };
+ 
+ #define to_ti960(_sd) container_of(_sd, struct ti960, sd)
+@@ -1262,11 +1264,11 @@ static struct v4l2_subdev_internal_ops ti960_sd_internal_ops = {
+ };
+ 
+ static const struct v4l2_subdev_video_ops ti960_sd_video_ops = {
+-	.s_stream = ti960_set_stream,
++	// .s_stream = ti960_set_stream,
+ };
+ 
+ static const struct v4l2_subdev_core_ops ti960_core_subdev_ops = {
+-	.s_power = ti960_set_power,
++	// .s_power = ti960_set_power,
+ };
+ 
+ static u8 ti960_get_nubmer_of_streaming(void)
+@@ -1367,9 +1369,25 @@ static u32 ti960_get_sink_pad_by_pad(u32 source_pad, u32 source_stream,
+ 	return sink_pad;
+ }
+ 
+-static int ti960_enable_streams(struct v4l2_subdev *subdev,
++static void ti960_set_csi_conts_clock(struct ti960 *va, int state) {
++	u32 val;
++
++	ti960_reg_write(va, TI960_CSI_PORT_SEL, 0x01);
++	ti960_reg_read(va, TI960_CSI_CTL, &val);
++	if (state) {
++		if (va->ref_count == 1)
++			val |= TI960_CSI_CONTS_CLOCK;
++	} else {
++		if (va->ref_count == 0)
++			val &= ~TI960_CSI_CONTS_CLOCK;
++	}
++
++	ti960_reg_write(va, TI960_CSI_CTL, val);
++}
++
++static int ti960_set_streams_(struct v4l2_subdev *subdev,
+ 					 struct v4l2_subdev_state *state,
+-					 u32 pad, u64 streams_mask)
++					 u32 pad, u64 streams_mask, int enable)
+ {
+ 	struct ti960 *va = to_ti960(subdev);
+ 	struct v4l2_subdev *sd;
+@@ -1380,7 +1398,7 @@ static int ti960_enable_streams(struct v4l2_subdev *subdev,
+ 	u32 sink_pad = 0;
+ 	DECLARE_BITMAP(rx_port_enabled, 32);
+ 
+-	dev_dbg(va->sd.dev, "enable TI960\n");
++	dev_dbg(va->sd.dev, "%s TI960\n", enable != 0 ? "enable" : "disable");
+ 
+ 	for (i = 0; i < 64; i++) {
+ 		if (streams_mask & ((u64)1 << i))
+@@ -1401,6 +1419,14 @@ static int ti960_enable_streams(struct v4l2_subdev *subdev,
+ 	j = ti960_find_subdev_index(va, sd);
+ 	if (j < 0)
+ 		return -EINVAL;
++	if (enable)
++		va->ref_count++;
++	else
++		va->ref_count--;
++	if (va->ref_count == 1 || va->ref_count == 0) {
++		ti960_set_csi_conts_clock(va, enable);
++		ti960_set_power(&va->sd, enable);
++	}
+ 	rx_port = va->sub_devs[j].rx_port;
+ 	ser_alias = va->sub_devs[j].ser_i2c_addr;
+ 	rval = ti960_rx_port_config(va, sink_pad, rx_port);
+@@ -1409,21 +1435,21 @@ static int ti960_enable_streams(struct v4l2_subdev *subdev,
+ 
+ 	bitmap_set(rx_port_enabled, rx_port, 1);
+ 
+-	rval = v4l2_subdev_call(sd, video, s_stream, true);
++	rval = v4l2_subdev_call(sd, video, s_stream, enable);
+ 	if (rval) {
+ 		dev_err(va->sd.dev,
+ 			"Failed to set stream for %s, enable  %d\n",
+-			sd->name, true);
++			sd->name, enable);
+ 		return rval;
+ 	}
+ 
+ 	/* RX port fordward */
+ 	rval = ti960_reg_set_bit(va, TI960_FWD_CTL1,
+-				rx_port + 4, false);
++				rx_port + 4, !enable);
+ 	if (rval) {
+ 		dev_err(va->sd.dev,
+ 			"Failed to forward RX port%d. enable %d\n",
+-			sink_pad, true);
++			sink_pad, enable);
+ 		return rval;
+ 	}
+ 	if (va->subdev_pdata[j].module_flags & TI960_FL_RESET) {
+@@ -1436,73 +1462,18 @@ static int ti960_enable_streams(struct v4l2_subdev *subdev,
+ 	return 0;
+ }
+ 
++static int ti960_enable_streams(struct v4l2_subdev *subdev,
++					 struct v4l2_subdev_state *state,
++					 u32 pad, u64 streams_mask)
++{
++	return ti960_set_streams_(subdev, state, pad, streams_mask, true);
++}
++
+ static int ti960_disable_streams(struct v4l2_subdev *subdev,
+ 					  struct v4l2_subdev_state *state,
+ 					  u32 pad, u64 streams_mask)
+ {
+-	struct ti960 *va = to_ti960(subdev);
+-	struct v4l2_subdev *sd;
+-	int j, rval;
+-	unsigned short rx_port;
+-	unsigned short ser_alias;
+-	int i = 0;
+-	u32 sink_pad = 0;
+-	DECLARE_BITMAP(rx_port_enabled, 32);
+-
+-	dev_dbg(va->sd.dev, "disable TI960\n");
+-
+-	for (i = 0; i < 64; i++) {
+-		if (streams_mask & ((u64)1 << i))
+-			break;
+-	}
+-
+-	sink_pad = ti960_get_sink_pad_by_pad(pad, i, state);
+-
+-	bitmap_zero(rx_port_enabled, 32);
+-	struct media_pad *remote_pad =
+-		media_pad_remote_pad_first(&va->pad[sink_pad]);
+-
+-	if (!remote_pad)
+-		return -EINVAL;
+-
+-	/* Find ti960 subdev */
+-	sd = media_entity_to_v4l2_subdev(remote_pad->entity);
+-	j = ti960_find_subdev_index(va, sd);
+-	if (j < 0)
+-		return -EINVAL;
+-	rx_port = va->sub_devs[j].rx_port;
+-	ser_alias = va->sub_devs[j].ser_i2c_addr;
+-	rval = ti960_rx_port_config(va, sink_pad, rx_port);
+-	if (rval < 0)
+-		return rval;
+-
+-	bitmap_set(rx_port_enabled, rx_port, 1);
+-
+-	rval = v4l2_subdev_call(sd, video, s_stream, false);
+-	if (rval) {
+-		dev_err(va->sd.dev,
+-			"Failed to set stream for %s, enable  %d\n",
+-			sd->name, false);
+-		return rval;
+-	}
+-
+-	/* RX port fordward */
+-	rval = ti960_reg_set_bit(va, TI960_FWD_CTL1,
+-				rx_port + 4, true);
+-	if (rval) {
+-		dev_err(va->sd.dev,
+-			"Failed to forward RX port%d. enable %d\n",
+-			sink_pad, false);
+-		return rval;
+-	}
+-	if (va->subdev_pdata[j].module_flags & TI960_FL_RESET) {
+-		rval = reset_sensor(va, rx_port, ser_alias,
+-				va->subdev_pdata[j].reset);
+-		if (rval)
+-			return rval;
+-	}
+-
+-	return 0;
++	return ti960_set_streams_(subdev, state, pad, streams_mask, false);
+ }
+ 
+ static const struct v4l2_subdev_pad_ops ti960_sd_pad_ops = {
+@@ -1526,7 +1497,7 @@ static int ti960_register_subdev(struct ti960 *va)
+ 	int i, rval;
+ 	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
+ 
+-	v4l2_subdev_init(&va->sd, &ti960_sd_ops);
++	v4l2_subdev_init_finalize(&va->sd);
+ 	snprintf(va->sd.name, sizeof(va->sd.name), "TI960 %c",
+ 		va->pdata->suffix);
+ 
+@@ -1823,6 +1794,8 @@ static int ti960_probe(struct i2c_client *client)
+ 		goto free_gpio;
+ 	}
+ 
++	va->ref_count = 0;
++
+ 	dev_err(&client->dev, "%s Probe Succeeded", va->sd.name);
+ 	dev_err(&client->dev, "%s Link Freq %d Mbps", va->sd.name, va->pdata->link_freq_mbps);
+ 	return 0;
+-- 
+2.34.1
+

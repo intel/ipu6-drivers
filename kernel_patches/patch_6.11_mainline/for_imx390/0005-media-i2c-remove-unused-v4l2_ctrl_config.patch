@@ -1,0 +1,63 @@
+From 4887eafd76cba2848ac87349e7e83628d9bd9b51 Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Tue, 5 Nov 2024 15:38:04 +0800
+Subject: [PATCH 5/9] media: i2c: remove unused v4l2_ctrl_config
+
+remove V4L2_CID_IPU_QUERY_SUB_STREAM and
+V4L2_CID_IPU_SET_SUB_STREAM v4l2_ctrl_config
+and their definitions.
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/i2c/ti960-des.c | 12 ------------
+ include/uapi/linux/ipu-isys.h |  3 ---
+ 2 files changed, 15 deletions(-)
+
+diff --git a/drivers/media/i2c/ti960-des.c b/drivers/media/i2c/ti960-des.c
+index 89cfa6c8e280..c36ff824b99b 100644
+--- a/drivers/media/i2c/ti960-des.c
++++ b/drivers/media/i2c/ti960-des.c
+@@ -8,7 +8,6 @@
+ #include <linux/wait.h>
+ #include <linux/delay.h>
+ #include <linux/platform_device.h>
+-#include <linux/ipu-isys.h>
+ #include <linux/version.h>
+ 
+ #include <linux/gpio/driver.h>
+@@ -1326,17 +1325,6 @@ static const struct v4l2_ctrl_config ti960_controls[] = {
+ 		.step = 1,
+ 		.def = 0,
+ 	},
+-	{
+-		.ops = &ti960_ctrl_ops,
+-		.id = V4L2_CID_IPU_QUERY_SUB_STREAM,
+-		.name = "query virtual channel",
+-		.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+-		.max = ARRAY_SIZE(ti960_query_sub_stream) - 1,
+-		.min = 0,
+-		.def = 0,
+-		.menu_skip_mask = 0,
+-		.qmenu_int = ti960_query_sub_stream,
+-	},
+ };
+ 
+ static int ti960_set_routing(struct v4l2_subdev *sd,
+diff --git a/include/uapi/linux/ipu-isys.h b/include/uapi/linux/ipu-isys.h
+index f5bb12c16991..4aabb14328a5 100644
+--- a/include/uapi/linux/ipu-isys.h
++++ b/include/uapi/linux/ipu-isys.h
+@@ -9,9 +9,6 @@
+ #define V4L2_CID_IPU_STORE_CSI2_HEADER	(V4L2_CID_IPU_BASE + 2)
+ #define V4L2_CID_IPU_ISYS_COMPRESSION	(V4L2_CID_IPU_BASE + 3)
+ 
+-#define V4L2_CID_IPU_QUERY_SUB_STREAM	(V4L2_CID_IPU_BASE + 4)
+-#define V4L2_CID_IPU_SET_SUB_STREAM	(V4L2_CID_IPU_BASE + 5)
+-
+ #define VIDIOC_IPU_GET_DRIVER_VERSION \
+ 	_IOWR('v', BASE_VIDIOC_PRIVATE + 3, uint32_t)
+ 
+-- 
+2.34.1
+
