@@ -13,40 +13,6 @@
 #include "ipu-psys.h"
 
 struct ipu6_psys_hw_res_variant hw_var;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-void ipu6_psys_hw_res_variant_init(void)
-{
-	if (ipu_ver == IPU_VER_6SE) {
-		hw_var.queue_num = IPU6SE_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
-		hw_var.cell_num = IPU6SE_FW_PSYS_N_CELL_ID;
-	} else if (ipu_ver == IPU_VER_6) {
-		hw_var.queue_num = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
-		hw_var.cell_num = IPU6_FW_PSYS_N_CELL_ID;
-	} else if (ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL) {
-		hw_var.queue_num = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
-		hw_var.cell_num = IPU6EP_FW_PSYS_N_CELL_ID;
-	} else {
-		WARN(1, "ipu6 psys res var is not initialised correctly.");
-	}
-
-	hw_var.set_proc_dev_chn = ipu6_fw_psys_set_proc_dev_chn;
-	hw_var.set_proc_dfm_bitmap = ipu6_fw_psys_set_proc_dfm_bitmap;
-	hw_var.set_proc_ext_mem = ipu6_fw_psys_set_process_ext_mem;
-	hw_var.get_pgm_by_proc =
-		ipu6_fw_psys_get_program_manifest_by_process;
-}
-
-static const struct ipu_fw_resource_definitions *get_res(void)
-{
-	if (ipu_ver == IPU_VER_6SE)
-		return ipu6se_res_defs;
-
-	if (ipu_ver == IPU_VER_6EP || ipu_ver == IPU_VER_6EP_MTL)
-		return ipu6ep_res_defs;
-
-	return ipu6_res_defs;
-}
-#else
 void ipu6_psys_hw_res_variant_init(void)
 {
 	if (ipu_ver == IPU6_VER_6SE) {
@@ -79,7 +45,6 @@ static const struct ipu_fw_resource_definitions *get_res(void)
 
 	return ipu6_res_defs;
 }
-#endif
 
 static int ipu_resource_init(struct ipu_resource *res, u32 id, int elements)
 {
@@ -206,11 +171,7 @@ int ipu_psys_resource_pool_init(struct ipu_psys_resource_pool *pool)
 	}
 
 	spin_lock(&pool->queues_lock);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-	if (ipu_ver == IPU_VER_6SE)
-#else
 	if (ipu_ver == IPU6_VER_6SE)
-#endif
 		bitmap_zero(pool->cmd_queues,
 			    IPU6SE_FW_PSYS_N_PSYS_CMD_QUEUE_ID);
 	else
@@ -419,11 +380,7 @@ int ipu_psys_allocate_cmd_queue_resource(struct ipu_psys_resource_pool *pool)
 	size = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
 	start = IPU6_FW_PSYS_CMD_QUEUE_PPG0_COMMAND_ID;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-	if (ipu_ver == IPU_VER_6SE) {
-#else
 	if (ipu_ver == IPU6_VER_6SE) {
-#endif
 		size = IPU6SE_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
 		start = IPU6SE_FW_PSYS_CMD_QUEUE_PPG0_COMMAND_ID;
 	}

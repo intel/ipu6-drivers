@@ -1,4 +1,4 @@
-build kernel driver with community kernel version 6.11
+build kernel driver with community kernel version 6.11 but not iot kernel
 
 1. checkout community kernel 6.11-rc3 or later 6.11 version
 2. copy patches to kernel source tree and apply them
@@ -27,3 +27,10 @@ build kernel driver with community kernel version 6.11
    echo "" | make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL} oldconfig
    make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL}
    make -j16 LOCALVERSION=${KERNEL_BUILD_LABEL} bindeb-pkg
+
+build kernel driver for Intel IMX390&TI960 drivers with iot kernel 6.11-rc3
+
+1. checkout iot kernel 6.11-rc3
+2. copy patches in "for_imx390" folder to kernel source tree and apply them
+3. build kernel driver
+   

@@ -1,0 +1,29 @@
+From a73f042448c4605d6930f54a6aca83e1f1675842 Mon Sep 17 00:00:00 2001
+From: Hongju Wang <hongju.wang@intel.com>
+Date: Mon, 14 Oct 2024 16:36:26 +0800
+Subject: [PATCH 2/9] media: imx390: Set the correct SOF for different stream
+
+[Changes]
+Distinguish SOF according to VC for streams.
+
+Signed-off-by: Hongju Wang <hongju.wang@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
+index 051898ce53f4..5ad426afa0f0 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
+@@ -578,6 +578,7 @@ void ipu6_isys_csi2_sof_event_by_stream(struct ipu6_isys_stream *stream)
+ 		.type = V4L2_EVENT_FRAME_SYNC,
+ 	};
+ 
++	ev.id = stream->vc;
+ 	ev.u.frame_sync.frame_sequence = atomic_fetch_inc(&stream->sequence);
+ 	v4l2_event_queue(vdev, &ev);
+ 
+-- 
+2.34.1
+

@@ -1,0 +1,47 @@
+From 84b90dd08c054f117f22dc8704aab7b4ed671275 Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Wed, 13 Nov 2024 10:06:11 +0800
+Subject: [PATCH 7/9] media: ti960: fix cov issue
+
+Move v4l2_subdev_init_finalize after initialization of
+ti960 v4l2_subdev. Check return value of v4l2_subdev_init_finalize.
+If failed, print error message and clean up ti960 media entity.
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/i2c/ti960-des.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/ti960-des.c b/drivers/media/i2c/ti960-des.c
+index a5efd87b7650..64f89368843b 100644
+--- a/drivers/media/i2c/ti960-des.c
++++ b/drivers/media/i2c/ti960-des.c
+@@ -1485,7 +1485,6 @@ static int ti960_register_subdev(struct ti960 *va)
+ 	int i, ret;
+ 	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
+ 
+-	v4l2_subdev_init_finalize(&va->sd);
+ 	snprintf(va->sd.name, sizeof(va->sd.name), "TI960 %c",
+ 		va->pdata->suffix);
+ 
+@@ -1553,8 +1552,16 @@ static int ti960_register_subdev(struct ti960 *va)
+ 		goto failed_out;
+ 	}
+ 
++	ret = v4l2_subdev_init_finalize(&va->sd);
++	if (ret) {
++		dev_err(va->sd.dev, "v4l2 subdev init error: %d\n", ret);
++		goto err_entity_cleanup;
++	}
++
+ 	return 0;
+ 
++err_entity_cleanup:
++	media_entity_cleanup(&va->sd.entity);
+ failed_out:
+ 	v4l2_ctrl_handler_free(&va->ctrl_handler);
+ 	return ret;
+-- 
+2.34.1
+
