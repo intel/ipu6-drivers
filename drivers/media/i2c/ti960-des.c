@@ -8,8 +8,9 @@
 #include <linux/wait.h>
 #include <linux/delay.h>
 #include <linux/platform_device.h>
-#include <linux/ipu-isys.h>
 #include <linux/version.h>
+
+#include <linux/ipu-isys.h>
 
 #include <linux/gpio/driver.h>
 
@@ -80,6 +81,7 @@ struct ti960 {
 
 	struct v4l2_ctrl *link_freq;
 	struct v4l2_ctrl *test_pattern;
+
 };
 
 #define to_ti960(_sd) container_of(_sd, struct ti960, sd)
@@ -643,6 +645,30 @@ static int ti960_map_subdevs_addr(struct ti960 *va)
 				phy_i2c_addr, alias_i2c_addr);
 		if (rval)
 			return rval;
+	}
+
+	return 0;
+}
+
+static int ti960_unmap_subdevs_addr(struct ti960 *va)
+{
+	unsigned short rx_port, phy_i2c_addr;
+	int i, rval;
+
+	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+		rx_port = va->sub_devs[i].rx_port;
+		phy_i2c_addr = va->sub_devs[i].phy_i2c_addr;
+
+		if (!phy_i2c_addr)
+			continue;
+
+		rval = ti960_unmap_i2c_slave(va, &va->sub_devs[i],
+				phy_i2c_addr);
+		if (rval) {
+			dev_err(va->sd.dev, "%s  failed to unmap subdev: %s on port %d\n",
+					va->sub_devs->sd_name, rx_port);
+			return rval;
+		}
 	}
 
 	return 0;
@@ -1382,7 +1408,7 @@ static u8 ti960_get_nubmer_of_streaming(struct ti960 *va, u8 port)
 	u8 n = 0;
 	u8 i = 0;
 	mutex_lock(&va->mutex);
-	for (; i < ARRAY_SIZE(ti960_set_sub_stream); i++) {
+	for (; i < ARRAY_SIZE(ti960_set_sub_stream[port]); i++) {
 		if (ti960_set_sub_stream[port][i])
 			n++;
 	}
@@ -1436,7 +1462,7 @@ static const struct v4l2_ctrl_ops ti960_ctrl_ops = {
 	.s_ctrl = ti960_s_ctrl,
 };
 
-static const struct v4l2_ctrl_config ti960_basic_controls[3] = {
+static const struct v4l2_ctrl_config ti960_basic_controls[] = {
 	{
 		.ops = &ti960_ctrl_ops,
 		.id = V4L2_CID_LINK_FREQ,
@@ -1537,7 +1563,6 @@ static int ti960_register_subdev(struct ti960 *va)
 	struct i2c_client *client = v4l2_get_subdevdata(&va->sd);
 	u8 port = va->pdata->suffix - SUFFIX_BASE;
 	u8 ctrl_num = ARRAY_SIZE(ti960_basic_controls) + 1;
-	v4l2_subdev_init(&va->sd, &ti960_sd_ops);
 	snprintf(va->sd.name, sizeof(va->sd.name), "TI960 %c",
 		va->pdata->suffix);
 
@@ -1915,6 +1940,7 @@ static int ti960_suspend(struct device *dev)
 	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
 	struct ti960 *va = to_ti960(subdev);
 	int i;
+	int rval;
 
 	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
 		if (va->sub_devs[i].serializer) {
@@ -1926,7 +1952,16 @@ static int ti960_suspend(struct device *dev)
 			i2c_unregister_device(va->sub_devs[i].gpio_exp);
 			va->sub_devs[i].gpio_exp = NULL;
 		}
+
+		rval = ti960_unmap_i2c_slave(va, &va->sub_devs[i],
+					D3_GPIO_EXP_ADDR);
+		if (rval)
+			return rval;
 	}
+
+	rval = ti960_unmap_subdevs_addr(va);
+	if (rval)
+		return rval;
 
 	return 0;
 }
