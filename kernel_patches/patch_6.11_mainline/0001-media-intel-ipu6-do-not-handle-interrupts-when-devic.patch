@@ -1,0 +1,79 @@
+From 6a92440c987bb2a9fd062e0fbcd79d956bb88752 Mon Sep 17 00:00:00 2001
+From: Stanislaw Gruszka <stanislaw.gruszka@linux.intel.com>
+Date: Thu, 31 Oct 2024 11:23:21 +0100
+Subject: [PATCH 1/2] media: intel/ipu6: do not handle interrupts when device
+ is disabled
+
+Some IPU6 devices have shared interrupts. We need to handle properly
+case when interrupt is triggered from other device on shared irq line
+and IPU6 itself disabled. In such case we get 0xffffffff from
+ISR_STATUS register and handle all irq's cases, for what we are not
+not prepared and usually hang the whole system.
+
+To avoid the issue use pm_runtime_get_if_active() to check if
+the device is enabled and prevent suspending it when we handle irq
+until the end of irq. Additionally use synchronize_irq() in suspend
+
+Change-Id: I7d43d6bcaffe07dee3cfc32278e3501eb4b4c366
+Tracked-On: #JILCNT-425
+Signed-off-by: Stanislaw Gruszka <stanislaw.gruszka@linux.intel.com>
+Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-buttress.c | 13 +++++++++----
+ drivers/media/pci/intel/ipu6/ipu6.c          |  3 +++
+ 2 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-buttress.c b/drivers/media/pci/intel/ipu6/ipu6-buttress.c
+index e47f84c30e10..edaa285283a1 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-buttress.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-buttress.c
+@@ -345,12 +345,16 @@ irqreturn_t ipu6_buttress_isr(int irq, void *isp_ptr)
+ 	u32 disable_irqs = 0;
+ 	u32 irq_status;
+ 	u32 i, count = 0;
++	int active;
+ 
+-	pm_runtime_get_noresume(&isp->pdev->dev);
++	active = pm_runtime_get_if_active(&isp->pdev->dev);
++	if (!active)
++		return IRQ_NONE;
+ 
+ 	irq_status = readl(isp->base + reg_irq_sts);
+-	if (!irq_status) {
+-		pm_runtime_put_noidle(&isp->pdev->dev);
++	if (irq_status == 0 || WARN_ON_ONCE(irq_status == 0xffffffffu)) {
++		if (active > 0)
++			pm_runtime_put_noidle(&isp->pdev->dev);
+ 		return IRQ_NONE;
+ 	}
+ 
+@@ -426,7 +430,8 @@ irqreturn_t ipu6_buttress_isr(int irq, void *isp_ptr)
+ 		writel(BUTTRESS_IRQS & ~disable_irqs,
+ 		       isp->base + BUTTRESS_REG_ISR_ENABLE);
+ 
+-	pm_runtime_put(&isp->pdev->dev);
++	if (active > 0)
++		pm_runtime_put(&isp->pdev->dev);
+ 
+ 	return ret;
+ }
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
+index 4bb270d9fe2a..08d1eb0f0223 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6.c
++++ b/drivers/media/pci/intel/ipu6/ipu6.c
+@@ -783,6 +783,9 @@ static void ipu6_pci_reset_done(struct pci_dev *pdev)
+  */
+ static int ipu6_suspend(struct device *dev)
+ {
++	struct pci_dev *pdev = to_pci_dev(dev);
++
++	synchronize_irq(pdev->irq);
+ 	return 0;
+ }
+ 
+-- 
+2.34.1
+

@@ -19,6 +19,10 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0001-pinctrl-intel-add-acpi-id-for-arrow-lake.patch
        git am 0002-mfd-add-ARL-H-PCI-driver-ID.patch
 
+    d. for USB device need to apply below 2 patches, they are merged to kernel 6.13.
+       0001-media-intel-ipu6-do-not-handle-interrupts-when-devic.patch
+       0002-media-intel-ipu6-remove-buttress-ish-structure.patch
+
 3. build kernel driver
    copy kernel config to kernel source dir
 
