@@ -1,0 +1,45 @@
+From f6643528b1f3b64012d39d84916f4f5098b05aa4 Mon Sep 17 00:00:00 2001
+From: Dongcheng Yan <dongcheng.yan@intel.com>
+Date: Tue, 30 Jul 2024 11:03:10 +0800
+Subject: [PATCH] upstream: Use module parameter to set isys freq
+
+Signed-off-by: Hongju Wang <hongju.wang@intel.com>
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
+index bbd646378ab3..f6d42a432d9f 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6.c
++++ b/drivers/media/pci/intel/ipu6/ipu6.c
+@@ -33,6 +33,10 @@
+ #include "ipu6-platform-isys-csi2-reg.h"
+ #include "ipu6-platform-regs.h"
+
++static unsigned int isys_freq_override;
++module_param(isys_freq_override, uint, 0660);
++MODULE_PARM_DESC(isys_freq_override, "Override ISYS freq(mhz)");
++
+ #define IPU6_PCI_BAR		0
+
+ struct ipu6_cell_program {
+@@ -387,6 +391,14 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
+ 	pdata->base = base;
+ 	pdata->ipdata = ipdata;
+
++	/* Override the isys freq */
++	if (isys_freq_override >= BUTTRESS_MIN_FORCE_IS_FREQ &&
++	    isys_freq_override <= BUTTRESS_MAX_FORCE_IS_FREQ) {
++		ctrl->ratio = isys_freq_override / BUTTRESS_IS_FREQ_STEP;
++		dev_dbg(&pdev->dev, "Override the isys freq:%u(mhz)\n",
++			isys_freq_override);
++	}
++
+ 	isys_adev = ipu6_bus_initialize_device(pdev, parent, pdata, ctrl,
+ 					       IPU6_ISYS_NAME);
+ 	if (IS_ERR(isys_adev)) {
+--
+2.34.1
+

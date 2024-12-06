@@ -1,0 +1,48 @@
+From 1603fc83b2df1b3cd72b808825b4f9de0f689b18 Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Wed, 27 Nov 2024 16:47:51 +0800
+Subject: [PATCH] media: i2c: add support for lt6911uxc
+
+Signed-off-by: linya14x <linx.yang@intel.com>
+---
+ drivers/media/i2c/Kconfig  | 11 +++++++++++
+ drivers/media/i2c/Makefile |  1 +
+ 2 files changed, 12 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 0d314a92ea4f..7c8ff44afd8c 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -51,6 +51,17 @@ config VIDEO_ALVIUM_CSI2
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called alvium-csi2.
+
++config VIDEO_LT6911UXC
++        tristate "Lontium LT6911UXC decoder"
++        depends on ACPI || COMPILE_TEST
++        select V4L2_CCI_I2C
++        help
++          This is a Video4Linux2 sensor-level driver for the Lontium
++          LT6911UXC HDMI to MIPI CSI-2 bridge.
++
++          To compile this driver as a module, choose M here: the
++          module will be called lt6911uxc.
++
+ config VIDEO_LT6911UXE
+ 	tristate "Lontium LT6911UXE decoder"
+ 	depends on ACPI || COMPILE_TEST
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index bf06c7fb08f6..e78f0d877194 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -19,6 +19,7 @@ obj-$(CONFIG_VIDEO_AK7375) += ak7375.o
+ obj-$(CONFIG_VIDEO_AK881X) += ak881x.o
+ obj-$(CONFIG_VIDEO_ALVIUM_CSI2) += alvium-csi2.o
+ obj-$(CONFIG_VIDEO_APTINA_PLL) += aptina-pll.o
++obj-$(CONFIG_VIDEO_LT6911UXE) += lt6911uxc.o
+ obj-$(CONFIG_VIDEO_LT6911UXE) += lt6911uxe.o
+ obj-$(CONFIG_VIDEO_AR0234) += ar0234.o
+ obj-$(CONFIG_VIDEO_AR0521) += ar0521.o
+--
+2.43.0
+

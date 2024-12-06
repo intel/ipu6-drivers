@@ -1,0 +1,25 @@
+From 8a178885dabc3dadb332c7917715a6424936520f Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Tue, 8 Oct 2024 11:25:07 +0800
+Subject: [PATCH] driver: media: i2c: remove useless header file
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/i2c/ar0234.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/media/i2c/ar0234.c b/drivers/media/i2c/ar0234.c
+index 80fe5ffd1c64..ab7628c69664 100644
+--- a/drivers/media/i2c/ar0234.c
++++ b/drivers/media/i2c/ar0234.c
+@@ -7,7 +7,6 @@
+ #include <linux/i2c.h>
+ #include <linux/module.h>
+ #include <linux/pm_runtime.h>
+-#include <asm/unaligned.h>
+
+ #include <media/v4l2-cci.h>
+ #include <media/v4l2-ctrls.h>
+--
+2.34.1
+

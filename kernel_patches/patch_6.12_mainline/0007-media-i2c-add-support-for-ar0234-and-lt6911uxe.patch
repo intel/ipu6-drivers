@@ -1,0 +1,60 @@
+From d40d15f9edf62243f3b5d4cbbed908050e6035af Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Mon, 2 Sep 2024 15:45:47 +0800
+Subject: [PATCH] media: i2c: add support for ar0234 and lt6911uxe
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/i2c/Kconfig  | 22 ++++++++++++++++++++++
+ drivers/media/i2c/Makefile |  2 ++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 8ba096b8ebca..0d314a92ea4f 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -51,6 +51,28 @@ config VIDEO_ALVIUM_CSI2
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called alvium-csi2.
+
++config VIDEO_LT6911UXE
++	tristate "Lontium LT6911UXE decoder"
++	depends on ACPI || COMPILE_TEST
++	select V4L2_CCI_I2C
++	help
++	  This is a Video4Linux2 sensor-level driver for the Lontium
++	  LT6911UXE HDMI to MIPI CSI-2 bridge.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called lt6911uxe.
++
++config VIDEO_AR0234
++        tristate "ON Semiconductor AR0234 sensor support"
++        depends on ACPI || COMPILE_TEST
++        select V4L2_CCI_I2C
++        help
++          This is a Video4Linux2 sensor driver for the ON Semiconductor
++          AR0234 camera.
++
++          To compile this driver as a module, choose M here: the
++          module will be called ar0234.
++
+ config VIDEO_AR0521
+ 	tristate "ON Semiconductor AR0521 sensor support"
+ 	help
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index fbb988bd067a..bf06c7fb08f6 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -19,6 +19,8 @@ obj-$(CONFIG_VIDEO_AK7375) += ak7375.o
+ obj-$(CONFIG_VIDEO_AK881X) += ak881x.o
+ obj-$(CONFIG_VIDEO_ALVIUM_CSI2) += alvium-csi2.o
+ obj-$(CONFIG_VIDEO_APTINA_PLL) += aptina-pll.o
++obj-$(CONFIG_VIDEO_LT6911UXE) += lt6911uxe.o
++obj-$(CONFIG_VIDEO_AR0234) += ar0234.o
+ obj-$(CONFIG_VIDEO_AR0521) += ar0521.o
+ obj-$(CONFIG_VIDEO_BT819) += bt819.o
+ obj-$(CONFIG_VIDEO_BT856) += bt856.o
+--
+2.34.1
+
