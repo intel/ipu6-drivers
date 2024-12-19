@@ -19,6 +19,7 @@ build kernel driver with community kernel version 6.11 but not iot kernel
 
     b. for PSYS driver (the patch be integrated in NEX kernel 6.12):
        git am 0001-media-pci-intel-psys-driver.patch
+       echo "obj-\$(CONFIG_VIDEO_INTEL_IPU6)  += psys/" >> ./drivers/media/pci/intel/ipu6/Makefile
 
     c. for USB device need to apply below 2 patches, they are merged to kernel 6.13.
        0001-media-intel-ipu6-do-not-handle-interrupts-when-devic.patch
