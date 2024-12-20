@@ -1002,6 +1002,7 @@ static void media_pipeline_stop_for_vc(struct ipu_isys_video *av)
 	struct media_entity *entity = &av->vdev.entity;
 	struct media_device *mdev = entity->graph_obj.mdev;
 	struct media_graph graph;
+	struct ipu_isys_pipeline *ip;
 	int ret;
 
 	/*
@@ -1019,16 +1020,23 @@ static void media_pipeline_stop_for_vc(struct ipu_isys_video *av)
 		return;
 
 	media_graph_walk_start(&graph, entity);
-	dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
-			"stream count: %u, av entity name: %s.\n",
-			av->ip.csi2->stream_count, av->vdev.entity.name);
 	mutex_lock(&mdev->graph_mutex);
 	while ((entity = media_graph_walk_next(&graph))) {
+		ip = to_ipu_isys_pipeline(pipe);
 		dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
-				"walk entity name: %s.\n",
-				entity->name);
-		if (av->ip.csi2->stream_count == 0 || !strcmp(entity->name, av->vdev.entity.name))
+			"%u streams in pipe %p.\n",
+			ip->nr_streaming, entity->pads[0].pipe);
+		if (!strcmp(entity->name, av->vdev.entity.name) &&
+		    ip->nr_streaming == 1) {
+			dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
+				"stop pipe %p for entity: %s.\n",
+				entity->pads[0].pipe, entity->name);
 			entity->pads[0].pipe = NULL;
+		}
+		mutex_unlock(&av->ip.csi2->stream_mutex);
+		if (av->ip.csi2->stream_count == 0)
+			entity->pads[0].pipe = NULL;
+		mutex_unlock(&av->ip.csi2->stream_mutex);
 	}
 	mutex_unlock(&mdev->graph_mutex);
 
@@ -1080,14 +1088,10 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 	while ((entity = media_graph_walk_next(&graph))) {
 		DECLARE_BITMAP(active, MEDIA_ENTITY_MAX_PADS);
 		DECLARE_BITMAP(has_no_links, MEDIA_ENTITY_MAX_PADS);
-
-		dev_dbg(entity->graph_obj.mdev->dev, "entity name:%s\n",
-			entity->name);
-
 		if (entity->pads[0].pipe && entity->pads[0].pipe == pipe) {
 			dev_dbg(entity->graph_obj.mdev->dev,
-			       "Pipe active for %s. when start for %s\n",
-			       entity->name, entity_err->name);
+			       "pipe %p is already active for entity %s.\n",
+			       entity->pads[0].pipe, entity->name);
 		}
 		/*
 		 * If entity's pipe is not null and it is video device, it has
@@ -1124,6 +1128,9 @@ static int media_pipeline_walk_by_vc(struct ipu_isys_video *av,
 		}
 
 		entity->pads[0].pipe = pipe;
+		dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
+				"start pipe %p for entity: %s.\n",
+				entity->pads[0].pipe, entity->name);
 
 		if (!entity->ops || !entity->ops->link_validate)
 			continue;
@@ -1559,16 +1566,19 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
 
 	if (!tout) {
-		dev_err(dev, "stream open time out\n");
+		dev_err(dev, "stream open time out for entity %s\n",
+			av->vdev.entity.name);
 		rval = -ETIMEDOUT;
 		goto out_put_stream_opened;
 	}
 	if (ip->error) {
-		dev_err(dev, "stream open error: %d\n", ip->error);
+		dev_err(dev, "stream open failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 		rval = -EIO;
 		goto out_put_stream_opened;
 	}
-	dev_dbg(dev, "start stream: open complete\n");
+	dev_dbg(dev, "start stream open complete for entity %s\n",
+		av->vdev.entity.name);
 
 	if (bl) {
 		msg = ipu_get_fw_msg_buf(ip);
@@ -1611,12 +1621,14 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	tout = wait_for_completion_timeout(&ip->stream_start_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout) {
-		dev_err(dev, "stream start time out\n");
+		dev_err(dev, "stream start time out for entity %s\n",
+			av->vdev.entity.name);
 		rval = -ETIMEDOUT;
 		goto out_stream_close;
 	}
 	if (ip->error) {
-		dev_err(dev, "stream start error: %d\n", ip->error);
+		dev_err(dev, "stream start failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 		rval = -EIO;
 		goto out_stream_close;
 	}
@@ -1653,11 +1665,14 @@ out_stream_close:
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
-		dev_err(dev, "stream close time out\n");
+		dev_err(dev, "stream close time out for entity %s\n",
+			av->vdev.entity.name);
 	else if (ip->error)
-		dev_err(dev, "stream close error: %d\n", ip->error);
+		dev_err(dev, "stream close failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 	else
-		dev_dbg(dev, "stream close complete\n");
+		dev_dbg(dev, "close stream: complete for entity %s\n",
+			av->vdev.entity.name);
 
 out_put_stream_opened:
 	put_stream_opened(av);
@@ -1689,11 +1704,14 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET);
 	if (!tout)
-		dev_err(dev, "stream stop time out\n");
+		dev_err(dev, "stream stop time out for entity %s\n",
+			av->vdev.entity.name);
 	else if (ip->error)
-		dev_err(dev, "stream stop error: %d\n", ip->error);
+		dev_err(dev, "stream stop failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 	else
-		dev_dbg(dev, "stop stream: complete\n");
+		dev_dbg(dev, "stop stream complete for entity %s\n",
+			av->vdev.entity.name);
 }
 
 static void close_streaming_firmware(struct ipu_isys_video *av)
@@ -1715,11 +1733,14 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES_RESET);
 	if (!tout)
-		dev_err(dev, "stream close time out\n");
+		dev_err(dev, "stream close time out for entity %s\n",
+			av->vdev.entity.name);
 	else if (ip->error)
-		dev_err(dev, "stream close error: %d\n", ip->error);
+		dev_err(dev, "stream close failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 	else
-		dev_dbg(dev, "close stream: complete\n");
+		dev_dbg(dev, "close stream complete for entity %s\n",
+			av->vdev.entity.name);
 	ip->last_sequence = atomic_read(&ip->sequence);
 	dev_dbg(dev, "IPU_ISYS_RESET: ip->last_sequence = %d\n",
 		ip->last_sequence);
@@ -1767,17 +1788,22 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	int rval;
 	unsigned int i;
 
-	dev_dbg(dev, "prepare stream: %d\n", state);
+	dev_dbg(dev, "prepare stream to state: %d for entity %s\n",
+		state, av->vdev.entity.name);
 
 	if (!state) {
 		mp = media_entity_pipeline(&av->vdev.entity);
 		ip = to_ipu_isys_pipeline(mp);
+		if (!ip) {
+			dev_err(dev, "%s no pipeline found for %s\n", __func__,
+				av->vdev.name);
+			return -ENODEV;
+		}
 
 		if (ip->interlaced && isys->short_packet_source ==
 		    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
 			short_packet_queue_destroy(ip);
 		media_pipeline_stop_for_vc(av);
-		av->vdev.entity.pads[0].pipe = NULL;
 		media_entity_enum_cleanup(&ip->entity_enum);
 		return 0;
 	}
@@ -1853,7 +1879,7 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	return 0;
 
 out_pipeline_stop:
-	media_pipeline_stop(av->vdev.entity.pads);
+		media_pipeline_stop_for_vc(av);
 
 out_enum_cleanup:
 	media_entity_enum_cleanup(&ip->entity_enum);
@@ -1883,7 +1909,19 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 
 	dev_dbg(dev, "set stream: %d\n", state);
 
+	if (!ip) {
+		dev_err(dev, "%s no pipeline found for %s\n", __func__,
+			av->vdev.name);
+		return -ENODEV;
+	}
+
+	if (!ip->external) {
+		dev_err(dev, "no media pad found for %s\n", av->vdev.name);
+		return -ENODEV;
+	}
+
 	if (!ip->external->entity) {
+		dev_err(dev, "no entify found for %s\n", av->vdev.name);
 		WARN_ON(1);
 		return -ENODEV;
 	}
