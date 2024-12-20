@@ -1068,7 +1068,6 @@ static int lt6911uxc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	return 0;
 }
-
 static const struct v4l2_subdev_internal_ops lt6911uxc_subdev_internal_ops = {
 	.open = lt6911uxc_open,
 };

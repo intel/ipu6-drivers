@@ -1343,6 +1343,10 @@ static int ti960_set_stream_vc(struct ti960 *va, u8 vc_id, u8 state)
 	int rval;
 	int i;
 
+	rval = ti960_reg_write(va, TI960_RESET, TI960_POWER_ON);
+	if (rval < 0)
+		return rval;
+
 	i = ti960_find_subdev_index_by_rx_port(va, vc_id);
 	if (i < 0)
 		return -EINVAL;

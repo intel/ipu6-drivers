@@ -93,6 +93,7 @@ struct ipu_isys_csi2 {
 	bool wait_for_sync[NR_OF_CSI2_VC];
 
 	unsigned int stream_count;
+	struct mutex stream_mutex;
 
 	struct v4l2_ctrl *store_csi2_header;
 };

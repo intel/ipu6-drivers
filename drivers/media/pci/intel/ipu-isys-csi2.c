@@ -232,10 +232,13 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	cfg = v4l2_get_subdev_hostdata(ext_sd);
 
 	if (!enable) {
+		mutex_lock(&csi2->stream_mutex);
 		csi2->stream_count--;
-		if (csi2->stream_count)
+		if (csi2->stream_count) {
+			mutex_unlock(&csi2->stream_mutex);
 			return 0;
-
+		}
+		mutex_unlock(&csi2->stream_mutex);
 		ipu_isys_csi2_set_stream(sd, timing, 0, enable);
 		return 0;
 	}
@@ -243,10 +246,11 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	ip->has_sof = true;
 
 	if (csi2->stream_count) {
+		mutex_lock(&csi2->stream_mutex);
 		csi2->stream_count++;
+		mutex_unlock(&csi2->stream_mutex);
 		return 0;
 	}
-
 	nlanes = cfg->nlanes;
 
 	dev_dbg(&csi2->isys->adev->dev, "lane nr %d.\n", nlanes);
@@ -256,7 +260,9 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 		return rval;
 
 	rval = ipu_isys_csi2_set_stream(sd, timing, nlanes, enable);
+	mutex_lock(&csi2->stream_mutex);
 	csi2->stream_count++;
+	mutex_unlock(&csi2->stream_mutex);
 
 	return rval;
 }
@@ -466,7 +472,9 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 	csi2->asd.ctrl_init = csi_ctrl_init;
 	csi2->asd.isys = isys;
 	init_completion(&csi2->eof_completion);
+	mutex_lock(&csi2->stream_mutex);
 	csi2->stream_count = 0;
+	mutex_unlock(&csi2->stream_mutex);
 	rval = ipu_isys_subdev_init(&csi2->asd, &csi2_sd_ops, 0,
 				    NR_OF_CSI2_PADS,
 				    NR_OF_CSI2_SOURCE_PADS,
