@@ -1,7 +1,7 @@
-From 045f5beb34e0d4af6d9b5961830c8551f161ff16 Mon Sep 17 00:00:00 2001
+From bf941b2d37affd17ed62fa4d919d00e405063f81 Mon Sep 17 00:00:00 2001
 From: Hao Yao <hao.yao@intel.com>
 Date: Mon, 25 Mar 2024 14:40:09 +0800
-Subject: [PATCH 2/5] media: i2c: Add sensors config
+Subject: [PATCH 2/9] media: i2c: Add sensors config
 
 Signed-off-by: Hao Yao <hao.yao@intel.com>
 ---

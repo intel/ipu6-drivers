@@ -1,7 +1,7 @@
-From 1b07d0caa6542fe17adf2d9f553e3f72525c5df0 Mon Sep 17 00:00:00 2001
+From c4b24fefb7212b35d1838be3b7a159d8c941839b Mon Sep 17 00:00:00 2001
 From: Hao Yao <hao.yao@intel.com>
 Date: Wed, 18 Sep 2024 14:47:40 +0800
-Subject: [PATCH 4/5] media: ipu6: Don't disable ATS when CPU is not Meteor
+Subject: [PATCH 4/9] media: ipu6: Don't disable ATS when CPU is not Meteor
  Lake
 
 IPU6 on Arrow Lake shares the same PCI ID with Meteor Lake, so we
@@ -14,7 +14,7 @@ Signed-off-by: Hao Yao <hao.yao@intel.com>
  1 file changed, 5 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
-index 5a683dbdf03a..00ae55816f9d 100644
+index a3ece2191e07..91254a49e889 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6.c
 @@ -3,6 +3,8 @@
@@ -26,7 +26,7 @@ index 5a683dbdf03a..00ae55816f9d 100644
  #include <linux/bitfield.h>
  #include <linux/bits.h>
  #include <linux/dma-mapping.h>
-@@ -493,8 +495,9 @@ static int ipu6_pci_config_setup(struct pci_dev *dev, u8 hw_ver)
+@@ -489,8 +491,9 @@ static int ipu6_pci_config_setup(struct pci_dev *dev, u8 hw_ver)
  	int ret;
  
  	/* disable IPU6 PCI ATS on mtl ES2 */

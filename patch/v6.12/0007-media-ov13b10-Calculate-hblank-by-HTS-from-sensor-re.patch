@@ -1,0 +1,105 @@
+From 607b299b339753f18376811bbf3e934eb2fce469 Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Mon, 23 Dec 2024 13:52:12 +0800
+Subject: [PATCH 7/9] media: ov13b10: Calculate hblank by HTS from sensor
+ register
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/i2c/ov13b10.c | 17 ++++++++++++-----
+ 1 file changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index 6f39adef15b8..88d0af1dc64c 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -113,6 +113,9 @@ struct ov13b10_mode {
+ 	u32 vts_def;
+ 	u32 vts_min;
+ 
++	/* HTS */
++	u32 hts;
++
+ 	/* Index of Link frequency config to be used */
+ 	u32 link_freq_index;
+ 	/* Default register values */
+@@ -612,6 +615,7 @@ static const struct ov13b10_mode supported_4_lanes_modes[] = {
+ 		.height = 3120,
+ 		.vts_def = OV13B10_VTS_30FPS,
+ 		.vts_min = OV13B10_VTS_30FPS,
++		.hts = 4704,
+ 		.reg_list = {
+ 			.num_of_regs = ARRAY_SIZE(mode_4208x3120_regs),
+ 			.regs = mode_4208x3120_regs,
+@@ -623,6 +627,7 @@ static const struct ov13b10_mode supported_4_lanes_modes[] = {
+ 		.height = 3120,
+ 		.vts_def = OV13B10_VTS_30FPS,
+ 		.vts_min = OV13B10_VTS_30FPS,
++		.hts = 4704,
+ 		.reg_list = {
+ 			.num_of_regs = ARRAY_SIZE(mode_4160x3120_regs),
+ 			.regs = mode_4160x3120_regs,
+@@ -634,6 +639,7 @@ static const struct ov13b10_mode supported_4_lanes_modes[] = {
+ 		.height = 2340,
+ 		.vts_def = OV13B10_VTS_30FPS,
+ 		.vts_min = OV13B10_VTS_30FPS,
++		.hts = 4704,
+ 		.reg_list = {
+ 			.num_of_regs = ARRAY_SIZE(mode_4160x2340_regs),
+ 			.regs = mode_4160x2340_regs,
+@@ -645,6 +651,7 @@ static const struct ov13b10_mode supported_4_lanes_modes[] = {
+ 		.height = 1560,
+ 		.vts_def = OV13B10_VTS_60FPS,
+ 		.vts_min = OV13B10_VTS_60FPS,
++		.hts = 4704,
+ 		.reg_list = {
+ 			.num_of_regs = ARRAY_SIZE(mode_2104x1560_regs),
+ 			.regs = mode_2104x1560_regs,
+@@ -656,6 +663,7 @@ static const struct ov13b10_mode supported_4_lanes_modes[] = {
+ 		.height = 1170,
+ 		.vts_def = OV13B10_VTS_60FPS,
+ 		.vts_min = OV13B10_VTS_60FPS,
++		.hts = 4704,
+ 		.reg_list = {
+ 			.num_of_regs = ARRAY_SIZE(mode_2080x1170_regs),
+ 			.regs = mode_2080x1170_regs,
+@@ -667,6 +675,7 @@ static const struct ov13b10_mode supported_4_lanes_modes[] = {
+ 		.height = 768,
+ 		.vts_def = OV13B10_VTS_120FPS,
+ 		.vts_min = OV13B10_VTS_120FPS,
++		.hts = 4664,
+ 		.link_freq_index = OV13B10_LINK_FREQ_INDEX_0,
+ 		.reg_list = {
+ 			.num_of_regs = ARRAY_SIZE(mode_1364x768_120fps_regs),
+@@ -682,6 +691,7 @@ static const struct ov13b10_mode supported_2_lanes_modes[] = {
+ 		.height = 1560,
+ 		.vts_def = OV13B10_2LANE_VTS_30FPS,
+ 		.vts_min = OV13B10_2LANE_VTS_30FPS,
++		.hts = 2352,
+ 		.reg_list = {
+ 			.num_of_regs = ARRAY_SIZE(mode_2lanes_2104x1560_regs),
+ 			.regs = mode_2lanes_2104x1560_regs,
+@@ -1144,9 +1154,7 @@ ov13b10_set_pad_format(struct v4l2_subdev *sd,
+ 					 1,
+ 					 vblank_def);
+ 		__v4l2_ctrl_s_ctrl(ov13b->vblank, vblank_def);
+-		h_blank =
+-			link_freq_configs[mode->link_freq_index].pixels_per_line
+-			 - ov13b->cur_mode->width;
++		h_blank = mode->hts - mode->width;
+ 		__v4l2_ctrl_modify_range(ov13b->hblank, h_blank,
+ 					 h_blank, 1, h_blank);
+ 	}
+@@ -1401,8 +1409,7 @@ static int ov13b10_init_controls(struct ov13b10 *ov13b)
+ 					  OV13B10_VTS_MAX - mode->height, 1,
+ 					  vblank_def);
+ 
+-	hblank = link_freq_configs[mode->link_freq_index].pixels_per_line -
+-		 mode->width;
++	hblank = mode->hts - mode->width;
+ 	ov13b->hblank = v4l2_ctrl_new_std(ctrl_hdlr, &ov13b10_ctrl_ops,
+ 					  V4L2_CID_HBLANK,
+ 					  hblank, hblank, 1, hblank);
+-- 
+2.43.0
+
