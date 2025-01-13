@@ -23,6 +23,7 @@ version_lt = $(shell \
 KV_IVSC := 6.6.0
 KV_IPU_BRIDGE := 6.6.0
 KV_OV2740 := 6.8.0
+KV_OV01A10 := 6.8.0
 KV_OV05C10 := 6.8.0
 KV_HI556 := 6.10.0
 KV_IPU6_ISYS := 6.10.0
@@ -84,7 +85,6 @@ endif
 
 export CONFIG_ICAMERA_HM11B1 = m
 export CONFIG_ICAMERA_OV01A1S = m
-export CONFIG_ICAMERA_OV01A10 = m
 export CONFIG_ICAMERA_OV02C10 = m
 export CONFIG_ICAMERA_OV02E10 = m
 export CONFIG_ICAMERA_HM2170 = m
@@ -93,6 +93,10 @@ export CONFIG_ICAMERA_GC5035 = m
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV2740)),true)
 export CONFIG_ICAMERA_OV2740 = m
+endif
+
+ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV01A10)),true)
+export CONFIG_ICAMERA_OV01A10 = m
 endif
 
 # Note OV05C10 check is reversed, it is not build on too old kernels
