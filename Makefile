@@ -24,6 +24,7 @@ KV_IVSC := 6.6.0
 KV_IPU_BRIDGE := 6.6.0
 KV_OV2740 := 6.8.0
 KV_OV05C10 := 6.8.0
+KV_HI556 := 6.10.0
 KV_IPU6_ISYS := 6.10.0
 
 KERNEL_SRC ?= /lib/modules/$(KERNELRELEASE)/build
@@ -88,15 +89,19 @@ export CONFIG_ICAMERA_OV02C10 = m
 export CONFIG_ICAMERA_OV02E10 = m
 export CONFIG_ICAMERA_HM2170 = m
 export CONFIG_ICAMERA_HM2172 = m
-export CONFIG_ICAMERA_HI556 = m
 export CONFIG_ICAMERA_GC5035 = m
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV2740)),true)
 export CONFIG_ICAMERA_OV2740 = m
 endif
 
+# Note OV05C10 check is reversed, it is not build on too old kernels
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV05C10)),false)
 export CONFIG_ICAMERA_OV05C10 = m
+endif
+
+ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_HI556)),true)
+export CONFIG_ICAMERA_HI556 = m
 endif
 
 obj-y += drivers/media/i2c/
