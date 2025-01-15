@@ -222,7 +222,8 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 	unsigned int i;
 	int ret, prevfd, fd;
 
-	fd = prevfd = -1;
+	fd = -1;
+	prevfd = -1;
 
 	if (cmd->bufcount > IPU_MAX_PSYS_CMD_BUFFERS)
 		return NULL;
@@ -248,7 +249,7 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 		goto error;
 	}
 
-	/* check and remap if possibe */
+	/* check and remap if possible */
 	kpgbuf = ipu_psys_mapbuf_locked(fd, fh);
 	if (!kpgbuf || !kpgbuf->sgt) {
 		dev_err(&psys->adev->dev, "%s remap failed\n", __func__);
@@ -282,7 +283,7 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 		goto error;
 
 	/*
-	 * Kenel enable bitmap be used only.
+	 * Kernel enable bitmap be used only.
 	 */
 	memcpy(kcmd->kernel_enable_bitmap, cmd->kernel_enable_bitmap,
 	       sizeof(cmd->kernel_enable_bitmap));
@@ -347,19 +348,20 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 			mutex_unlock(&fh->mutex);
 			goto error;
 		}
+
 		mutex_unlock(&fh->mutex);
 		kcmd->kbufs[i] = kpgbuf;
 		if (!kcmd->kbufs[i] || !kcmd->kbufs[i]->sgt ||
 		    kcmd->kbufs[i]->len < kcmd->buffers[i].bytes_used)
 			goto error;
-		if ((kcmd->kbufs[i]->flags &
-		     IPU_BUFFER_FLAG_NO_FLUSH) ||
-		    (kcmd->buffers[i].flags &
-		     IPU_BUFFER_FLAG_NO_FLUSH) ||
+
+		if ((kcmd->kbufs[i]->flags & IPU_BUFFER_FLAG_NO_FLUSH) ||
+		    (kcmd->buffers[i].flags & IPU_BUFFER_FLAG_NO_FLUSH) ||
 		    prevfd == kcmd->buffers[i].base.fd)
 			continue;
 
 		prevfd = kcmd->buffers[i].base.fd;
+
 		dma_sync_sg_for_device(&psys->adev->dev,
 				       kcmd->kbufs[i]->sgt->sgl,
 				       kcmd->kbufs[i]->sgt->orig_nents,
@@ -509,7 +511,7 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 	int queue_id;
 	int ret;
 
-	rpr = &psys->resource_pool_running;
+	rpr = &psys->res_pool_running;
 
 	kppg = kzalloc(sizeof(*kppg), GFP_KERNEL);
 	if (!kppg)
@@ -536,7 +538,7 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 	memcpy(kppg->manifest, kcmd->pg_manifest,
 	       kcmd->pg_manifest_size);
 
-	queue_id = ipu_psys_allocate_cmd_queue_resource(rpr);
+	queue_id = ipu_psys_allocate_cmd_queue_res(rpr);
 	if (queue_id == -ENOSPC) {
 		dev_err(&psys->adev->dev, "no available queue\n");
 		kfree(kppg->manifest);
@@ -555,7 +557,8 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 	ret = ipu_fw_psys_pg_set_ipu_vaddress(kcmd,
 					      kcmd->kpg->pg_dma_addr);
 	if (ret) {
-		ipu_psys_free_cmd_queue_resource(rpr, queue_id);
+		ipu_psys_free_cmd_queue_res(rpr, queue_id);
+
 		kfree(kppg->manifest);
 		kfree(kppg);
 		return -EIO;
@@ -591,7 +594,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
 	u8 id;
 	bool resche = true;
 
-	rpr = &psys->resource_pool_running;
+	rpr = &psys->res_pool_running;
 	if (kcmd->state == KCMD_STATE_PPG_START)
 		return ipu_psys_kcmd_send_to_ppg_start(kcmd);
 
@@ -607,8 +610,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
 	kcmd->kpg = kppg->kpg;
 
 	dev_dbg(&psys->adev->dev, "%s ppg(%d, 0x%p) kcmd %p\n",
-		(kcmd->state == KCMD_STATE_PPG_STOP) ?
-		"STOP" : "ENQUEUE",
+		(kcmd->state == KCMD_STATE_PPG_STOP) ? "STOP" : "ENQUEUE",
 		ipu_fw_psys_pg_get_id(kcmd), kppg, kcmd);
 
 	if (kcmd->state == KCMD_STATE_PPG_STOP) {
@@ -617,7 +619,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
 			dev_dbg(&psys->adev->dev,
 				"kppg 0x%p  stopped!\n", kppg);
 			id = ipu_fw_psys_ppg_get_base_queue_id(kcmd);
-			ipu_psys_free_cmd_queue_resource(rpr, id);
+			ipu_psys_free_cmd_queue_res(rpr, id);
 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
 			pm_runtime_put(&psys->adev->dev);
 			resche = false;
@@ -654,7 +656,6 @@ int ipu_psys_kcmd_new(struct ipu_psys_command *cmd, struct ipu_psys_fh *fh)
 
 	if (psys->adev->isp->flr_done)
 		return -EIO;
-
 	kcmd = ipu_psys_copy_cmd(cmd, fh);
 	if (!kcmd)
 		return -EINVAL;
@@ -858,7 +859,7 @@ out_free_buf_sets:
 				 &sched->buf_sets, list) {
 		dma_free_attrs(&psys->adev->dev,
 			       kbuf_set->size, kbuf_set->kaddr,
-			       kbuf_set->dma_addr, 0);
+			      kbuf_set->dma_addr, 0);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}
@@ -891,15 +892,16 @@ int ipu_psys_fh_deinit(struct ipu_psys_fh *fh)
 					.kpg = kppg->kpg,
 				};
 
-				rpr = &psys->resource_pool_running;
+				rpr = &psys->res_pool_running;
 				alloc = &kppg->kpg->resource_alloc;
 				id = ipu_fw_psys_ppg_get_base_queue_id(&tmp);
 				ipu_psys_ppg_stop(kppg);
 				ipu_psys_free_resources(alloc, rpr);
-				ipu_psys_free_cmd_queue_resource(rpr, id);
+				ipu_psys_free_cmd_queue_res(rpr, id);
 				dev_dbg(&psys->adev->dev,
-				    "s_change:%s %p %d -> %d\n", __func__,
-				    kppg, kppg->state, PPG_STATE_STOPPED);
+				    "s_change:%s %p %d -> %d\n",
+					__func__, kppg, kppg->state,
+					PPG_STATE_STOPPED);
 				kppg->state = PPG_STATE_STOPPED;
 				if (psys->power_gating != PSYS_POWER_GATED)
 					pm_runtime_put(&psys->adev->dev);
@@ -948,7 +950,7 @@ int ipu_psys_fh_deinit(struct ipu_psys_fh *fh)
 	list_for_each_entry_safe(kbuf_set, kbuf_set0, &sched->buf_sets, list) {
 		dma_free_attrs(&psys->adev->dev,
 			       kbuf_set->size, kbuf_set->kaddr,
-			       kbuf_set->dma_addr, 0);
+			      kbuf_set->dma_addr, 0);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}

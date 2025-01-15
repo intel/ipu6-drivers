@@ -698,6 +698,186 @@ static struct ipu_isys_subdev_info d4xx_sd_3 = {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_INTEL_IPU6_CHIMERA)
+
+#define CHIMERA_LANES           2
+#define CHIMERA1_I2C_ADDRESS     0x11
+#define CHIMERA2_I2C_ADDRESS     0x12
+#define CHIMERA3_I2C_ADDRESS     0x14
+#define CHIMERA4_I2C_ADDRESS     0x15
+
+/* for port0 MCSI0 */
+static struct crlmodule_platform_data chimera_pdata = {
+	.lanes = CHIMERA_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){ 750000000 },
+	.module_name = "CHIMERA1",
+};
+
+static struct ipu_isys_csi2_config chimera_csi2_cfg = {
+	.nlanes = CHIMERA_LANES,
+	.port = 0,
+};
+
+static struct ipu_isys_subdev_info chimera_crl_sd = {
+	.csi2 = &chimera_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, CHIMERA1_I2C_ADDRESS),
+			.platform_data = &chimera_pdata,
+		},
+		.i2c_adapter_id = 2, // for mineral hill
+		//.i2c_adapter_id = 5, // for leaf hill rework connection
+	},
+
+};
+
+/* for port1 MCSI1 */
+static struct crlmodule_platform_data chimera_pdata_2 = {
+	.lanes = CHIMERA_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){ 750000000 },
+	.module_name = "CHIMERA2",
+};
+
+static struct ipu_isys_csi2_config chimera_csi2_cfg_2 = {
+	.nlanes = CHIMERA_LANES,
+	.port = 2,
+};
+
+static struct ipu_isys_subdev_info chimera_crl_sd_2 = {
+	.csi2 = &chimera_csi2_cfg_2,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, CHIMERA2_I2C_ADDRESS),
+			.platform_data = &chimera_pdata_2,
+		},
+		.i2c_adapter_id = 2,
+	},
+
+};
+
+/* for port0 MNPH 0 */
+static struct crlmodule_platform_data chimera_pdata_3 = {
+	.lanes = CHIMERA_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){ 750000000 },
+	.module_name = "CHIMERA3",
+};
+
+static struct ipu_isys_csi2_config chimera_csi2_cfg_3 = {
+	.nlanes = CHIMERA_LANES,
+	.port = 4,
+};
+
+static struct ipu_isys_subdev_info chimera_crl_sd_3 = {
+	.csi2 = &chimera_csi2_cfg_3,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, CHIMERA3_I2C_ADDRESS),
+			.platform_data = &chimera_pdata_3,
+		},
+		.i2c_adapter_id = 0,
+	},
+
+};
+
+/* for port1 MNPH 1 */
+static struct crlmodule_platform_data chimera_pdata_4 = {
+	.lanes = CHIMERA_LANES,
+	.ext_clk = 19200000,
+	.op_sys_clock = (uint64_t []){ 750000000 },
+	.module_name = "CHIMERA4",
+};
+
+static struct ipu_isys_csi2_config chimera_csi2_cfg_4 = {
+	.nlanes = CHIMERA_LANES,
+	.port = 5,
+};
+
+static struct ipu_isys_subdev_info chimera_crl_sd_4 = {
+	.csi2 = &chimera_csi2_cfg_4,
+	.i2c = {
+		.board_info = {
+			I2C_BOARD_INFO(CRLMODULE_NAME, CHIMERA4_I2C_ADDRESS),
+			.platform_data = &chimera_pdata_4,
+		},
+		.i2c_adapter_id = 0,
+	},
+
+};
+#endif
+
+#if IS_ENABLED(CONFIG_VIDEO_CHIMERA)
+
+#define CHIMERA_LANES           2
+#define CHIMERA1_I2C_ADDRESS     0x11
+#define CHIMERA2_I2C_ADDRESS     0x12
+#define CHIMERA3_I2C_ADDRESS     0x14
+#define CHIMERA4_I2C_ADDRESS     0x15
+
+/* for port0 MCSI0 */
+static struct ipu_isys_csi2_config chimera_csi2_cfg_1 = {
+	.nlanes = CHIMERA_LANES,
+	.port = 0,
+};
+
+static struct ipu_isys_subdev_info chimera_sd_1 = {
+	.csi2 = &chimera_csi2_cfg_1,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("chimera", CHIMERA1_I2C_ADDRESS),
+	},
+	.i2c_adapter_id = 2, // for mineral hill
+	},
+};
+
+static struct ipu_isys_csi2_config chimera_csi2_cfg_2 = {
+	.nlanes = CHIMERA_LANES,
+	.port = 2,
+};
+
+static struct ipu_isys_subdev_info chimera_sd_2 = {
+	.csi2 = &chimera_csi2_cfg_2,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("chimera", CHIMERA2_I2C_ADDRESS),
+	},
+	.i2c_adapter_id = 2, // for mineral hill
+	},
+};
+
+static struct ipu_isys_csi2_config chimera_csi2_cfg_3 = {
+	.nlanes = CHIMERA_LANES,
+	.port = 4,
+};
+
+static struct ipu_isys_subdev_info chimera_sd_3 = {
+	.csi2 = &chimera_csi2_cfg_3,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("chimera", CHIMERA3_I2C_ADDRESS),
+	},
+	.i2c_adapter_id = 0, // for mineral hill
+	},
+};
+
+static struct ipu_isys_csi2_config chimera_csi2_cfg_4 = {
+	.nlanes = CHIMERA_LANES,
+	.port = 5,
+};
+
+static struct ipu_isys_subdev_info chimera_sd_4 = {
+	.csi2 = &chimera_csi2_cfg_4,
+	.i2c = {
+	.board_info = {
+		I2C_BOARD_INFO("chimera", CHIMERA4_I2C_ADDRESS),
+	},
+	.i2c_adapter_id = 0, // for mineral hill
+	},
+};
+#endif
+
 static struct ipu_isys_clk_mapping clk_mapping[] = {
 	{ CLKDEV_INIT(NULL, NULL, NULL), NULL }
 };
@@ -725,6 +905,12 @@ static struct ipu_isys_subdev_pdata pdata = {
 		&d4xx_sd_1,
 		&d4xx_sd_2,
 		&d4xx_sd_3,
+#endif
+#if IS_ENABLED(CONFIG_VIDEO_CHIMERA)
+		&chimera_sd_1,
+		&chimera_sd_2,
+		&chimera_sd_3,
+		&chimera_sd_4,
 #endif
 		NULL,
 	},

@@ -28,7 +28,7 @@
 #define IMX390_REG_CHIP_ID		0x0330
 
 /* vertical-timings from sensor */
-#define IMX390_REG_VTS			0x300A
+#define IMX390_REG_VTS			0x2008
 #define IMX390_VTS_MAX			0xffff
 
 #define IMX390_CLK_FREQ			(1485000)
@@ -281,7 +281,7 @@ struct imx390 {
 };
 
 #include "imx390-mode-1280x960-CROP.h"
-#include "imx390_mode_1920x1200HDR3_CUST_PWL12.h"
+#include "imx390_mode_1920x1216HDR3_CUST_PWL12.h"
 
 static int imx390_group_hold_enable(struct imx390 *imx390, s32 val);
 
@@ -1032,9 +1032,9 @@ static const struct imx390_mode supported_modes[] = {
 		.width = 1280,
 		.height = 960,
 		.hdr_en = false,
-		.hts = 2464,
-		.vts_def = 2435,
-		.vts_min = 2435,
+		.hts = 3300,
+		.vts_def = 1250,
+		.vts_min = 1250,
 		.code = MEDIA_BUS_FMT_SGRBG12_1X12,
 		.lanes = 4,
 		.fps = 30,
@@ -1047,18 +1047,18 @@ static const struct imx390_mode supported_modes[] = {
 	},
 	{
 		.width = 1920,
-		.height = 1200,
+		.height = 1216,
 		.hdr_en = true,
-		.hts = 2464,
-		.vts_def = 2435,
-		.vts_min = 2435,
+		.hts = 3300,
+		.vts_def = 1250,
+		.vts_min = 1250,
 		.code = MEDIA_BUS_FMT_SGRBG12_1X12,
 		.lanes = 4,
 		.fps = 30,
 		.bpp = 12,
 		.reg_list = {
-			.num_of_regs = ARRAY_SIZE(imx390_mode_1920x1200HDR3_CUST_PWL12),
-			.regs = imx390_mode_1920x1200HDR3_CUST_PWL12,
+			.num_of_regs = ARRAY_SIZE(imx390_mode_1920x1216HDR3_CUST_PWL12),
+			.regs = imx390_mode_1920x1216HDR3_CUST_PWL12,
 		},
 		.link_freq_index = -1,
 	},
@@ -1982,7 +1982,7 @@ static int imx390_probe(struct i2c_client *client)
 
 	mutex_init(&imx390->mutex);
 
-	/* 1920x1200 default */
+	/* 1920x1216 default */
 	imx390->cur_mode = &supported_modes[1];
 	imx390->pre_mode = imx390->cur_mode;
 
