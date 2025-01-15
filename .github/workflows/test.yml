@@ -173,7 +173,7 @@ jobs:
                                   # latest generic kernel headers
                                   apt-get install --yes linux-headers-generic
                                   # latest oem kernel
-                                  apt-get install --yes linux-headers-oem-22.04
+                                  apt-get install --yes linux-headers-oem-24.04 linux-headers-oem-24.04a
 
                         - name: Register with dkms
                           shell: bash
