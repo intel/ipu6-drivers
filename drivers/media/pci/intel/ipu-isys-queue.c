@@ -420,14 +420,6 @@ static int ipu_isys_stream_start(struct ipu_isys_pipeline *ip,
 
 	mutex_lock(&pipe_av->isys->stream_mutex);
 
-	rval = ipu_isys_video_set_streaming(pipe_av, 1, bl);
-	if (rval) {
-		mutex_unlock(&pipe_av->isys->stream_mutex);
-		goto out_requeue;
-	}
-
-	ip->streaming = 1;
-
 	mutex_unlock(&pipe_av->isys->stream_mutex);
 
 	bl = &__bl;
@@ -750,8 +742,6 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 		}
 	}
 
-	mutex_unlock(&av->isys->stream_mutex);
-
 	ip = to_ipu_isys_pipeline(media_entity_pipeline(&av->vdev.entity));
 	pipe_av = container_of(ip, struct ipu_isys_video, ip);
 	if (pipe_av != av) {
@@ -783,6 +773,15 @@ static int __start_streaming(struct vb2_queue *q, unsigned int count)
 			goto out;
 		}
 	}
+
+	rval = ipu_isys_video_set_streaming(pipe_av, 1, bl);
+	if (rval) {
+		mutex_unlock(&pipe_av->isys->stream_mutex);
+		goto out_stream_start;
+	}
+
+	ip->streaming = 1;
+	mutex_unlock(&av->isys->stream_mutex);
 
 	rval = ipu_isys_stream_start(ip, bl, false);
 	if (rval) {
@@ -1162,6 +1161,8 @@ static void stop_streaming(struct vb2_queue *q)
 		av->vdev.name);
 }
 
+/* Invalid timestamp defined by FW */
+#define INVALID_TSC (2 | BIT_ULL(32))
 static unsigned int
 get_sof_sequence_by_timestamp(struct ipu_isys_pipeline *ip,
 			      struct ipu_fw_isys_resp_info_abi *info)
@@ -1175,7 +1176,7 @@ get_sof_sequence_by_timestamp(struct ipu_isys_pipeline *ip,
 	 * The timestamp is invalid as no TSC in some FPGA platform,
 	 * so get the sequence from pipeline directly in this case.
 	 */
-	if (time == 0)
+	if (time == 0 || time == INVALID_TSC)
 		return atomic_read(&ip->sequence) - 1;
 
 	for (i = 0; i < IPU_ISYS_MAX_PARALLEL_SOF; i++)

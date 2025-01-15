@@ -110,6 +110,14 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RGB565},
 	{V4L2_PIX_FMT_BGR24, 24, 24, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
+	{V4L2_PIX_FMT_SBGGR10, 16, 10, 0, MEDIA_BUS_FMT_SBGGR10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
+	{V4L2_PIX_FMT_SGBRG10, 16, 10, 0, MEDIA_BUS_FMT_SGBRG10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
+	{V4L2_PIX_FMT_SGRBG10, 16, 10, 0, MEDIA_BUS_FMT_SGRBG10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
+	{V4L2_PIX_FMT_SRGGB10, 16, 10, 0, MEDIA_BUS_FMT_SRGGB10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
 #ifndef V4L2_PIX_FMT_SBGGR12P
 	{V4L2_PIX_FMT_SBGGR12, 12, 12, 0, MEDIA_BUS_FMT_SBGGR12_1X12,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW12},
@@ -1021,11 +1029,13 @@ static void media_pipeline_stop_for_vc(struct ipu_isys_video *av)
 
 	media_graph_walk_start(&graph, entity);
 	mutex_lock(&mdev->graph_mutex);
+	ip = to_ipu_isys_pipeline(pipe);
+	dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
+		"%u streams in pipe %p.\n",
+		ip->nr_streaming, pipe);
 	while ((entity = media_graph_walk_next(&graph))) {
-		ip = to_ipu_isys_pipeline(pipe);
-		dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
-			"%u streams in pipe %p.\n",
-			ip->nr_streaming, entity->pads[0].pipe);
+		if (!entity->pads[0].pipe)
+			continue;
 		if (!strcmp(entity->name, av->vdev.entity.name) &&
 		    ip->nr_streaming == 1) {
 			dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
@@ -1033,13 +1043,16 @@ static void media_pipeline_stop_for_vc(struct ipu_isys_video *av)
 				entity->pads[0].pipe, entity->name);
 			entity->pads[0].pipe = NULL;
 		}
-		mutex_unlock(&av->ip.csi2->stream_mutex);
-		if (av->ip.csi2->stream_count == 0)
+		mutex_lock(&av->ip.csi2->stream_mutex);
+		if (av->ip.csi2->stream_count == 0) {
+			dev_dbg(av->vdev.entity.graph_obj.mdev->dev,
+				"no active stream,stop pipe %p for entity:%s\n",
+				entity->pads[0].pipe, entity->name);
 			entity->pads[0].pipe = NULL;
+		}
 		mutex_unlock(&av->ip.csi2->stream_mutex);
 	}
 	mutex_unlock(&mdev->graph_mutex);
-
 	media_graph_walk_cleanup(&graph);
 }
 
@@ -1353,26 +1366,26 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 				isys->sensor_types[type_index] =
 					isys->sensor_info.vc1_data_start;
 		} else {
-			type_index = IPU_FW_ISYS_VC0_SENSOR_DATA;
+			type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
 			pin_info->sensor_type
 				= isys->sensor_types[type_index]++;
-			pin_info->snoopable = true;
+			pin_info->snoopable = false;
 			pin_info->error_handling_enable = false;
 			type = isys->sensor_types[type_index];
-			if (type > isys->sensor_info.vc0_data_end)
+			if (type > isys->sensor_info.vc1_data_end)
 				isys->sensor_types[type_index] =
-					isys->sensor_info.vc0_data_start;
+					isys->sensor_info.vc1_data_start;
 		}
 		break;
 	case IPU_FW_ISYS_PIN_TYPE_MIPI:
-		type_index = IPU_FW_ISYS_VC0_SENSOR_DATA;
+		type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
 		pin_info->sensor_type = isys->sensor_types[type_index]++;
-		pin_info->snoopable = true;
+		pin_info->snoopable = false;
 		pin_info->error_handling_enable = false;
 		type = isys->sensor_types[type_index];
-		if (type > isys->sensor_info.vc0_data_end)
+		if (type > isys->sensor_info.vc1_data_end)
 			isys->sensor_types[type_index] =
-				isys->sensor_info.vc0_data_start;
+				isys->sensor_info.vc1_data_start;
 
 		break;
 
@@ -1845,7 +1858,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	if (!ip->external) {
-		dev_err(dev, "no external entity set! Driver bug?\n");
+		dev_err(dev, "no external entity set for %s, Driver bug?\n",
+			av->vdev.name);
 		rval = -EINVAL;
 		goto out_pipeline_stop;
 	}

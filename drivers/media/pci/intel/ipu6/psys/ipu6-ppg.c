@@ -2,10 +2,9 @@
 // Copyright (C) 2020 - 2024 Intel Corporation
 
 #include <linux/version.h>
+#include <asm/cacheflush.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
-
-#include <asm/cacheflush.h>
 
 #include "ipu6-ppg.h"
 
@@ -110,8 +109,7 @@ ipu_psys_create_buffer_set(struct ipu_psys_kcmd *kcmd,
 	ipu_fw_psys_ppg_buffer_set_vaddress(kbuf_set->buf_set,
 					    kbuf_set->dma_addr);
 	keb = kcmd->kernel_enable_bitmap;
-	ipu_fw_psys_ppg_buffer_set_set_kernel_enable_bitmap(kbuf_set->buf_set,
-							    keb);
+	ipu_fw_psys_ppg_buffer_set_set_keb(kbuf_set->buf_set, keb);
 
 	return kbuf_set;
 }
@@ -174,16 +172,16 @@ void ipu_psys_ppg_complete(struct ipu_psys *psys, struct ipu_psys_ppg *kppg)
 
 		kppg->state = PPG_STATE_STOPPED;
 		ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-					&psys->resource_pool_running);
+					&psys->res_pool_running);
 		queue_id = ipu_fw_psys_ppg_get_base_queue_id(&tmp_kcmd);
-		ipu_psys_free_cmd_queue_resource(&psys->resource_pool_running,
+		ipu_psys_free_cmd_queue_res(&psys->res_pool_running,
 						 queue_id);
 		pm_runtime_put(&psys->adev->dev);
 	} else {
 		if (kppg->state == PPG_STATE_SUSPENDING) {
 			kppg->state = PPG_STATE_SUSPENDED;
 			ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-						&psys->resource_pool_running);
+						&psys->res_pool_running);
 		} else if (kppg->state == PPG_STATE_STARTED ||
 			   kppg->state == PPG_STATE_RESUMED) {
 			kppg->state = PPG_STATE_RUNNING;
@@ -244,7 +242,7 @@ int ipu_psys_ppg_start(struct ipu_psys_ppg *kppg)
 					  kcmd->kpg->pg,
 					  kcmd->pg_manifest,
 					  &kcmd->kpg->resource_alloc,
-					  &psys->resource_pool_running);
+					  &psys->res_pool_running);
 	if (ret) {
 		dev_err(&psys->adev->dev, "alloc resources failed!\n");
 		return ret;
@@ -276,7 +274,7 @@ error:
 				    kcmd->pg_manifest,
 				    kcmd->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-				&psys->resource_pool_running);
+				&psys->res_pool_running);
 
 	dev_err(&psys->adev->dev, "failed to start ppg\n");
 	return ret;
@@ -300,7 +298,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 						  kppg->kpg->pg,
 						  kppg->manifest,
 						  &kppg->kpg->resource_alloc,
-						  &psys->resource_pool_running);
+						  &psys->res_pool_running);
 		if (ret) {
 			dev_err(&psys->adev->dev, "failed to allocate res\n");
 			return -EIO;
@@ -323,7 +321,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 						  kppg->kpg->pg,
 						  kppg->manifest,
 						  &kppg->kpg->resource_alloc,
-						  &psys->resource_pool_running);
+						  &psys->res_pool_running);
 		if (ret) {
 			dev_err(&psys->adev->dev, "failed to allocate res\n");
 			return ret;
@@ -347,7 +345,7 @@ error:
 				    kppg->manifest,
 				    kppg->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-				&psys->resource_pool_running);
+				&psys->res_pool_running);
 
 	return ret;
 }
@@ -384,8 +382,8 @@ int ipu_psys_ppg_stop(struct ipu_psys_ppg *kppg)
 				dev_err(&psys->adev->dev,
 					"ppg(%d) failed to resume\n", ppg_id);
 		} else if (kcmd != &kcmd_temp) {
-			ipu_psys_free_cmd_queue_resource(
-				&psys->resource_pool_running,
+			ipu_psys_free_cmd_queue_res(
+				&psys->res_pool_running,
 				ipu_fw_psys_ppg_get_base_queue_id(kcmd));
 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
 			dev_dbg(&psys->adev->dev,
@@ -510,7 +508,6 @@ void ipu_psys_enter_power_gating(struct ipu_psys *psys)
 				mutex_unlock(&kppg->mutex);
 				continue;
 			}
-
 			pm_runtime_put(&psys->adev->dev);
 			mutex_unlock(&kppg->mutex);
 		}

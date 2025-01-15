@@ -61,7 +61,6 @@ static void ipu_psys_remove(struct ipu_bus_device *adev);
 static struct bus_type ipu_psys_bus = {
 	.name = IPU_PSYS_NAME,
 };
-
 /*
  * These are some trivial wrappers that save us from open-coding some
  * common patterns and also that's were we have some checking (for the
@@ -437,6 +436,7 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
 			      struct sg_table *sgt, enum dma_data_direction dir)
 {
+
 	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
 }
 
@@ -569,6 +569,7 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
 		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
 		dma_buf_vunmap(kbuf->dbuf, &dmap);
 	}
+
 	if (kbuf->sgt)
 		dma_buf_unmap_attachment(kbuf->db_attach,
 					 kbuf->sgt,
@@ -620,6 +621,7 @@ static int ipu_psys_unmapbuf_locked(int fd, struct ipu_psys_fh *fh)
 		return 0;
 
 	__ipu_psys_unmapbuf(fh, kbuf);
+
 	return 0;
 }
 
@@ -694,6 +696,7 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys *psys = fh->psys;
 	struct ipu_psys_desc *desc;
+
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 	struct dma_buf *dbuf;
 	int ret;
@@ -708,7 +711,7 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 		return -ENOMEM;
 
 	kbuf->len = buf->len;
-	kbuf->userptr = buf->base.userptr;
+	kbuf->userptr = (unsigned long)buf->base.userptr;
 	kbuf->flags = buf->flags;
 
 	exp_info.ops = &ipu_dma_buf_ops;
@@ -779,9 +782,7 @@ struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys_desc *desc;
 	struct dma_buf *dbuf;
-	struct iosys_map dmap = {
-		.is_iomem = false,
-	};
+	struct iosys_map dmap;
 
 	dbuf = dma_buf_get(fd);
 	if (IS_ERR(dbuf))
@@ -846,20 +847,16 @@ struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
 
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
-	/* no need vmap for imported dmabufs */
-	if (!kbuf->userptr)
-		goto mapbuf_end;
-
 	if (dma_buf_vmap(kbuf->dbuf, &dmap)) {
 		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
 		goto kbuf_map_fail;
 	}
 	kbuf->kaddr = dmap.vaddr;
 
+mapbuf_end:
 	dev_dbg(&psys->adev->dev, "%s kbuf %p fd %d with len %llu mapped\n",
 		__func__, kbuf, fd, kbuf->len);
 
-mapbuf_end:
 	kbuf->valid = true;
 	return kbuf;
 
@@ -884,24 +881,25 @@ static long ipu_psys_mapbuf(int fd, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys_kbuffer *kbuf;
 
+	dev_dbg(&fh->psys->adev->dev, "IOC_MAPBUF\n");
+
 	mutex_lock(&fh->mutex);
 	kbuf = ipu_psys_mapbuf_locked(fd, fh);
 	mutex_unlock(&fh->mutex);
-
-	dev_dbg(&fh->psys->adev->dev, "IOC_MAPBUF\n");
 
 	return kbuf ? 0 : -EINVAL;
 }
 
 static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
 {
+	struct device *dev = &fh->psys->adev->dev;
 	long ret;
+
+	dev_dbg(dev, "IOC_UNMAPBUF\n");
 
 	mutex_lock(&fh->mutex);
 	ret = ipu_psys_unmapbuf_locked(fd, fh);
 	mutex_unlock(&fh->mutex);
-
-	dev_dbg(&fh->psys->adev->dev, "IOC_UNMAPBUF\n");
 
 	return ret;
 }
@@ -938,7 +936,6 @@ static long ipu_get_manifest(struct ipu_psys_manifest *manifest,
 
 	host_fw_data = (void *)isp->cpd_fw->data;
 	dma_fw_data = sg_dma_address(psys->fw_sgt.sgl);
-
 	entries = ipu_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
 	if (!manifest || manifest->index > entries - 1) {
 		dev_err(&psys->adev->dev, "invalid argument\n");
@@ -1049,7 +1046,6 @@ static void ipu_psys_dev_release(struct device *dev)
 {
 }
 
-#ifdef CONFIG_PM
 static int psys_runtime_pm_resume(struct device *dev)
 {
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
@@ -1072,14 +1068,12 @@ static int psys_runtime_pm_resume(struct device *dev)
 		return retval;
 
 	if (async_fw_init && !psys->fwcom) {
-		dev_err(dev,
-			"%s: asynchronous firmware init not finished, skipping\n",
-			__func__);
+		dev_err(dev, "async firmware init not finished, skipping\n");
 		return 0;
 	}
 
 	if (!ipu_buttress_auth_done(adev->isp)) {
-		dev_dbg(dev, "%s: not yet authenticated, skipping\n", __func__);
+		dev_dbg(dev, "fw not yet authenticated, skipping\n");
 		return 0;
 	}
 
@@ -1160,11 +1154,6 @@ static const struct dev_pm_ops psys_pm_ops = {
 	.suspend = psys_suspend,
 	.resume = psys_resume,
 };
-
-#define PSYS_PM_OPS (&psys_pm_ops)
-#else
-#define PSYS_PM_OPS NULL
-#endif
 
 static int cpd_fw_reload(struct ipu_device *isp)
 {
@@ -1523,7 +1512,7 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 
 	ipu_bus_set_drvdata(adev, psys);
 
-	rval = ipu_psys_resource_pool_init(&psys->resource_pool_running);
+	rval = ipu_psys_res_pool_init(&psys->res_pool_running);
 	if (rval < 0) {
 		dev_err(&psys->dev,
 			"unable to alloc process group resources\n");
@@ -1609,7 +1598,7 @@ out_free_pgs:
 		kfree(kpg);
 	}
 
-	ipu_psys_resource_pool_cleanup(&psys->resource_pool_running);
+	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
 out_mutex_destroy:
 	mutex_destroy(&psys->mutex);
 	cdev_del(&psys->cdev);
@@ -1658,8 +1647,7 @@ static void ipu_psys_remove(struct ipu_bus_device *adev)
 	kfree(psys->syscom_config);
 
 	ipu_trace_uninit(&adev->dev);
-
-	ipu_psys_resource_pool_cleanup(&psys->resource_pool_running);
+	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
 
 	device_unregister(&psys->dev);
 
@@ -1681,13 +1669,11 @@ static irqreturn_t psys_isr_threaded(struct ipu_bus_device *adev)
 	int r;
 
 	mutex_lock(&psys->mutex);
-#ifdef CONFIG_PM
 	r = pm_runtime_get_if_in_use(&psys->adev->dev);
 	if (!r || WARN_ON_ONCE(r < 0)) {
 		mutex_unlock(&psys->mutex);
 		return IRQ_NONE;
 	}
-#endif
 
 	status = readl(base + IPU_REG_PSYS_GPDEV_IRQ_STATUS);
 	writel(status, base + IPU_REG_PSYS_GPDEV_IRQ_CLEAR);
@@ -1711,7 +1697,7 @@ static struct ipu_bus_driver ipu_psys_driver = {
 	.drv = {
 		.name = IPU_PSYS_NAME,
 		.owner = THIS_MODULE,
-		.pm = PSYS_PM_OPS,
+		.pm = &psys_pm_ops,
 		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
@@ -1762,14 +1748,8 @@ MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
 module_init(ipu_psys_init);
 module_exit(ipu_psys_exit);
 
-MODULE_AUTHOR("Antti Laakso <antti.laakso@intel.com>");
-MODULE_AUTHOR("Bin Han <bin.b.han@intel.com>");
-MODULE_AUTHOR("Renwei Wu <renwei.wu@intel.com>");
-MODULE_AUTHOR("Jianxu Zheng <jian.xu.zheng@intel.com>");
-MODULE_AUTHOR("Xia Wu <xia.wu@intel.com>");
 MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");
-MODULE_AUTHOR("Zaikuo Wang <zaikuo.wang@intel.com>");
-MODULE_AUTHOR("Yunliang Ding <yunliang.ding@intel.com>");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Intel ipu processing system driver");
+MODULE_DESCRIPTION("Intel IPU6 processing system driver");
 MODULE_IMPORT_NS(DMA_BUF);
+MODULE_IMPORT_NS(INTEL_IPU6);
