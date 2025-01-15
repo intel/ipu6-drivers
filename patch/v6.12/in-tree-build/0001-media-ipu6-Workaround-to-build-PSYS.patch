@@ -1,7 +1,7 @@
-From 8ef0a32a11740260fdfbb08e711df8d6ed515b56 Mon Sep 17 00:00:00 2001
+From 81675a46f737a632298dc3a512f58a3f4cd9c8a2 Mon Sep 17 00:00:00 2001
 From: Dongcheng Yan <dongcheng.yan@intel.com>
 Date: Fri, 13 Sep 2024 18:02:37 +0800
-Subject: [PATCH 1/5] media: ipu6: Workaround to build PSYS
+Subject: [PATCH 1/9] media: ipu6: Workaround to build PSYS
 
 Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
 ---

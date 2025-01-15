@@ -1,7 +1,7 @@
-From 4777258d86079bc5c1da4a50e2d6547c1fcf277c Mon Sep 17 00:00:00 2001
+From b0213ed55ed26b8ec45f60cf07b0d484eac0a5bc Mon Sep 17 00:00:00 2001
 From: Hao Yao <hao.yao@intel.com>
 Date: Thu, 10 Oct 2024 15:13:52 +0800
-Subject: [PATCH 5/5] media: ipu-bridge: Support ov05c10 sensor
+Subject: [PATCH 5/9] media: ipu-bridge: Support ov05c10 sensor
 
 Signed-off-by: Hao Yao <hao.yao@intel.com>
 ---
