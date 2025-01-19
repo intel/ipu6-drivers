@@ -387,22 +387,21 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	const struct ipu_isys_internal_csi2_pdata *csi2 =
 	    &isys->pdata->ipdata->csi2;
 	struct ipu_isys_csi2_be_soc *csi2_be_soc;
-	unsigned int i, k;
-	int rval;
+	int i = 0, k = 0, rval;
 
 	isys->csi2 = devm_kcalloc(&isys->adev->dev, csi2->nports,
 				  sizeof(*isys->csi2), GFP_KERNEL);
-	if (!isys->csi2) {
-		rval = -ENOMEM;
-		goto fail;
-	}
+	if (!isys->csi2)
+		return -ENOMEM;
 
 	for (i = 0; i < csi2->nports; i++) {
 		rval = ipu_isys_csi2_init(&isys->csi2[i], isys,
 					  isys->pdata->base +
 					  csi2->offsets[i], i);
-		if (rval)
+		if (rval) {
+			dev_err(&isys->adev->dev, "ipu_isys_csi2_init() err %d\n", rval);
 			goto fail;
+		}
 
 		isys->isr_csi2_bits |= IPU_ISYS_UNISPART_IRQ_CSI2(i);
 	}
@@ -428,7 +427,8 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 			if (rval) {
 				dev_info(&isys->adev->dev,
 					 "can't create link csi2->be_soc\n");
-				goto fail;
+				isys_unregister_subdevices(isys);
+				return rval;
 			}
 		}
 	}
@@ -436,7 +436,16 @@ static int isys_register_subdevices(struct ipu_isys *isys)
 	return 0;
 
 fail:
-	isys_unregister_subdevices(isys);
+	while (--k >= 0) {
+		dev_info(&isys->adev->dev, "foo %d\n", k);
+		ipu_isys_csi2_be_soc_cleanup(&isys->csi2_be_soc[k]);
+	}
+
+	while (--i >= 0) {
+		dev_info(&isys->adev->dev, "bar %d\n", k);
+		ipu_isys_csi2_cleanup(&isys->csi2[i]);
+	}
+
 	return rval;
 }
 
@@ -1027,12 +1036,16 @@ static int isys_register_devices(struct ipu_isys *isys)
 		goto out_v4l2_device_unregister;
 
 	rval = isys_notifier_init(isys);
-	if (rval)
+	if (rval) {
+		dev_err(&isys->adev->dev, "isys_notifier_init() err %d\n", rval);
 		goto out_isys_unregister_subdevices;
+	}
 
 	rval = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
-	if (rval)
+	if (rval) {
+		dev_err(&isys->adev->dev, "error registering subdev nodes %d\n", rval);
 		goto out_isys_notifier_cleanup;
+	}
 
 	return 0;
 
@@ -1175,8 +1188,7 @@ static void isys_remove(struct ipu_bus_device *adev)
 
 	dev_info(&adev->dev, "removed\n");
 #ifdef CONFIG_DEBUG_FS
-	if (isp->ipu_dir)
-		debugfs_remove_recursive(isys->debugfsdir);
+	debugfs_remove_recursive(isys->debugfsdir);
 #endif
 
 	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist, head) {
@@ -1222,6 +1234,7 @@ static void isys_remove(struct ipu_bus_device *adev)
 
 	mutex_destroy(&isys->stream_mutex);
 	mutex_destroy(&isys->mutex);
+	mutex_destroy(&isys->lib_mutex);
 
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT) {
 		u32 trace_size = IPU_ISYS_SHORT_PACKET_TRACE_BUFFER_SIZE;
@@ -1579,8 +1592,10 @@ static int isys_probe(struct ipu_bus_device *adev)
 	if (rval)
 		goto out_remove_pkg_dir_shared_buffer;
 	rval = isys_iwake_watermark_init(isys);
-	if (rval)
+	if (rval) {
+		dev_err(&adev->dev, "isys_iwake_watermark_init() err %d\n", rval);
 		goto out_unregister_devices;
+	}
 
 	ipu_mmu_hw_cleanup(adev->mmu);
 
@@ -1590,7 +1605,15 @@ out_unregister_devices:
 	isys_iwake_watermark_cleanup(isys);
 	isys_unregister_devices(isys);
 out_remove_pkg_dir_shared_buffer:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	cpu_latency_qos_remove_request(&isys->pm_qos);
+#else
+	pm_qos_remove_request(&isys->pm_qos);
+#endif
+	ipu_trace_uninit(&adev->dev);
+#ifdef CONFIG_DEBUG_FS
+	debugfs_remove_recursive(isys->debugfsdir);
+#endif
 	if (!isp->secure_mode)
 		ipu_cpd_free_pkg_dir(adev, isys->pkg_dir,
 				     isys->pkg_dir_dma_addr,
@@ -1601,10 +1624,10 @@ remove_shared_buffer:
 release_firmware:
 	if (!isp->secure_mode)
 		release_firmware(isys->fw);
-	ipu_trace_uninit(&adev->dev);
 
 	mutex_destroy(&isys->mutex);
 	mutex_destroy(&isys->stream_mutex);
+	mutex_destroy(&isys->lib_mutex);
 
 	if (isys->short_packet_source == IPU_ISYS_SHORT_PACKET_FROM_TUNIT)
 		mutex_destroy(&isys->short_packet_tracing_mutex);
