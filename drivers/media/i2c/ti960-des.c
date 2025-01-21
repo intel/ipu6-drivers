@@ -1615,6 +1615,12 @@ static int ti960_register_subdev(struct ti960 *va)
 	}
 
 	va->link_freq = v4l2_ctrl_find(&va->ctrl_handler, V4L2_CID_LINK_FREQ);
+	if (va->link_freq == NULL) {
+		dev_err(va->sd.dev,
+			"Failed to find ctrl V4L2_CID_LINK_FREQ!\n");
+		ret = -EINVAL;
+		goto failed_out;
+	}
 	switch (va->pdata->link_freq_mbps) {
 	case 1600:
 		__v4l2_ctrl_s_ctrl(va->link_freq, TI960_MIPI_1600MBPS);
