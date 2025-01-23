@@ -1355,28 +1355,6 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 		pin_info->error_handling_enable = false;
 		break;
 	case IPU_FW_ISYS_PIN_TYPE_RAW_SOC:
-		if (av->compression) {
-			type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
-			pin_info->sensor_type
-				= isys->sensor_types[type_index]++;
-			pin_info->snoopable = false;
-			pin_info->error_handling_enable = false;
-			type = isys->sensor_types[type_index];
-			if (type > isys->sensor_info.vc1_data_end)
-				isys->sensor_types[type_index] =
-					isys->sensor_info.vc1_data_start;
-		} else {
-			type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
-			pin_info->sensor_type
-				= isys->sensor_types[type_index]++;
-			pin_info->snoopable = false;
-			pin_info->error_handling_enable = false;
-			type = isys->sensor_types[type_index];
-			if (type > isys->sensor_info.vc1_data_end)
-				isys->sensor_types[type_index] =
-					isys->sensor_info.vc1_data_start;
-		}
-		break;
 	case IPU_FW_ISYS_PIN_TYPE_MIPI:
 		type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
 		pin_info->sensor_type = isys->sensor_types[type_index]++;

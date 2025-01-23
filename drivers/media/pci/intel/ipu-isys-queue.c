@@ -653,7 +653,6 @@ static void return_buffers(struct ipu_isys_queue *aq,
 			   enum vb2_buffer_state state)
 {
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
-	int reset_needed = 0;
 	unsigned long flags;
 
 	spin_lock_irqsave(&aq->lock, flags);
@@ -683,6 +682,11 @@ static void return_buffers(struct ipu_isys_queue *aq,
 	 * returned from isys) if there are still buffers queued in active
 	 * queue. We have to clean up places a bit.
 	 */
+	if (!list_empty(&aq->active)) {
+		mutex_lock(&av->isys->mutex);
+		av->isys->reset_needed = true;
+		mutex_unlock(&av->isys->mutex);
+	}
 	while (!list_empty(&aq->active)) {
 		struct ipu_isys_buffer *ib = list_first_entry(&aq->active,
 							      struct
@@ -701,16 +705,9 @@ static void return_buffers(struct ipu_isys_queue *aq,
 			 vb->index);
 
 		spin_lock_irqsave(&aq->lock, flags);
-		reset_needed = 1;
 	}
 
 	spin_unlock_irqrestore(&aq->lock, flags);
-
-	if (reset_needed) {
-		mutex_lock(&av->isys->mutex);
-		av->isys->reset_needed = true;
-		mutex_unlock(&av->isys->mutex);
-	}
 }
 
 static int __start_streaming(struct vb2_queue *q, unsigned int count)
