@@ -75,8 +75,11 @@ __get_buf_set(struct ipu_psys_fh *fh, size_t buf_set_size)
 	kbuf_set->kaddr = dma_alloc_attrs(&fh->psys->adev->dev,
 					  buf_set_size, &kbuf_set->dma_addr,
 					  GFP_KERNEL, 0);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 	kbuf_set->kaddr = dma_alloc_attrs(dev, buf_set_size,
+					  &kbuf_set->dma_addr, GFP_KERNEL, 0);
+#else
+	kbuf_set->kaddr = ipu6_dma_alloc(to_ipu6_bus_device(dev), buf_set_size,
 					  &kbuf_set->dma_addr, GFP_KERNEL, 0);
 #endif
 	if (!kbuf_set->kaddr) {

@@ -228,9 +228,12 @@ struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	kpg->pg = dma_alloc_attrs(&psys->adev->dev, pg_size,
 				  &kpg->pg_dma_addr, GFP_KERNEL, 0);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 	kpg->pg = dma_alloc_attrs(dev, pg_size,  &kpg->pg_dma_addr,
 				  GFP_KERNEL, 0);
+#else
+	kpg->pg = ipu6_dma_alloc(to_ipu6_bus_device(dev), pg_size,
+				 &kpg->pg_dma_addr, GFP_KERNEL, 0);
 #endif
 	if (!kpg->pg) {
 		kfree(kpg);
@@ -597,6 +600,7 @@ static void ipu_dma_buf_detach(struct dma_buf *dbuf,
 	attach->priv = NULL;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 					enum dma_data_direction dir)
 {
@@ -657,6 +661,50 @@ static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
 	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
 #endif
 }
+
+#else
+
+static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
+					enum dma_data_direction dir)
+{
+	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
+	struct ipu6_bus_device *adev = to_ipu6_bus_device(attach->dev);
+	struct pci_dev *pdev = adev->isp->pdev;
+	unsigned long attrs;
+	int ret;
+
+	attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	ret = dma_map_sgtable(&pdev->dev, ipu_attach->sgt, dir, attrs);
+	if (ret) {
+		dev_dbg(attach->dev, "buf map failed\n");
+		return ERR_PTR(-EIO);
+	}
+
+	ret = ipu6_dma_map_sgtable(adev, ipu_attach->sgt, dir, attrs);
+	if (ret) {
+		dma_unmap_sgtable(&pdev->dev, ipu_attach->sgt, dir, attrs);
+		return ERR_PTR(-EIO);
+	}
+
+	/*
+	 * Initial cache flush to avoid writing dirty pages for buffers which
+	 * are later marked as IPU_BUFFER_FLAG_NO_FLUSH.
+	 */
+	ipu6_dma_sync_sgtable(adev, ipu_attach->sgt);
+
+	return ipu_attach->sgt;
+}
+
+static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
+			      struct sg_table *sgt, enum dma_data_direction dir)
+{
+	struct ipu6_bus_device *adev = to_ipu6_bus_device(attach->dev);
+	struct pci_dev *pdev = adev->isp->pdev;
+
+	ipu6_dma_unmap_sgtable(adev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
+	dma_unmap_sgtable(&pdev->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
+}
+#endif
 
 static int ipu_dma_buf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
 {
@@ -2371,7 +2419,12 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 		kpg = kzalloc(sizeof(*kpg), GFP_KERNEL);
 		if (!kpg)
 			goto out_free_pgs;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 		kpg->pg = dma_alloc_attrs(dev, IPU_PSYS_PG_MAX_SIZE,
+#else
+		kpg->pg = ipu6_dma_alloc(adev, IPU_PSYS_PG_MAX_SIZE,
+#endif
 					  &kpg->pg_dma_addr,
 					  GFP_KERNEL, 0);
 		if (!kpg->pg) {
@@ -2426,7 +2479,11 @@ out_release_fw_com:
 	ipu6_fw_com_release(psys->fwcom, 1);
 out_free_pgs:
 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 		dma_free_attrs(dev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+#else
+		ipu6_dma_free(adev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+#endif
 		kfree(kpg);
 	}
 
@@ -2484,8 +2541,10 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dma_free_attrs(&adev->dev, kpg->size, kpg->pg,
 			       kpg->pg_dma_addr, 0);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 		dma_free_attrs(dev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+#else
+		ipu6_dma_free(psys->adev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
 #endif
 		kfree(kpg);
 	}

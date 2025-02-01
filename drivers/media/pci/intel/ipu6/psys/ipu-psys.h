@@ -15,6 +15,9 @@
 #include "ipu6.h"
 #include "ipu6-bus.h"
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+#include "ipu6-dma.h"
+#endif
 #include "ipu-fw-psys.h"
 #include "ipu-platform-psys.h"
 
