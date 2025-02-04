@@ -2121,17 +2121,6 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	ipu_trace_init(adev->isp, psys->pdata->base, &adev->dev,
 		       psys_trace_blocks);
 
-	cdev_init(&psys->cdev, &ipu_psys_fops);
-	psys->cdev.owner = ipu_psys_fops.owner;
-
-	rval = cdev_add(&psys->cdev, MKDEV(MAJOR(ipu_psys_dev_t), minor), 1);
-	if (rval) {
-		dev_err(&adev->dev, "cdev_add failed (%d)\n", rval);
-		goto out_unlock;
-	}
-
-	set_bit(minor, ipu_psys_devices);
-
 	spin_lock_init(&psys->ready_lock);
 	spin_lock_init(&psys->pgs_lock);
 	psys->ready = 0;
@@ -2212,11 +2201,18 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
 	psys->dev.release = ipu_psys_dev_release;
 	dev_set_name(&psys->dev, "ipu-psys%d", minor);
-	rval = device_register(&psys->dev);
+	device_initialize(&psys->dev);
+
+	cdev_init(&psys->cdev, &ipu_psys_fops);
+	psys->cdev.owner = ipu_psys_fops.owner;
+
+	rval = cdev_device_add(&psys->cdev, &psys->dev);
 	if (rval < 0) {
 		dev_err(&psys->dev, "psys device_register failed\n");
 		goto out_release_fw_com;
 	}
+
+	set_bit(minor, ipu_psys_devices);
 
 	/* Add the hw stepping information to caps */
 	strscpy(psys->caps.dev_model, IPU_MEDIA_DEV_MODEL_NAME,
@@ -2249,7 +2245,6 @@ out_free_pgs:
 	ipu_psys_resource_pool_cleanup(&psys->resource_pool_running);
 out_mutex_destroy:
 	mutex_destroy(&psys->mutex);
-	cdev_del(&psys->cdev);
 	if (psys->sched_cmd_thread) {
 		kthread_stop(psys->sched_cmd_thread);
 		psys->sched_cmd_thread = NULL;
@@ -2309,17 +2304,6 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 	psys->icache_prefetch_sp = 0;
 
 	psys->power_gating = 0;
-
-	cdev_init(&psys->cdev, &ipu_psys_fops);
-	psys->cdev.owner = ipu_psys_fops.owner;
-
-	rval = cdev_add(&psys->cdev, MKDEV(MAJOR(ipu_psys_dev_t), minor), 1);
-	if (rval) {
-		dev_err(dev, "cdev_add failed (%d)\n", rval);
-		goto out_unlock;
-	}
-
-	set_bit(minor, ipu_psys_devices);
 
 	spin_lock_init(&psys->ready_lock);
 	spin_lock_init(&psys->pgs_lock);
@@ -2396,11 +2380,18 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
 	psys->dev.release = ipu_psys_dev_release;
 	dev_set_name(&psys->dev, "ipu-psys%d", minor);
-	rval = device_register(&psys->dev);
+	device_initialize(&psys->dev);
+
+	cdev_init(&psys->cdev, &ipu_psys_fops);
+	psys->cdev.owner = ipu_psys_fops.owner;
+
+	rval = cdev_device_add(&psys->cdev, &psys->dev);
 	if (rval < 0) {
 		dev_err(dev, "psys device_register failed\n");
 		goto out_release_fw_com;
 	}
+
+	set_bit(minor, ipu_psys_devices);
 
 	/* Add the hw stepping information to caps */
 	strscpy(psys->caps.dev_model, IPU6_MEDIA_DEV_MODEL_NAME,
@@ -2425,7 +2416,6 @@ out_free_pgs:
 	ipu_psys_resource_pool_cleanup(&psys->resource_pool_running);
 out_mutex_destroy:
 	mutex_destroy(&psys->mutex);
-	cdev_del(&psys->cdev);
 	if (psys->sched_cmd_thread) {
 		kthread_stop(psys->sched_cmd_thread);
 		psys->sched_cmd_thread = NULL;
@@ -2492,10 +2482,9 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
 
 	ipu_psys_resource_pool_cleanup(&psys->resource_pool_running);
 
-	device_unregister(&psys->dev);
+	cdev_device_del(&psys->cdev, &psys->dev);
 
 	clear_bit(MINOR(psys->cdev.dev), ipu_psys_devices);
-	cdev_del(&psys->cdev);
 
 	mutex_unlock(&ipu_psys_mutex);
 
