@@ -91,7 +91,7 @@ static struct bus_type ipu_psys_bus = {
 	.name = IPU_PSYS_NAME,
 };
 #else
-static const struct bus_type ipu6_psys_bus = {
+static const struct bus_type ipu_psys_bus = {
 	.name = "intel-ipu6-psys",
 };
 #endif
@@ -2282,17 +2282,9 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 
 	ipu_ver = adev->isp->hw_ver;
 
-	rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
-				   IPU_PSYS_NUM_DEVICES, IPU6_PSYS_NAME);
-	if (rval) {
-		dev_err(dev, "can't alloc psys chrdev region (%d)\n",
-			rval);
-		return rval;
-	}
-
 	rval = ipu6_mmu_hw_init(adev->mmu);
 	if (rval)
-		goto out_unregister_chr_region;
+		return rval;
 
 	mutex_lock(&ipu_psys_mutex);
 
@@ -2399,7 +2391,7 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 		goto out_free_pgs;
 	}
 
-	psys->dev.bus = &ipu6_psys_bus;
+	psys->dev.bus = &ipu_psys_bus;
 	psys->dev.parent = dev;
 	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
 	psys->dev.release = ipu_psys_dev_release;
@@ -2442,10 +2434,6 @@ out_unlock:
 	/* Safe to call even if the init is not called */
 	mutex_unlock(&ipu_psys_mutex);
 	ipu6_mmu_hw_cleanup(adev->mmu);
-
-out_unregister_chr_region:
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-
 	return rval;
 }
 #endif
@@ -2463,9 +2451,6 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
 #endif
 	struct ipu_psys_pg *kpg, *kpg0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #ifdef CONFIG_DEBUG_FS
 	if (isp->ipu_dir)
@@ -2598,38 +2583,6 @@ static struct ipu_bus_driver ipu_psys_driver = {
 	},
 };
 
-static int __init ipu_psys_init(void)
-{
-	int rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
-				       IPU_PSYS_NUM_DEVICES, IPU_PSYS_NAME);
-	if (rval) {
-		pr_err("can't alloc psys chrdev region (%d)\n", rval);
-		return rval;
-	}
-
-	rval = bus_register(&ipu_psys_bus);
-	if (rval) {
-		pr_warn("can't register psys bus (%d)\n", rval);
-		goto out_bus_register;
-	}
-
-	ipu_bus_register_driver(&ipu_psys_driver);
-
-	return rval;
-
-out_bus_register:
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-
-	return rval;
-}
-
-static void __exit ipu_psys_exit(void)
-{
-	ipu_bus_unregister_driver(&ipu_psys_driver);
-	bus_unregister(&ipu_psys_bus);
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-}
-
 static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6SE_PCI_ID)},
@@ -2640,9 +2593,6 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
-
-module_init(ipu_psys_init);
-module_exit(ipu_psys_exit);
 #else
 static const struct ipu6_auxdrv_data ipu6_psys_auxdrv_data = {
 	.isr_threaded = psys_isr_threaded,
@@ -2667,8 +2617,44 @@ static struct auxiliary_driver ipu6_psys_aux_driver = {
 		.pm = &psys_pm_ops,
 	},
 };
-module_auxiliary_driver(ipu6_psys_aux_driver);
 #endif
+
+static int __init ipu_psys_init(void)
+{
+	int rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
+				       IPU_PSYS_NUM_DEVICES, ipu_psys_bus.name);
+	if (rval) {
+		pr_err("can't alloc psys chrdev region (%d)\n", rval);
+		return rval;
+	}
+
+	rval = bus_register(&ipu_psys_bus);
+	if (rval) {
+		pr_err("can't register psys bus (%d)\n", rval);
+		unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+		return rval;
+	}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	ipu_bus_register_driver(&ipu_psys_driver);
+#else
+	auxiliary_driver_register(&ipu6_psys_aux_driver);
+#endif
+	return 0;
+}
+module_init(ipu_psys_init);
+
+static void __exit ipu_psys_exit(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	ipu_bus_unregister_driver(&ipu_psys_driver);
+#else
+	auxiliary_driver_unregister(&ipu6_psys_aux_driver);
+#endif
+	bus_unregister(&ipu_psys_bus);
+	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+}
+module_exit(ipu_psys_exit);
 
 MODULE_AUTHOR("Antti Laakso <antti.laakso@intel.com>");
 MODULE_AUTHOR("Bin Han <bin.b.han@intel.com>");
