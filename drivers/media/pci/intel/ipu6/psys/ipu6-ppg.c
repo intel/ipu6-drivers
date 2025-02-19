@@ -2,11 +2,17 @@
 // Copyright (C) 2020 - 2024 Intel Corporation
 
 #include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+#include <asm/cacheflush.h>
+#else
+#include <linux/cacheflush.h>
+#endif
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
 
-#include <asm/cacheflush.h>
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+#include "ipu6-dma.h"
+#endif
 #include "ipu6-ppg.h"
 
 static bool enable_suspend_resume;
@@ -49,7 +55,9 @@ struct ipu_psys_kcmd *ipu_psys_ppg_get_stop_kcmd(struct ipu_psys_ppg *kppg)
 static struct ipu_psys_buffer_set *
 __get_buf_set(struct ipu_psys_fh *fh, size_t buf_set_size)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	struct ipu6_bus_device *adev = fh->psys->adev;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 	struct device *dev = &fh->psys->adev->auxdev.dev;
 #endif
 	struct ipu_psys_buffer_set *kbuf_set;
@@ -79,8 +87,8 @@ __get_buf_set(struct ipu_psys_fh *fh, size_t buf_set_size)
 	kbuf_set->kaddr = dma_alloc_attrs(dev, buf_set_size,
 					  &kbuf_set->dma_addr, GFP_KERNEL, 0);
 #else
-	kbuf_set->kaddr = ipu6_dma_alloc(to_ipu6_bus_device(dev), buf_set_size,
-					  &kbuf_set->dma_addr, GFP_KERNEL, 0);
+	kbuf_set->kaddr = ipu6_dma_alloc(adev, buf_set_size,
+					 &kbuf_set->dma_addr, GFP_KERNEL, 0);
 #endif
 	if (!kbuf_set->kaddr) {
 		kfree(kbuf_set);
@@ -128,8 +136,10 @@ ipu_psys_create_buffer_set(struct ipu_psys_kcmd *kcmd,
 	ipu_fw_psys_ppg_buffer_set_vaddress(kbuf_set->buf_set,
 					    kbuf_set->dma_addr);
 	keb = kcmd->kernel_enable_bitmap;
-	ipu_fw_psys_ppg_buffer_set_set_kernel_enable_bitmap(kbuf_set->buf_set,
-							    keb);
+	ipu_fw_psys_ppg_buffer_set_set_keb(kbuf_set->buf_set, keb);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	ipu6_dma_sync_single(psys->adev, kbuf_set->dma_addr, buf_set_size);
+#endif
 
 	return kbuf_set;
 }
@@ -193,16 +203,16 @@ void ipu_psys_ppg_complete(struct ipu_psys *psys, struct ipu_psys_ppg *kppg)
 
 		kppg->state = PPG_STATE_STOPPED;
 		ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-					&psys->resource_pool_running);
+					&psys->res_pool_running);
 		queue_id = ipu_fw_psys_ppg_get_base_queue_id(&tmp_kcmd);
-		ipu_psys_free_cmd_queue_resource(&psys->resource_pool_running,
+		ipu_psys_free_cmd_queue_res(&psys->res_pool_running,
 						 queue_id);
 		pm_runtime_put(&psys->adev->dev);
 	} else {
 		if (kppg->state == PPG_STATE_SUSPENDING) {
 			kppg->state = PPG_STATE_SUSPENDED;
 			ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-						&psys->resource_pool_running);
+						&psys->res_pool_running);
 		} else if (kppg->state == PPG_STATE_STARTED ||
 			   kppg->state == PPG_STATE_RESUMED) {
 			kppg->state = PPG_STATE_RUNNING;
@@ -263,7 +273,7 @@ int ipu_psys_ppg_start(struct ipu_psys_ppg *kppg)
 					  kcmd->kpg->pg,
 					  kcmd->pg_manifest,
 					  &kcmd->kpg->resource_alloc,
-					  &psys->resource_pool_running);
+					  &psys->res_pool_running);
 	if (ret) {
 		dev_err(&psys->adev->dev, "alloc resources failed!\n");
 		return ret;
@@ -295,7 +305,7 @@ error:
 				    kcmd->pg_manifest,
 				    kcmd->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-				&psys->resource_pool_running);
+				&psys->res_pool_running);
 
 	dev_err(&psys->adev->dev, "failed to start ppg\n");
 	return ret;
@@ -319,7 +329,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 						  kppg->kpg->pg,
 						  kppg->manifest,
 						  &kppg->kpg->resource_alloc,
-						  &psys->resource_pool_running);
+						  &psys->res_pool_running);
 		if (ret) {
 			dev_err(&psys->adev->dev, "failed to allocate res\n");
 			return -EIO;
@@ -342,7 +352,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 						  kppg->kpg->pg,
 						  kppg->manifest,
 						  &kppg->kpg->resource_alloc,
-						  &psys->resource_pool_running);
+						  &psys->res_pool_running);
 		if (ret) {
 			dev_err(&psys->adev->dev, "failed to allocate res\n");
 			return ret;
@@ -366,7 +376,7 @@ error:
 				    kppg->manifest,
 				    kppg->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-				&psys->resource_pool_running);
+				&psys->res_pool_running);
 
 	return ret;
 }
@@ -403,8 +413,8 @@ int ipu_psys_ppg_stop(struct ipu_psys_ppg *kppg)
 				dev_err(&psys->adev->dev,
 					"ppg(%d) failed to resume\n", ppg_id);
 		} else if (kcmd != &kcmd_temp) {
-			ipu_psys_free_cmd_queue_resource(
-				&psys->resource_pool_running,
+			ipu_psys_free_cmd_queue_res(
+				&psys->res_pool_running,
 				ipu_fw_psys_ppg_get_base_queue_id(kcmd));
 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
 			dev_dbg(&psys->adev->dev,
@@ -515,15 +525,15 @@ void ipu_psys_ppg_complete(struct ipu_psys *psys, struct ipu_psys_ppg *kppg)
 
 		kppg->state = PPG_STATE_STOPPED;
 		ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-					&psys->resource_pool_running);
+					&psys->res_pool_running);
 		queue_id = ipu_fw_psys_ppg_get_base_queue_id(&tmp_kcmd);
-		ipu_psys_free_cmd_queue_resource(&psys->resource_pool_running, queue_id);
+		ipu_psys_free_cmd_queue_res(&psys->res_pool_running, queue_id);
 		pm_runtime_put(dev);
 	} else {
 		if (kppg->state == PPG_STATE_SUSPENDING) {
 			kppg->state = PPG_STATE_SUSPENDED;
 			ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-						&psys->resource_pool_running);
+						&psys->res_pool_running);
 		} else if (kppg->state == PPG_STATE_STARTED ||
 			   kppg->state == PPG_STATE_RESUMED) {
 			kppg->state = PPG_STATE_RUNNING;
@@ -583,7 +593,7 @@ int ipu_psys_ppg_start(struct ipu_psys_ppg *kppg)
 
 	ret = ipu_psys_allocate_resources(dev, kcmd->kpg->pg, kcmd->pg_manifest,
 					  &kcmd->kpg->resource_alloc,
-					  &psys->resource_pool_running);
+					  &psys->res_pool_running);
 	if (ret) {
 		dev_err(dev, "alloc resources failed!\n");
 		return ret;
@@ -613,7 +623,7 @@ error:
 	ipu_psys_reset_process_cell(dev, kcmd->kpg->pg, kcmd->pg_manifest,
 				    kcmd->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-				&psys->resource_pool_running);
+				&psys->res_pool_running);
 
 	dev_err(dev, "failed to start ppg\n");
 	return ret;
@@ -637,7 +647,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 		ret = ipu_psys_allocate_resources(dev, kppg->kpg->pg,
 						  kppg->manifest,
 						  &kppg->kpg->resource_alloc,
-						  &psys->resource_pool_running);
+						  &psys->res_pool_running);
 		if (ret) {
 			dev_err(dev, "failed to allocate res\n");
 			return -EIO;
@@ -659,7 +669,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 		ret = ipu_psys_allocate_resources(dev, kppg->kpg->pg,
 						  kppg->manifest,
 						  &kppg->kpg->resource_alloc,
-						  &psys->resource_pool_running);
+						  &psys->res_pool_running);
 		if (ret) {
 			dev_err(dev, "failed to allocate res\n");
 			return ret;
@@ -681,7 +691,7 @@ error:
 	ipu_psys_reset_process_cell(dev, kppg->kpg->pg, kppg->manifest,
 				    kppg->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
-				&psys->resource_pool_running);
+				&psys->res_pool_running);
 
 	return ret;
 }
@@ -721,7 +731,7 @@ int ipu_psys_ppg_stop(struct ipu_psys_ppg *kppg)
 		} else if (kcmd != &kcmd_temp) {
 			u8 queue_id = ipu_fw_psys_ppg_get_base_queue_id(kcmd);
 
-			ipu_psys_free_cmd_queue_resource(&psys->resource_pool_running,
+			ipu_psys_free_cmd_queue_res(&psys->res_pool_running,
 						    queue_id);
 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
 			dev_dbg(dev, "s_change:%s %p %d -> %d\n", __func__,
@@ -843,7 +853,6 @@ void ipu_psys_enter_power_gating(struct ipu_psys *psys)
 	struct ipu_psys_scheduler *sched;
 	struct ipu_psys_ppg *kppg, *tmp;
 	struct ipu_psys_fh *fh;
-	int ret = 0;
 
 	list_for_each_entry(fh, &psys->fhs, list) {
 		mutex_lock(&fh->mutex);
@@ -863,21 +872,10 @@ void ipu_psys_enter_power_gating(struct ipu_psys *psys)
 				mutex_unlock(&kppg->mutex);
 				continue;
 			}
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-			ret = pm_runtime_put(&psys->adev->dev);
-			if (ret < 0) {
-				dev_err(&psys->adev->dev,
-					"failed to power gating off\n");
-				pm_runtime_get_sync(&psys->adev->dev);
-
-			}
+			pm_runtime_put(&psys->adev->dev);
 #else
-			ret = pm_runtime_put(dev);
-			if (ret < 0) {
-				dev_err(dev, "failed to power gating off\n");
-				pm_runtime_get_sync(dev);
-			}
+			pm_runtime_put(dev);
 #endif
 			mutex_unlock(&kppg->mutex);
 		}

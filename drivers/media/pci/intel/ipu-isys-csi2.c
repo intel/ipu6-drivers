@@ -277,7 +277,8 @@ static int set_stream(struct v4l2_subdev *sd, int enable)
 	unsigned int nlanes;
 	int rval;
 
-	dev_dbg(&csi2->isys->adev->dev, "csi2 s_stream %d\n", enable);
+	dev_dbg(&csi2->isys->adev->dev, "csi2 s_stream %d for entity %s\n",
+		enable, sd->entity.name);
 
 	if (!ip->external->entity) {
 		WARN_ON(1);

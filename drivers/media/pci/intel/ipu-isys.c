@@ -1064,7 +1064,6 @@ static void isys_unregister_devices(struct ipu_isys *isys)
 #endif
 }
 
-#ifdef CONFIG_PM
 static int isys_runtime_pm_resume(struct device *dev)
 {
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
@@ -1161,11 +1160,6 @@ static const struct dev_pm_ops isys_pm_ops = {
 	.suspend = isys_suspend,
 	.resume = isys_resume,
 };
-
-#define ISYS_PM_OPS (&isys_pm_ops)
-#else
-#define ISYS_PM_OPS NULL
-#endif
 
 static void isys_remove(struct ipu_bus_device *adev)
 {
@@ -1538,10 +1532,6 @@ static int isys_probe(struct ipu_bus_device *adev)
 	isys->line_align = IPU_ISYS_2600_MEM_LINE_ALIGN;
 	isys->icache_prefetch = 0;
 
-#ifndef CONFIG_PM
-	isys_setup_hw(isys);
-#endif
-
 	if (!isp->secure_mode) {
 		fw = isp->cpd_fw;
 		rval = ipu_buttress_map_fw_image(adev, fw, &isys->fw_sgt);
@@ -1838,7 +1828,7 @@ static struct ipu_bus_driver isys_driver = {
 	.drv = {
 		.name = IPU_ISYS_NAME,
 		.owner = THIS_MODULE,
-		.pm = ISYS_PM_OPS,
+		.pm = &isys_pm_ops,
 	},
 };
 
