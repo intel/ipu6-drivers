@@ -90,6 +90,10 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev);
 static struct bus_type ipu_psys_bus = {
 	.name = IPU_PSYS_NAME,
 };
+#else
+static const struct bus_type ipu_psys_bus = {
+	.name = "intel-ipu6-psys",
+};
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #define PKG_DIR_ENT_LEN_FOR_PSYS	2
@@ -2198,17 +2202,6 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	ipu_trace_init(adev->isp, psys->pdata->base, &adev->dev,
 		       psys_trace_blocks);
 
-	cdev_init(&psys->cdev, &ipu_psys_fops);
-	psys->cdev.owner = ipu_psys_fops.owner;
-
-	rval = cdev_add(&psys->cdev, MKDEV(MAJOR(ipu_psys_dev_t), minor), 1);
-	if (rval) {
-		dev_err(&adev->dev, "cdev_add failed (%d)\n", rval);
-		goto out_unlock;
-	}
-
-	set_bit(minor, ipu_psys_devices);
-
 	spin_lock_init(&psys->ready_lock);
 	spin_lock_init(&psys->pgs_lock);
 	psys->ready = 0;
@@ -2289,11 +2282,18 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
 	psys->dev.release = ipu_psys_dev_release;
 	dev_set_name(&psys->dev, "ipu-psys%d", minor);
-	rval = device_register(&psys->dev);
+	device_initialize(&psys->dev);
+
+	cdev_init(&psys->cdev, &ipu_psys_fops);
+	psys->cdev.owner = ipu_psys_fops.owner;
+
+	rval = cdev_device_add(&psys->cdev, &psys->dev);
 	if (rval < 0) {
 		dev_err(&psys->dev, "psys device_register failed\n");
 		goto out_release_fw_com;
 	}
+
+	set_bit(minor, ipu_psys_devices);
 
 	/* Add the hw stepping information to caps */
 	strscpy(psys->caps.dev_model, IPU_MEDIA_DEV_MODEL_NAME,
@@ -2326,7 +2326,6 @@ out_free_pgs:
 	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
 out_mutex_destroy:
 	mutex_destroy(&psys->mutex);
-	cdev_del(&psys->cdev);
 	if (psys->sched_cmd_thread) {
 		kthread_stop(psys->sched_cmd_thread);
 		psys->sched_cmd_thread = NULL;
@@ -2341,10 +2340,6 @@ out_unlock:
 	return rval;
 }
 #else
-static const struct bus_type ipu6_psys_bus = {
-	.name = "intel-ipu6-psys",
-};
-
 static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 			   const struct auxiliary_device_id *auxdev_id)
 {
@@ -2363,17 +2358,9 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 
 	ipu_ver = adev->isp->hw_ver;
 
-	rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
-				   IPU_PSYS_NUM_DEVICES, IPU6_PSYS_NAME);
-	if (rval) {
-		dev_err(dev, "can't alloc psys chrdev region (%d)\n",
-			rval);
-		return rval;
-	}
-
 	rval = ipu6_mmu_hw_init(adev->mmu);
 	if (rval)
-		goto out_unregister_chr_region;
+		return rval;
 
 	mutex_lock(&ipu_psys_mutex);
 
@@ -2398,17 +2385,6 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 	psys->icache_prefetch_sp = 0;
 
 	psys->power_gating = 0;
-
-	cdev_init(&psys->cdev, &ipu_psys_fops);
-	psys->cdev.owner = ipu_psys_fops.owner;
-
-	rval = cdev_add(&psys->cdev, MKDEV(MAJOR(ipu_psys_dev_t), minor), 1);
-	if (rval) {
-		dev_err(dev, "cdev_add failed (%d)\n", rval);
-		goto out_unlock;
-	}
-
-	set_bit(minor, ipu_psys_devices);
 
 	spin_lock_init(&psys->ready_lock);
 	spin_lock_init(&psys->pgs_lock);
@@ -2486,16 +2462,23 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
 		goto out_free_pgs;
 	}
 
-	psys->dev.bus = &ipu6_psys_bus;
+	psys->dev.bus = &ipu_psys_bus;
 	psys->dev.parent = dev;
 	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
 	psys->dev.release = ipu_psys_dev_release;
 	dev_set_name(&psys->dev, "ipu-psys%d", minor);
-	rval = device_register(&psys->dev);
+	device_initialize(&psys->dev);
+
+	cdev_init(&psys->cdev, &ipu_psys_fops);
+	psys->cdev.owner = ipu_psys_fops.owner;
+
+	rval = cdev_device_add(&psys->cdev, &psys->dev);
 	if (rval < 0) {
 		dev_err(dev, "psys device_register failed\n");
 		goto out_release_fw_com;
 	}
+
+	set_bit(minor, ipu_psys_devices);
 
 	/* Add the hw stepping information to caps */
 	strscpy(psys->caps.dev_model, IPU6_MEDIA_DEV_MODEL_NAME,
@@ -2524,7 +2507,6 @@ out_free_pgs:
 	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
 out_mutex_destroy:
 	mutex_destroy(&psys->mutex);
-	cdev_del(&psys->cdev);
 	if (psys->sched_cmd_thread) {
 		kthread_stop(psys->sched_cmd_thread);
 		psys->sched_cmd_thread = NULL;
@@ -2533,10 +2515,6 @@ out_unlock:
 	/* Safe to call even if the init is not called */
 	mutex_unlock(&ipu_psys_mutex);
 	ipu6_mmu_hw_cleanup(adev->mmu);
-
-out_unregister_chr_region:
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-
 	return rval;
 }
 #endif
@@ -2557,9 +2535,6 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
 #endif
 	struct ipu_psys_pg *kpg, *kpg0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #ifdef CONFIG_DEBUG_FS
 	if (isp->ipu_dir)
@@ -2602,10 +2577,9 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
 #endif
 	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
 
-	device_unregister(&psys->dev);
+	cdev_device_del(&psys->cdev, &psys->dev);
 
 	clear_bit(MINOR(psys->cdev.dev), ipu_psys_devices);
-	cdev_del(&psys->cdev);
 
 	mutex_unlock(&ipu_psys_mutex);
 
@@ -2691,38 +2665,6 @@ static struct ipu_bus_driver ipu_psys_driver = {
 	},
 };
 
-static int __init ipu_psys_init(void)
-{
-	int rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
-				       IPU_PSYS_NUM_DEVICES, IPU_PSYS_NAME);
-	if (rval) {
-		pr_err("can't alloc psys chrdev region (%d)\n", rval);
-		return rval;
-	}
-
-	rval = bus_register(&ipu_psys_bus);
-	if (rval) {
-		pr_warn("can't register psys bus (%d)\n", rval);
-		goto out_bus_register;
-	}
-
-	ipu_bus_register_driver(&ipu_psys_driver);
-
-	return rval;
-
-out_bus_register:
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-
-	return rval;
-}
-
-static void __exit ipu_psys_exit(void)
-{
-	ipu_bus_unregister_driver(&ipu_psys_driver);
-	bus_unregister(&ipu_psys_bus);
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-}
-
 static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6SE_PCI_ID)},
@@ -2733,9 +2675,6 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
-
-module_init(ipu_psys_init);
-module_exit(ipu_psys_exit);
 #else
 static const struct ipu6_auxdrv_data ipu6_psys_auxdrv_data = {
 	.isr_threaded = psys_isr_threaded,
@@ -2760,8 +2699,44 @@ static struct auxiliary_driver ipu6_psys_aux_driver = {
 		.pm = &psys_pm_ops,
 	},
 };
-module_auxiliary_driver(ipu6_psys_aux_driver);
 #endif
+
+static int __init ipu_psys_init(void)
+{
+	int rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
+				       IPU_PSYS_NUM_DEVICES, ipu_psys_bus.name);
+	if (rval) {
+		pr_err("can't alloc psys chrdev region (%d)\n", rval);
+		return rval;
+	}
+
+	rval = bus_register(&ipu_psys_bus);
+	if (rval) {
+		pr_err("can't register psys bus (%d)\n", rval);
+		unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+		return rval;
+	}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	ipu_bus_register_driver(&ipu_psys_driver);
+#else
+	auxiliary_driver_register(&ipu6_psys_aux_driver);
+#endif
+	return 0;
+}
+module_init(ipu_psys_init);
+
+static void __exit ipu_psys_exit(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	ipu_bus_unregister_driver(&ipu_psys_driver);
+#else
+	auxiliary_driver_unregister(&ipu6_psys_aux_driver);
+#endif
+	bus_unregister(&ipu_psys_bus);
+	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+}
+module_exit(ipu_psys_exit);
 
 MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");
 MODULE_LICENSE("GPL");
