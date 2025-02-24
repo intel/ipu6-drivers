@@ -222,7 +222,7 @@ jobs:
                           shell: bash
                           run: |
                                   apt-get update --quiet;
-                                  apt-get install --yes --no-install-recommends dkms gpg-agent kmod software-properties-common sudo
+                                  apt-get install --yes --no-install-recommends dkms gpg-agent kmod software-properties-common sudo pahole
 
                         - name: Download header files
                           shell: bash
