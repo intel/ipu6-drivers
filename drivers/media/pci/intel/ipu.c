@@ -807,8 +807,6 @@ static void ipu_pci_reset_done(struct pci_dev *pdev)
 }
 #endif
 
-#ifdef CONFIG_PM
-
 /*
  * PCI base driver code requires driver to provide these to enable
  * PCI device level PM state transitions (D0<->D3)
@@ -889,11 +887,6 @@ static const struct dev_pm_ops ipu_pm_ops = {
 			       NULL)
 };
 
-#define IPU_PM (&ipu_pm_ops)
-#else
-#define IPU_PM NULL
-#endif
-
 static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6SE_PCI_ID)},
@@ -920,7 +913,7 @@ static struct pci_driver ipu_pci_driver = {
 	.probe = ipu_pci_probe,
 	.remove = ipu_pci_remove,
 	.driver = {
-		   .pm = IPU_PM,
+		   .pm = &ipu_pm_ops,
 		   },
 	.err_handler = &pci_err_handlers,
 };

@@ -15,7 +15,6 @@
 #include "ipu-platform.h"
 #include "ipu-dma.h"
 
-#ifdef CONFIG_PM
 static struct bus_type ipu_bus;
 
 static int bus_pm_runtime_suspend(struct device *dev)
@@ -69,11 +68,6 @@ static const struct dev_pm_ops ipu_bus_pm_ops = {
 	.runtime_suspend = bus_pm_runtime_suspend,
 	.runtime_resume = bus_pm_runtime_resume,
 };
-
-#define IPU_BUS_PM_OPS	(&ipu_bus_pm_ops)
-#else
-#define IPU_BUS_PM_OPS	NULL
-#endif
 
 static int ipu_bus_match(struct device *dev, struct device_driver *drv)
 {
@@ -145,7 +139,7 @@ static struct bus_type ipu_bus = {
 	.match = ipu_bus_match,
 	.probe = ipu_bus_probe,
 	.remove = ipu_bus_remove,
-	.pm = IPU_BUS_PM_OPS,
+	.pm = &ipu_bus_pm_ops,
 };
 
 static struct mutex ipu_bus_mutex;

@@ -122,6 +122,14 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	 IPU_FW_ISYS_FRAME_FORMAT_RGB565},
 	{V4L2_PIX_FMT_BGR24, 24, 24, 0, MEDIA_BUS_FMT_RGB888_1X24,
 	 IPU_FW_ISYS_FRAME_FORMAT_RGBA888},
+	{V4L2_PIX_FMT_SBGGR10, 16, 10, 0, MEDIA_BUS_FMT_SBGGR10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
+	{V4L2_PIX_FMT_SGBRG10, 16, 10, 0, MEDIA_BUS_FMT_SGBRG10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
+	{V4L2_PIX_FMT_SGRBG10, 16, 10, 0, MEDIA_BUS_FMT_SGRBG10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
+	{V4L2_PIX_FMT_SRGGB10, 16, 10, 0, MEDIA_BUS_FMT_SRGGB10_1X10,
+	 IPU_FW_ISYS_FRAME_FORMAT_RAW10},
 #ifndef V4L2_PIX_FMT_SBGGR12P
 	{V4L2_PIX_FMT_SBGGR12, 12, 12, 0, MEDIA_BUS_FMT_SBGGR12_1X12,
 	 IPU_FW_ISYS_FRAME_FORMAT_RAW12},
@@ -988,37 +996,15 @@ ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 		pin_info->error_handling_enable = false;
 		break;
 	case IPU_FW_ISYS_PIN_TYPE_RAW_SOC:
-		if (av->compression) {
-			type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
-			pin_info->sensor_type
-				= isys->sensor_types[type_index]++;
-			pin_info->snoopable = false;
-			pin_info->error_handling_enable = false;
-			type = isys->sensor_types[type_index];
-			if (type > isys->sensor_info.vc1_data_end)
-				isys->sensor_types[type_index] =
-					isys->sensor_info.vc1_data_start;
-		} else {
-			type_index = IPU_FW_ISYS_VC0_SENSOR_DATA;
-			pin_info->sensor_type
-				= isys->sensor_types[type_index]++;
-			pin_info->snoopable = true;
-			pin_info->error_handling_enable = false;
-			type = isys->sensor_types[type_index];
-			if (type > isys->sensor_info.vc0_data_end)
-				isys->sensor_types[type_index] =
-					isys->sensor_info.vc0_data_start;
-		}
-		break;
 	case IPU_FW_ISYS_PIN_TYPE_MIPI:
-		type_index = IPU_FW_ISYS_VC0_SENSOR_DATA;
+		type_index = IPU_FW_ISYS_VC1_SENSOR_DATA;
 		pin_info->sensor_type = isys->sensor_types[type_index]++;
-		pin_info->snoopable = true;
+		pin_info->snoopable = false;
 		pin_info->error_handling_enable = false;
 		type = isys->sensor_types[type_index];
-		if (type > isys->sensor_info.vc0_data_end)
+		if (type > isys->sensor_info.vc1_data_end)
 			isys->sensor_types[type_index] =
-				isys->sensor_info.vc0_data_start;
+				isys->sensor_info.vc1_data_start;
 
 		break;
 
@@ -1229,16 +1215,19 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
 
 	if (!tout) {
-		dev_err(dev, "stream open time out\n");
+		dev_err(dev, "stream open time out for entity %s\n",
+			av->vdev.entity.name);
 		rval = -ETIMEDOUT;
 		goto out_put_stream_opened;
 	}
 	if (ip->error) {
-		dev_err(dev, "stream open error: %d\n", ip->error);
+		dev_err(dev, "stream open failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 		rval = -EIO;
 		goto out_put_stream_opened;
 	}
-	dev_dbg(dev, "start stream: open complete\n");
+	dev_dbg(dev, "start stream open complete for entity %s\n",
+		av->vdev.entity.name);
 
 	if (bl) {
 		msg = ipu_get_fw_msg_buf(ip);
@@ -1281,12 +1270,14 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	tout = wait_for_completion_timeout(&ip->stream_start_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout) {
-		dev_err(dev, "stream start time out\n");
+		dev_err(dev, "stream start time out for entity %s\n",
+			av->vdev.entity.name);
 		rval = -ETIMEDOUT;
 		goto out_stream_close;
 	}
 	if (ip->error) {
-		dev_err(dev, "stream start error: %d\n", ip->error);
+		dev_err(dev, "stream start failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 		rval = -EIO;
 		goto out_stream_close;
 	}
@@ -1308,11 +1299,14 @@ out_stream_close:
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
-		dev_err(dev, "stream close time out\n");
+		dev_err(dev, "stream close time out for entity %s\n",
+			av->vdev.entity.name);
 	else if (ip->error)
-		dev_err(dev, "stream close error: %d\n", ip->error);
+		dev_err(dev, "stream close failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 	else
-		dev_dbg(dev, "stream close complete\n");
+		dev_dbg(dev, "close stream: complete for entity %s\n",
+			av->vdev.entity.name);
 
 out_put_stream_opened:
 	put_stream_opened(av);
@@ -1344,11 +1338,14 @@ static void stop_streaming_firmware(struct ipu_isys_video *av)
 	tout = wait_for_completion_timeout(&ip->stream_stop_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
-		dev_err(dev, "stream stop time out\n");
+		dev_err(dev, "stream stop time out for entity %s\n",
+			av->vdev.entity.name);
 	else if (ip->error)
-		dev_err(dev, "stream stop error: %d\n", ip->error);
+		dev_err(dev, "stream stop failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 	else
-		dev_dbg(dev, "stop stream: complete\n");
+		dev_dbg(dev, "stop stream complete for entity %s\n",
+			av->vdev.entity.name);
 }
 
 static void close_streaming_firmware(struct ipu_isys_video *av)
@@ -1370,11 +1367,14 @@ static void close_streaming_firmware(struct ipu_isys_video *av)
 	tout = wait_for_completion_timeout(&ip->stream_close_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 	if (!tout)
-		dev_err(dev, "stream close time out\n");
+		dev_err(dev, "stream close time out for entity %s\n",
+			av->vdev.entity.name);
 	else if (ip->error)
-		dev_err(dev, "stream close error: %d\n", ip->error);
+		dev_err(dev, "stream close failed for entity %s with error %d\n",
+			av->vdev.entity.name, ip->error);
 	else
-		dev_dbg(dev, "close stream: complete\n");
+		dev_dbg(dev, "close stream complete for entity %s\n",
+			av->vdev.entity.name);
 
 	put_stream_opened(av);
 	put_stream_handle(av);
@@ -1423,11 +1423,17 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	int rval;
 	unsigned int i;
 
-	dev_dbg(dev, "prepare stream: %d\n", state);
+	dev_dbg(dev, "prepare stream to state: %d for entity %s\n",
+		state, av->vdev.entity.name);
 
 	if (!state) {
 		mp = media_entity_pipeline(&av->vdev.entity);
 		ip = to_ipu_isys_pipeline(mp);
+		if (!ip) {
+			dev_err(dev, "%s no pipeline found for %s\n", __func__,
+				av->vdev.name);
+			return -ENODEV;
+		}
 
 		if (ip->interlaced && isys->short_packet_source ==
 		    IPU_ISYS_SHORT_PACKET_FROM_RECEIVER)
@@ -1476,7 +1482,8 @@ int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 	}
 
 	if (!ip->external) {
-		dev_err(dev, "no external entity set! Driver bug?\n");
+		dev_err(dev, "no external entity set for %s, Driver bug?\n",
+			av->vdev.name);
 		rval = -EINVAL;
 		goto out_pipeline_stop;
 	}
@@ -1649,7 +1656,19 @@ int ipu_isys_video_set_streaming(struct ipu_isys_video *av,
 
 	dev_dbg(dev, "set stream: %d\n", state);
 
+	if (!ip) {
+		dev_err(dev, "%s no pipeline found for %s\n", __func__,
+			av->vdev.name);
+		return -ENODEV;
+	}
+
+	if (!ip->external) {
+		dev_err(dev, "no media pad found for %s\n", av->vdev.name);
+		return -ENODEV;
+	}
+
 	if (!ip->external->entity) {
+		dev_err(dev, "no entify found for %s\n", av->vdev.name);
 		WARN_ON(1);
 		return -ENODEV;
 	}

@@ -443,12 +443,16 @@ void *ipu_send_get_token(struct ipu_fw_com_context *ctx, int q_nbr)
 	rd = readl(q_dmem + FW_COM_RD_REG);
 
 	/* Catch indexes in dmem */
-	if (!is_index_valid(q, wr) || !is_index_valid(q, rd))
+	if (!is_index_valid(q, wr) || !is_index_valid(q, rd)) {
+		dev_err(&ctx->adev->dev, "invalid index\n");
 		return NULL;
+	}
 
 	packets = num_free(wr + 1, rd, q->size);
-	if (!packets)
+	if (!packets) {
+		dev_err(&ctx->adev->dev, "no packets available\n");
 		return NULL;
+	}
 
 	index = curr_index(q_dmem, DIR_SEND);
 

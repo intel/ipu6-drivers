@@ -466,14 +466,6 @@ static int ipu_isys_stream_start(struct ipu_isys_pipeline *ip,
 
 	mutex_lock(&pipe_av->isys->stream_mutex);
 
-	rval = ipu_isys_video_set_streaming(pipe_av, 1, bl);
-	if (rval) {
-		mutex_unlock(&pipe_av->isys->stream_mutex);
-		goto out_requeue;
-	}
-
-	ip->streaming = 1;
-
 	mutex_unlock(&pipe_av->isys->stream_mutex);
 
 	bl = &__bl;
@@ -699,7 +691,6 @@ static void return_buffers(struct ipu_isys_queue *aq,
 			   enum vb2_buffer_state state)
 {
 	struct ipu_isys_video *av = ipu_isys_queue_to_video(aq);
-	int reset_needed = 0;
 	unsigned long flags;
 
 	spin_lock_irqsave(&aq->lock, flags);
@@ -755,16 +746,9 @@ static void return_buffers(struct ipu_isys_queue *aq,
 #endif
 
 		spin_lock_irqsave(&aq->lock, flags);
-		reset_needed = 1;
 	}
 
 	spin_unlock_irqrestore(&aq->lock, flags);
-
-	if (reset_needed) {
-		mutex_lock(&av->isys->mutex);
-		av->isys->reset_needed = true;
-		mutex_unlock(&av->isys->mutex);
-	}
 }
 
 static int start_streaming(struct vb2_queue *q, unsigned int count)
@@ -791,8 +775,6 @@ static int start_streaming(struct vb2_queue *q, unsigned int count)
 		if (rval)
 			goto out_return_buffers;
 	}
-
-	mutex_unlock(&av->isys->stream_mutex);
 
 	rval = aq->link_fmt_validate(aq);
 	if (rval) {
@@ -825,6 +807,15 @@ static int start_streaming(struct vb2_queue *q, unsigned int count)
 			goto out;
 		}
 	}
+
+	rval = ipu_isys_video_set_streaming(pipe_av, 1, bl);
+	if (rval) {
+		mutex_unlock(&pipe_av->isys->stream_mutex);
+		goto out_stream_start;
+	}
+
+	ip->streaming = 1;
+	mutex_unlock(&av->isys->stream_mutex);
 
 	rval = ipu_isys_stream_start(ip, bl, false);
 	if (rval)
@@ -887,6 +878,8 @@ static void stop_streaming(struct vb2_queue *q)
 	return_buffers(aq, VB2_BUF_STATE_ERROR);
 }
 
+/* Invalid timestamp defined by FW */
+#define INVALID_TSC (2 | BIT_ULL(32))
 static unsigned int
 get_sof_sequence_by_timestamp(struct ipu_isys_pipeline *ip,
 			      struct ipu_fw_isys_resp_info_abi *info)
@@ -900,7 +893,7 @@ get_sof_sequence_by_timestamp(struct ipu_isys_pipeline *ip,
 	 * The timestamp is invalid as no TSC in some FPGA platform,
 	 * so get the sequence from pipeline directly in this case.
 	 */
-	if (time == 0)
+	if (time == 0 || time == INVALID_TSC)
 		return atomic_read(&ip->sequence) - 1;
 
 	for (i = 0; i < IPU_ISYS_MAX_PARALLEL_SOF; i++)

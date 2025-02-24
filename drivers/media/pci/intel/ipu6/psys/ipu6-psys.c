@@ -26,13 +26,20 @@
 #include "ipu-trace.h"
 #else
 #include "ipu6.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+#include "ipu6-dma.h"
+#endif
 #include "ipu-psys.h"
 #include "ipu6-ppg.h"
 #include "ipu6-platform-regs.h"
 #include "ipu6-platform-buttress-regs.h"
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
 MODULE_IMPORT_NS(DMA_BUF);
+#else
+MODULE_IMPORT_NS("DMA_BUF");
+#endif
 
 static bool early_pg_transfer;
 module_param(early_pg_transfer, bool, 0664);
@@ -283,7 +290,8 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 	unsigned int i;
 	int ret, prevfd, fd;
 
-	fd = prevfd = -1;
+	fd = -1;
+	prevfd = -1;
 
 	if (cmd->bufcount > IPU_MAX_PSYS_CMD_BUFFERS)
 		return NULL;
@@ -313,7 +321,7 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 		goto error;
 	}
 
-	/* check and remap if possibe */
+	/* check and remap if possible */
 	kpgbuf = ipu_psys_mapbuf_locked(fd, fh);
 	if (!kpgbuf || !kpgbuf->sgt) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
@@ -351,7 +359,7 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 		goto error;
 
 	/*
-	 * Kenel enable bitmap be used only.
+	 * Kernel enable bitmap be used only.
 	 */
 	memcpy(kcmd->kernel_enable_bitmap, cmd->kernel_enable_bitmap,
 	       sizeof(cmd->kernel_enable_bitmap));
@@ -428,28 +436,37 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 			mutex_unlock(&fh->mutex);
 			goto error;
 		}
+
 		mutex_unlock(&fh->mutex);
 		kcmd->kbufs[i] = kpgbuf;
 		if (!kcmd->kbufs[i] || !kcmd->kbufs[i]->sgt ||
 		    kcmd->kbufs[i]->len < kcmd->buffers[i].bytes_used)
 			goto error;
-		if ((kcmd->kbufs[i]->flags &
-		     IPU_BUFFER_FLAG_NO_FLUSH) ||
-		    (kcmd->buffers[i].flags &
-		     IPU_BUFFER_FLAG_NO_FLUSH) ||
+
+		if ((kcmd->kbufs[i]->flags & IPU_BUFFER_FLAG_NO_FLUSH) ||
+		    (kcmd->buffers[i].flags & IPU_BUFFER_FLAG_NO_FLUSH) ||
 		    prevfd == kcmd->buffers[i].base.fd)
 			continue;
 
 		prevfd = kcmd->buffers[i].base.fd;
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dma_sync_sg_for_device(&psys->adev->dev,
 				       kcmd->kbufs[i]->sgt->sgl,
 				       kcmd->kbufs[i]->sgt->orig_nents,
 				       DMA_BIDIRECTIONAL);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 		dma_sync_sg_for_device(dev, kcmd->kbufs[i]->sgt->sgl,
 				       kcmd->kbufs[i]->sgt->orig_nents,
 				       DMA_BIDIRECTIONAL);
+#else
+		/*
+		 * TODO: remove exported buffer sync here as the cache
+		 * coherency should be done by the exporter
+		 */
+		if (kcmd->kbufs[i]->kaddr)
+			clflush_cache_range(kcmd->kbufs[i]->kaddr,
+					    kcmd->kbufs[i]->len);
 #endif
 	}
 
@@ -695,7 +712,7 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 	int queue_id;
 	int ret;
 
-	rpr = &psys->resource_pool_running;
+	rpr = &psys->res_pool_running;
 
 	kppg = kzalloc(sizeof(*kppg), GFP_KERNEL);
 	if (!kppg)
@@ -722,7 +739,7 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 	memcpy(kppg->manifest, kcmd->pg_manifest,
 	       kcmd->pg_manifest_size);
 
-	queue_id = ipu_psys_allocate_cmd_queue_resource(rpr);
+	queue_id = ipu_psys_allocate_cmd_queue_res(rpr);
 	if (queue_id == -ENOSPC) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_err(&psys->adev->dev, "no available queue\n");
@@ -745,7 +762,8 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 	ret = ipu_fw_psys_pg_set_ipu_vaddress(kcmd,
 					      kcmd->kpg->pg_dma_addr);
 	if (ret) {
-		ipu_psys_free_cmd_queue_resource(rpr, queue_id);
+		ipu_psys_free_cmd_queue_res(rpr, queue_id);
+
 		kfree(kppg->manifest);
 		kfree(kppg);
 		return -EIO;
@@ -788,7 +806,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
 	u8 id;
 	bool resche = true;
 
-	rpr = &psys->resource_pool_running;
+	rpr = &psys->res_pool_running;
 	if (kcmd->state == KCMD_STATE_PPG_START)
 		return ipu_psys_kcmd_send_to_ppg_start(kcmd);
 
@@ -812,8 +830,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
 #else
 	dev_dbg(dev, "%s ppg(%d, 0x%p) kcmd %p\n",
 #endif
-		(kcmd->state == KCMD_STATE_PPG_STOP) ?
-		"STOP" : "ENQUEUE",
+		(kcmd->state == KCMD_STATE_PPG_STOP) ? "STOP" : "ENQUEUE",
 		ipu_fw_psys_pg_get_id(kcmd), kppg, kcmd);
 
 	if (kcmd->state == KCMD_STATE_PPG_STOP) {
@@ -826,7 +843,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
 			dev_dbg(dev, "kppg 0x%p  stopped!\n", kppg);
 #endif
 			id = ipu_fw_psys_ppg_get_base_queue_id(kcmd);
-			ipu_psys_free_cmd_queue_resource(rpr, id);
+			ipu_psys_free_cmd_queue_res(rpr, id);
 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 			pm_runtime_put(&psys->adev->dev);
@@ -872,7 +889,6 @@ int ipu_psys_kcmd_new(struct ipu_psys_command *cmd, struct ipu_psys_fh *fh)
 	if (psys->adev->isp->flr_done)
 		return -EIO;
 #endif
-
 	kcmd = ipu_psys_copy_cmd(cmd, fh);
 	if (!kcmd)
 		return -EINVAL;
@@ -1076,7 +1092,7 @@ void ipu_psys_handle_events(struct ipu_psys *psys)
 int ipu_psys_fh_init(struct ipu_psys_fh *fh)
 {
 	struct ipu_psys *psys = fh->psys;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 	struct device *dev = &psys->adev->auxdev.dev;
 #endif
 	struct ipu_psys_buffer_set *kbuf_set, *kbuf_set_tmp;
@@ -1098,11 +1114,16 @@ int ipu_psys_fh_init(struct ipu_psys_fh *fh)
 						  &kbuf_set->dma_addr,
 						  GFP_KERNEL,
 						  0);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 		kbuf_set->kaddr = dma_alloc_attrs(dev,
 						  IPU_PSYS_BUF_SET_MAX_SIZE,
 						  &kbuf_set->dma_addr,
 						  GFP_KERNEL, 0);
+#else
+		kbuf_set->kaddr = ipu6_dma_alloc(psys->adev,
+						 IPU_PSYS_BUF_SET_MAX_SIZE,
+						 &kbuf_set->dma_addr,
+						 GFP_KERNEL, 0);
 #endif
 		if (!kbuf_set->kaddr) {
 			kfree(kbuf_set);
@@ -1120,10 +1141,12 @@ out_free_buf_sets:
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dma_free_attrs(&psys->adev->dev,
 			       kbuf_set->size, kbuf_set->kaddr,
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 		dma_free_attrs(dev, kbuf_set->size, kbuf_set->kaddr,
+#else
+		ipu6_dma_free(psys->adev, kbuf_set->size, kbuf_set->kaddr,
 #endif
-			       kbuf_set->dma_addr, 0);
+			      kbuf_set->dma_addr, 0);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}
@@ -1159,19 +1182,20 @@ int ipu_psys_fh_deinit(struct ipu_psys_fh *fh)
 					.kpg = kppg->kpg,
 				};
 
-				rpr = &psys->resource_pool_running;
+				rpr = &psys->res_pool_running;
 				alloc = &kppg->kpg->resource_alloc;
 				id = ipu_fw_psys_ppg_get_base_queue_id(&tmp);
 				ipu_psys_ppg_stop(kppg);
 				ipu_psys_free_resources(alloc, rpr);
-				ipu_psys_free_cmd_queue_resource(rpr, id);
+				ipu_psys_free_cmd_queue_res(rpr, id);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 				dev_dbg(&psys->adev->dev,
 #else
 				dev_dbg(dev,
 #endif
-				    "s_change:%s %p %d -> %d\n", __func__,
-				    kppg, kppg->state, PPG_STATE_STOPPED);
+				    "s_change:%s %p %d -> %d\n",
+					__func__, kppg, kppg->state,
+					PPG_STATE_STOPPED);
 				kppg->state = PPG_STATE_STOPPED;
 				if (psys->power_gating != PSYS_POWER_GATED)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
@@ -1225,10 +1249,12 @@ int ipu_psys_fh_deinit(struct ipu_psys_fh *fh)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dma_free_attrs(&psys->adev->dev,
 			       kbuf_set->size, kbuf_set->kaddr,
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 		dma_free_attrs(dev, kbuf_set->size, kbuf_set->kaddr,
+#else
+		ipu6_dma_free(psys->adev, kbuf_set->size, kbuf_set->kaddr,
 #endif
-			       kbuf_set->dma_addr, 0);
+			      kbuf_set->dma_addr, 0);
 		list_del(&kbuf_set->list);
 		kfree(kbuf_set);
 	}

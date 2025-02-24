@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2024 Intel Corporation.
 
-#include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
-#include <asm/unaligned.h>
-#else
-#include <linux/unaligned.h>
-#endif
 #include <linux/acpi.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -15,6 +9,12 @@
 #include <linux/pm_runtime.h>
 #include <linux/units.h>
 #include <linux/regmap.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+#include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
+#endif
 #include <media/v4l2-cci.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-event.h>
