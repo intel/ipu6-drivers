@@ -1,0 +1,1289 @@
+From 2016a52655a6cee6336f21a29a00999b9d456700 Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Tue, 4 Mar 2025 16:08:20 +0800
+Subject: [PATCH] media: pci: update IPU6 PSYS driver
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/psys/Makefile    |  11 +-
+ .../media/pci/intel/ipu6/psys/ipu-fw-psys.c   |   5 +-
+ .../media/pci/intel/ipu6/psys/ipu-fw-psys.h   |  26 +--
+ .../pci/intel/ipu6/psys/ipu-fw-resources.c    |  10 +-
+ .../intel/ipu6/psys/ipu-platform-resources.h  |   6 +-
+ drivers/media/pci/intel/ipu6/psys/ipu-psys.c  | 216 ++++++++++--------
+ drivers/media/pci/intel/ipu6/psys/ipu-psys.h  |  22 +-
+ .../media/pci/intel/ipu6/psys/ipu-resources.c |  29 +--
+ .../pci/intel/ipu6/psys/ipu6-fw-resources.c   |  10 +-
+ .../pci/intel/ipu6/psys/ipu6-l-scheduler.c    |  17 +-
+ .../intel/ipu6/psys/ipu6-platform-resources.h |   2 -
+ drivers/media/pci/intel/ipu6/psys/ipu6-ppg.c  |  33 ++-
+ drivers/media/pci/intel/ipu6/psys/ipu6-psys.c |  67 +++---
+ 13 files changed, 237 insertions(+), 217 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/psys/Makefile b/drivers/media/pci/intel/ipu6/psys/Makefile
+index 465fb82bd932..299cb04c12c6 100644
+--- a/drivers/media/pci/intel/ipu6/psys/Makefile
++++ b/drivers/media/pci/intel/ipu6/psys/Makefile
+@@ -8,16 +8,15 @@ endif
+ endif
+ 
+ intel-ipu6-psys-objs			+= ipu-psys.o \
+-					   ipu6-psys.o \
++					   ipu-fw-psys.o \
++					   ipu-fw-resources.o \
+ 					   ipu-resources.o \
++					   ipu6-psys.o \
++					   ipu6-ppg.o \
+ 					   ipu6-l-scheduler.o \
+-					   ipu6-ppg.o
+-
+-intel-ipu6-psys-objs			+= ipu-fw-resources.o \
+ 					   ipu6-fw-resources.o \
+ 					   ipu6se-fw-resources.o \
+-					   ipu6ep-fw-resources.o \
+-					   ipu-fw-psys.o
++					   ipu6ep-fw-resources.o
+ 
+ obj-$(CONFIG_VIDEO_INTEL_IPU6)		+= intel-ipu6-psys.o
+ 
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.c b/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.c
+index 07d9e57d3feb..c89cd0cd2146 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.c
+@@ -306,9 +306,8 @@ ipu_fw_psys_ppg_buffer_set_vaddress(struct ipu_fw_psys_buffer_set *buf_set,
+ 	return 0;
+ }
+ 
+-int ipu_fw_psys_ppg_buffer_set_set_kernel_enable_bitmap(
+-		struct ipu_fw_psys_buffer_set *buf_set,
+-		u32 *kernel_enable_bitmap)
++int ipu_fw_psys_ppg_buffer_set_set_keb(struct ipu_fw_psys_buffer_set *buf_set,
++				       u32 *kernel_enable_bitmap)
+ {
+ 	memcpy(buf_set->kernel_enable_bitmap, (u8 *)kernel_enable_bitmap,
+ 	       sizeof(buf_set->kernel_enable_bitmap));
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.h b/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.h
+index 2d20448140f3..492a9ea9c80b 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.h
++++ b/drivers/media/pci/intel/ipu6/psys/ipu-fw-psys.h
+@@ -241,7 +241,7 @@ struct ipu_fw_psys_buffer_set {
+ 	u8 padding[IPU_FW_PSYS_N_PADDING_UINT8_IN_BUFFER_SET_STRUCT];
+ };
+ 
+-struct ipu_fw_psys_program_group_manifest {
++struct ipu_fw_psys_pgm {
+ 	u32 kernel_bitmap[IPU_FW_PSYS_KERNEL_BITMAP_NOF_ELEMS];
+ 	u32 ID;
+ 	u16 program_manifest_offset;
+@@ -298,10 +298,10 @@ struct ipu6_psys_hw_res_variant {
+ 	int (*set_proc_ext_mem)(struct ipu_fw_psys_process *ptr,
+ 				u16 type_id, u16 mem_id, u16 offset);
+ 	int (*get_pgm_by_proc)(struct ipu_fw_generic_program_manifest *gen_pm,
+-			       const struct ipu_fw_psys_program_group_manifest
+-			       *pg_manifest,
++			       const struct ipu_fw_psys_pgm *pg_manifest,
+ 			       struct ipu_fw_psys_process *process);
+ };
++
+ struct ipu_psys_kcmd;
+ struct ipu_psys;
+ int ipu_fw_psys_pg_start(struct ipu_psys_kcmd *kcmd);
+@@ -340,8 +340,8 @@ size_t ipu_fw_psys_ppg_get_buffer_set_size(struct ipu_psys_kcmd *kcmd);
+ int
+ ipu_fw_psys_ppg_buffer_set_vaddress(struct ipu_fw_psys_buffer_set *buf_set,
+ 				    u32 vaddress);
+-int ipu_fw_psys_ppg_buffer_set_set_kernel_enable_bitmap(
+-	struct ipu_fw_psys_buffer_set *buf_set, u32 *kernel_enable_bitmap);
++int ipu_fw_psys_ppg_buffer_set_set_keb(struct ipu_fw_psys_buffer_set *buf_set,
++				       u32 *kernel_enable_bitmap);
+ struct ipu_fw_psys_buffer_set *
+ ipu_fw_psys_ppg_create_buffer_set(struct ipu_psys_kcmd *kcmd,
+ 				  void *kaddr, u32 frame_counter);
+@@ -361,10 +361,10 @@ int ipu_fw_psys_set_proc_dev_chn(struct ipu_fw_psys_process *ptr, u16 offset,
+ 				 u16 value);
+ int ipu_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
+ 				    u16 type_id, u16 mem_id, u16 offset);
+-int ipu_fw_psys_get_program_manifest_by_process(
+-	struct ipu_fw_generic_program_manifest *gen_pm,
+-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
+-	struct ipu_fw_psys_process *process);
++int
++ipu_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
++			       const struct ipu_fw_psys_pgm *pg_manifest,
++			       struct ipu_fw_psys_process *process);
+ int ipu6_fw_psys_set_proc_dev_chn(struct ipu_fw_psys_process *ptr, u16 offset,
+ 				  u16 value);
+ int ipu6_fw_psys_set_proc_dfm_bitmap(struct ipu_fw_psys_process *ptr,
+@@ -372,10 +372,10 @@ int ipu6_fw_psys_set_proc_dfm_bitmap(struct ipu_fw_psys_process *ptr,
+ 				     u32 active_bitmap);
+ int ipu6_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
+ 				     u16 type_id, u16 mem_id, u16 offset);
+-int ipu6_fw_psys_get_program_manifest_by_process(
+-	struct ipu_fw_generic_program_manifest *gen_pm,
+-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
+-	struct ipu_fw_psys_process *process);
++int
++ipu6_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
++				const struct ipu_fw_psys_pgm *pg_manifest,
++				struct ipu_fw_psys_process *process);
+ void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
+ 			  struct ipu_psys_kcmd *kcmd, const char *note);
+ void ipu6_psys_hw_res_variant_init(void);
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-fw-resources.c b/drivers/media/pci/intel/ipu6/psys/ipu-fw-resources.c
+index dba859777434..b6af0b726fe1 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu-fw-resources.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu-fw-resources.c
+@@ -16,7 +16,7 @@
+  * use those offsets to update fields. Without extension lib access
+  * structures directly.
+  */
+-const struct ipu6_psys_hw_res_variant *var = &hw_var;
++static const struct ipu6_psys_hw_res_variant *var = &hw_var;
+ 
+ int ipu_fw_psys_set_process_cell_id(struct ipu_fw_psys_process *ptr, u8 index,
+ 				    u8 value)
+@@ -89,10 +89,10 @@ int ipu_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
+ 	return 0;
+ }
+ 
+-int ipu_fw_psys_get_program_manifest_by_process(
+-	struct ipu_fw_generic_program_manifest *gen_pm,
+-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
+-	struct ipu_fw_psys_process *process)
++int
++ipu_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
++			       const struct ipu_fw_psys_pgm *pg_manifest,
++			       struct ipu_fw_psys_process *process)
+ {
+ 	if (var->get_pgm_by_proc)
+ 		return var->get_pgm_by_proc(gen_pm, pg_manifest, process);
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-platform-resources.h b/drivers/media/pci/intel/ipu6/psys/ipu-platform-resources.h
+index e2e908ddfc38..1f064dc77c13 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu-platform-resources.h
++++ b/drivers/media/pci/intel/ipu6/psys/ipu-platform-resources.h
+@@ -92,9 +92,9 @@ int ipu_fw_psys_set_proc_dfm_bitmap(struct ipu_fw_psys_process *ptr,
+ 				    u16 id, u32 bitmap,
+ 				    u32 active_bitmap);
+ 
+-int ipu_psys_allocate_cmd_queue_resource(struct ipu_psys_resource_pool *pool);
+-void ipu_psys_free_cmd_queue_resource(struct ipu_psys_resource_pool *pool,
+-				      u8 queue_id);
++int ipu_psys_allocate_cmd_queue_res(struct ipu_psys_resource_pool *pool);
++void ipu_psys_free_cmd_queue_res(struct ipu_psys_resource_pool *pool,
++				 u8 queue_id);
+ 
+ extern const struct ipu_fw_resource_definitions *ipu6_res_defs;
+ extern const struct ipu_fw_resource_definitions *ipu6se_res_defs;
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-psys.c b/drivers/media/pci/intel/ipu6/psys/ipu-psys.c
+index d3422ea20e51..9f367496cbd0 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu-psys.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu-psys.c
+@@ -58,10 +58,9 @@ static struct fw_init_task {
+ 
+ static void ipu6_psys_remove(struct auxiliary_device *auxdev);
+ 
+-static const struct bus_type ipu6_psys_bus = {
++static const struct bus_type ipu_psys_bus = {
+ 	.name = "intel-ipu6-psys",
+ };
+-
+ #define PKG_DIR_ENT_LEN_FOR_PSYS	2
+ #define PKG_DIR_SIZE_MASK_FOR_PSYS	GENMASK(23, 0)
+ 
+@@ -169,7 +168,6 @@ static struct ipu_psys_desc *ipu_psys_desc_alloc(int fd)
+ 
+ struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
+ {
+-	struct device *dev = &psys->adev->auxdev.dev;
+ 	struct ipu_psys_pg *kpg;
+ 	unsigned long flags;
+ 
+@@ -187,8 +185,8 @@ struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
+ 	if (!kpg)
+ 		return NULL;
+ 
+-	kpg->pg = dma_alloc_attrs(dev, pg_size,  &kpg->pg_dma_addr,
+-				  GFP_KERNEL, 0);
++	kpg->pg = ipu6_dma_alloc(psys->adev, pg_size,  &kpg->pg_dma_addr,
++				 GFP_KERNEL, 0);
+ 	if (!kpg->pg) {
+ 		kfree(kpg);
+ 		return NULL;
+@@ -292,7 +290,7 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
+ 	int nr = 0;
+ 	u32 flags;
+ 
+-	start = (unsigned long)attach->userptr;
++	start = attach->userptr;
+ 	end = PAGE_ALIGN(start + attach->len);
+ 	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
+ 	array_size = npages * sizeof(struct page *);
+@@ -354,7 +352,6 @@ static void ipu_psys_put_userpages(struct ipu_dma_buf_attach *attach)
+ 		return;
+ 
+ 	unpin_user_pages(attach->pages, attach->npages);
+-
+ 	kvfree(attach->pages);
+ 
+ 	sg_free_table(attach->sgt);
+@@ -400,23 +397,28 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
+ 					enum dma_data_direction dir)
+ {
+ 	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
++	struct pci_dev *pdev = to_pci_dev(attach->dev);
++	struct ipu6_device *isp = pci_get_drvdata(pdev);
++	struct ipu6_bus_device *adev = isp->psys;
+ 	unsigned long attrs;
+ 	int ret;
+ 
+ 	attrs = DMA_ATTR_SKIP_CPU_SYNC;
+-	ret = dma_map_sgtable(attach->dev, ipu_attach->sgt, dir, attrs);
+-	if (ret < 0) {
+-		dev_dbg(attach->dev, "buf map failed\n");
++	ret = dma_map_sgtable(&pdev->dev, ipu_attach->sgt, dir, attrs);
++	if (ret) {
++		dev_err(attach->dev, "pci buf map failed\n");
++		return ERR_PTR(-EIO);
++	}
++
++	dma_sync_sgtable_for_device(&pdev->dev, ipu_attach->sgt, dir);
+ 
++	ret = ipu6_dma_map_sgtable(adev, ipu_attach->sgt, dir, 0);
++	if (ret) {
++		dev_err(attach->dev, "ipu6 buf map failed\n");
+ 		return ERR_PTR(-EIO);
+ 	}
+ 
+-	/*
+-	 * Initial cache flush to avoid writing dirty pages for buffers which
+-	 * are later marked as IPU_BUFFER_FLAG_NO_FLUSH.
+-	 */
+-	dma_sync_sg_for_device(attach->dev, ipu_attach->sgt->sgl,
+-			       ipu_attach->sgt->orig_nents, DMA_BIDIRECTIONAL);
++	ipu6_dma_sync_sgtable(adev, ipu_attach->sgt);
+ 
+ 	return ipu_attach->sgt;
+ }
+@@ -424,7 +426,12 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
+ static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
+ 			      struct sg_table *sgt, enum dma_data_direction dir)
+ {
+-	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
++	struct pci_dev *pdev = to_pci_dev(attach->dev);
++	struct ipu6_device *isp = pci_get_drvdata(pdev);
++	struct ipu6_bus_device *adev = isp->psys;
++
++	ipu6_dma_unmap_sgtable(adev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
++	dma_unmap_sgtable(&pdev->dev, sgt, dir, 0);
+ }
+ 
+ static int ipu_dma_buf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
+@@ -540,7 +547,8 @@ open_failed:
+ 	return rval;
+ }
+ 
+-static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
++static inline void ipu_psys_kbuf_unmap(struct ipu_psys_fh *fh,
++				       struct ipu_psys_kbuffer *kbuf)
+ {
+ 	if (!kbuf)
+ 		return;
+@@ -552,6 +560,11 @@ static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
+ 		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
+ 		dma_buf_vunmap_unlocked(kbuf->dbuf, &dmap);
+ 	}
++
++	if (!kbuf->userptr)
++		ipu6_dma_unmap_sgtable(fh->psys->adev, kbuf->sgt,
++				       DMA_BIDIRECTIONAL, 0);
++
+ 	if (!IS_ERR_OR_NULL(kbuf->sgt))
+ 		dma_buf_unmap_attachment_unlocked(kbuf->db_attach,
+ 						  kbuf->sgt,
+@@ -569,7 +582,7 @@ static void __ipu_psys_unmapbuf(struct ipu_psys_fh *fh,
+ 				struct ipu_psys_kbuffer *kbuf)
+ {
+ 	/* From now on it is not safe to use this kbuffer */
+-	ipu_psys_kbuf_unmap(kbuf);
++	ipu_psys_kbuf_unmap(fh, kbuf);
+ 	ipu_buffer_del(fh, kbuf);
+ 	if (!kbuf->userptr)
+ 		kfree(kbuf);
+@@ -604,6 +617,7 @@ static int ipu_psys_unmapbuf_locked(int fd, struct ipu_psys_fh *fh)
+ 		return 0;
+ 
+ 	__ipu_psys_unmapbuf(fh, kbuf);
++
+ 	return 0;
+ }
+ 
+@@ -648,7 +662,7 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
+ 
+ 		/* Unmap and release buffers */
+ 		if (kbuf->dbuf && db_attach) {
+-			ipu_psys_kbuf_unmap(kbuf);
++			ipu_psys_kbuf_unmap(fh, kbuf);
+ 		} else {
+ 			if (db_attach)
+ 				ipu_psys_put_userpages(db_attach->priv);
+@@ -693,7 +707,7 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
+ 		return -ENOMEM;
+ 
+ 	kbuf->len = buf->len;
+-	kbuf->userptr = buf->base.userptr;
++	kbuf->userptr = (unsigned long)buf->base.userptr;
+ 	kbuf->flags = buf->flags;
+ 
+ 	exp_info.ops = &ipu_dma_buf_ops;
+@@ -761,13 +775,12 @@ static void ipu_psys_kbuffer_lru(struct ipu_psys_fh *fh,
+ struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
+ {
+ 	struct ipu_psys *psys = fh->psys;
+-	struct device *dev = &psys->adev->auxdev.dev;
++	struct device *dev = &psys->adev->isp->pdev->dev;
++	int ret;
+ 	struct ipu_psys_kbuffer *kbuf;
+ 	struct ipu_psys_desc *desc;
+ 	struct dma_buf *dbuf;
+-	struct iosys_map dmap = {
+-		.is_iomem = false,
+-	};
++	struct iosys_map dmap;
+ 
+ 	dbuf = dma_buf_get(fd);
+ 	if (IS_ERR(dbuf))
+@@ -820,7 +833,7 @@ struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
+ 	kbuf->db_attach = dma_buf_attach(kbuf->dbuf, dev);
+ 	if (IS_ERR(kbuf->db_attach)) {
+ 		dev_dbg(dev, "dma buf attach failed\n");
+-		goto kbuf_map_fail;
++		goto attach_fail;
+ 	}
+ 
+ 	kbuf->sgt = dma_buf_map_attachment_unlocked(kbuf->db_attach,
+@@ -831,28 +844,44 @@ struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
+ 		goto kbuf_map_fail;
+ 	}
+ 
+-	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
++	if (!kbuf->userptr) {
++		ret = ipu6_dma_map_sgtable(psys->adev, kbuf->sgt,
++					   DMA_BIDIRECTIONAL, 0);
++		if (ret) {
++			dev_dbg(dev, "ipu6 buf map failed\n");
++			goto kbuf_map_fail;
++		}
++	}
+ 
+-	/* no need vmap for imported dmabufs */
+-	if (!kbuf->userptr)
+-		goto mapbuf_end;
++	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
+ 
++	dmap.is_iomem = false;
+ 	if (dma_buf_vmap_unlocked(kbuf->dbuf, &dmap)) {
+ 		dev_dbg(dev, "dma buf vmap failed\n");
+ 		goto kbuf_map_fail;
+ 	}
+ 	kbuf->kaddr = dmap.vaddr;
+ 
+-	dev_dbg(dev, "%s kbuf %p fd %d with len %llu mapped\n",
+-		__func__, kbuf, fd, kbuf->len);
+-
+ mapbuf_end:
++	dev_dbg(dev, "%s %s kbuf %p fd %d with len %llu mapped\n",
++		__func__, kbuf->userptr ? "private" : "imported", kbuf, fd,
++		kbuf->len);
++
+ 	kbuf->valid = true;
+ 	return kbuf;
+ 
+ kbuf_map_fail:
+ 	ipu_buffer_del(fh, kbuf);
+-	ipu_psys_kbuf_unmap(kbuf);
++	if (!IS_ERR_OR_NULL(kbuf->sgt)) {
++		if (!kbuf->userptr)
++			ipu6_dma_unmap_sgtable(psys->adev, kbuf->sgt,
++					       DMA_BIDIRECTIONAL, 0);
++		dma_buf_unmap_attachment_unlocked(kbuf->db_attach, kbuf->sgt,
++						  DMA_BIDIRECTIONAL);
++	}
++	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
++attach_fail:
++	ipu_buffer_del(fh, kbuf);
+ 	dbuf = ERR_PTR(-EINVAL);
+ 	if (!kbuf->userptr)
+ 		kfree(kbuf);
+@@ -871,25 +900,26 @@ static long ipu_psys_mapbuf(int fd, struct ipu_psys_fh *fh)
+ {
+ 	struct ipu_psys_kbuffer *kbuf;
+ 
++	dev_dbg(&fh->psys->adev->auxdev.dev, "IOC_MAPBUF\n");
++
+ 	mutex_lock(&fh->mutex);
+ 	kbuf = ipu_psys_mapbuf_locked(fd, fh);
+ 	mutex_unlock(&fh->mutex);
+ 
+-	dev_dbg(&fh->psys->adev->auxdev.dev, "IOC_MAPBUF\n");
+-
+ 	return kbuf ? 0 : -EINVAL;
+ }
+ 
+ static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
+ {
++	struct device *dev = &fh->psys->adev->auxdev.dev;
+ 	long ret;
+ 
++	dev_dbg(dev, "IOC_UNMAPBUF\n");
++
+ 	mutex_lock(&fh->mutex);
+ 	ret = ipu_psys_unmapbuf_locked(fd, fh);
+ 	mutex_unlock(&fh->mutex);
+ 
+-	dev_dbg(&fh->psys->adev->auxdev.dev, "IOC_UNMAPBUF\n");
+-
+ 	return ret;
+ }
+ 
+@@ -1038,7 +1068,6 @@ static void ipu_psys_dev_release(struct device *dev)
+ {
+ }
+ 
+-#ifdef CONFIG_PM
+ static int psys_runtime_pm_resume(struct device *dev)
+ {
+ 	struct ipu6_bus_device *adev = to_ipu6_bus_device(dev);
+@@ -1061,14 +1090,12 @@ static int psys_runtime_pm_resume(struct device *dev)
+ 		return retval;
+ 
+ 	if (async_fw_init && !psys->fwcom) {
+-		dev_err(dev,
+-			"%s: asynchronous firmware init not finished, skipping\n",
+-			__func__);
++		dev_err(dev, "async firmware init not finished, skipping\n");
+ 		return 0;
+ 	}
+ 
+ 	if (!ipu6_buttress_auth_done(adev->isp)) {
+-		dev_dbg(dev, "%s: not yet authenticated, skipping\n", __func__);
++		dev_dbg(dev, "fw not yet authenticated, skipping\n");
+ 		return 0;
+ 	}
+ 
+@@ -1148,11 +1175,6 @@ static const struct dev_pm_ops psys_pm_ops = {
+ 	.resume = psys_resume,
+ };
+ 
+-#define PSYS_PM_OPS (&psys_pm_ops)
+-#else
+-#define PSYS_PM_OPS NULL
+-#endif
+-
+ static int ipu_psys_sched_cmd(void *ptr)
+ {
+ 	struct ipu_psys *psys = ptr;
+@@ -1300,17 +1322,9 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
+ 
+ 	ipu_ver = adev->isp->hw_ver;
+ 
+-	rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
+-				   IPU_PSYS_NUM_DEVICES, IPU6_PSYS_NAME);
+-	if (rval) {
+-		dev_err(dev, "can't alloc psys chrdev region (%d)\n",
+-			rval);
+-		return rval;
+-	}
+-
+ 	rval = ipu6_mmu_hw_init(adev->mmu);
+ 	if (rval)
+-		goto out_unregister_chr_region;
++		return rval;
+ 
+ 	mutex_lock(&ipu_psys_mutex);
+ 
+@@ -1336,17 +1350,6 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
+ 
+ 	psys->power_gating = 0;
+ 
+-	cdev_init(&psys->cdev, &ipu_psys_fops);
+-	psys->cdev.owner = ipu_psys_fops.owner;
+-
+-	rval = cdev_add(&psys->cdev, MKDEV(MAJOR(ipu_psys_dev_t), minor), 1);
+-	if (rval) {
+-		dev_err(dev, "cdev_add failed (%d)\n", rval);
+-		goto out_unlock;
+-	}
+-
+-	set_bit(minor, ipu_psys_devices);
+-
+ 	spin_lock_init(&psys->ready_lock);
+ 	spin_lock_init(&psys->pgs_lock);
+ 	psys->ready = 0;
+@@ -1375,7 +1378,7 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
+ 
+ 	dev_set_drvdata(dev, psys);
+ 
+-	rval = ipu_psys_resource_pool_init(&psys->resource_pool_running);
++	rval = ipu_psys_res_pool_init(&psys->res_pool_running);
+ 	if (rval < 0) {
+ 		dev_err(&psys->dev,
+ 			"unable to alloc process group resources\n");
+@@ -1389,9 +1392,9 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
+ 		kpg = kzalloc(sizeof(*kpg), GFP_KERNEL);
+ 		if (!kpg)
+ 			goto out_free_pgs;
+-		kpg->pg = dma_alloc_attrs(dev, IPU_PSYS_PG_MAX_SIZE,
+-					  &kpg->pg_dma_addr,
+-					  GFP_KERNEL, 0);
++		kpg->pg = ipu6_dma_alloc(adev, IPU_PSYS_PG_MAX_SIZE,
++					 &kpg->pg_dma_addr,
++					 GFP_KERNEL, 0);
+ 		if (!kpg->pg) {
+ 			kfree(kpg);
+ 			goto out_free_pgs;
+@@ -1417,17 +1420,24 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
+ 		goto out_free_pgs;
+ 	}
+ 
+-	psys->dev.bus = &ipu6_psys_bus;
++	psys->dev.bus = &ipu_psys_bus;
+ 	psys->dev.parent = dev;
+ 	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
+ 	psys->dev.release = ipu_psys_dev_release;
+ 	dev_set_name(&psys->dev, "ipu-psys%d", minor);
+-	rval = device_register(&psys->dev);
++	device_initialize(&psys->dev);
++
++	cdev_init(&psys->cdev, &ipu_psys_fops);
++	psys->cdev.owner = ipu_psys_fops.owner;
++
++	rval = cdev_device_add(&psys->cdev, &psys->dev);
+ 	if (rval < 0) {
+ 		dev_err(dev, "psys device_register failed\n");
+ 		goto out_release_fw_com;
+ 	}
+ 
++	set_bit(minor, ipu_psys_devices);
++
+ 	/* Add the hw stepping information to caps */
+ 	strscpy(psys->caps.dev_model, IPU6_MEDIA_DEV_MODEL_NAME,
+ 		sizeof(psys->caps.dev_model));
+@@ -1444,14 +1454,13 @@ out_release_fw_com:
+ 	ipu6_fw_com_release(psys->fwcom, 1);
+ out_free_pgs:
+ 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
+-		dma_free_attrs(dev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
++		ipu6_dma_free(adev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+ 		kfree(kpg);
+ 	}
+ 
+-	ipu_psys_resource_pool_cleanup(&psys->resource_pool_running);
++	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
+ out_mutex_destroy:
+ 	mutex_destroy(&psys->mutex);
+-	cdev_del(&psys->cdev);
+ 	if (psys->sched_cmd_thread) {
+ 		kthread_stop(psys->sched_cmd_thread);
+ 		psys->sched_cmd_thread = NULL;
+@@ -1460,21 +1469,16 @@ out_unlock:
+ 	/* Safe to call even if the init is not called */
+ 	mutex_unlock(&ipu_psys_mutex);
+ 	ipu6_mmu_hw_cleanup(adev->mmu);
+-
+-out_unregister_chr_region:
+-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+-
+ 	return rval;
+ }
+ 
+ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
+ {
++	struct ipu6_bus_device *adev = auxdev_to_adev(auxdev);
+ 	struct device *dev = &auxdev->dev;
+ 	struct ipu_psys *psys = dev_get_drvdata(&auxdev->dev);
+ 	struct ipu_psys_pg *kpg, *kpg0;
+ 
+-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+-
+ 	if (psys->sched_cmd_thread) {
+ 		kthread_stop(psys->sched_cmd_thread);
+ 		psys->sched_cmd_thread = NULL;
+@@ -1483,7 +1487,7 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
+ 	mutex_lock(&ipu_psys_mutex);
+ 
+ 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
+-		dma_free_attrs(dev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
++		ipu6_dma_free(adev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+ 		kfree(kpg);
+ 	}
+ 
+@@ -1493,12 +1497,11 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
+ 	kfree(psys->server_init);
+ 	kfree(psys->syscom_config);
+ 
+-	ipu_psys_resource_pool_cleanup(&psys->resource_pool_running);
++	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
+ 
+-	device_unregister(&psys->dev);
++	cdev_device_del(&psys->cdev, &psys->dev);
+ 
+ 	clear_bit(MINOR(psys->cdev.dev), ipu_psys_devices);
+-	cdev_del(&psys->cdev);
+ 
+ 	mutex_unlock(&ipu_psys_mutex);
+ 
+@@ -1559,17 +1562,38 @@ static struct auxiliary_driver ipu6_psys_aux_driver = {
+ 		.pm = &psys_pm_ops,
+ 	},
+ };
+-module_auxiliary_driver(ipu6_psys_aux_driver);
+ 
+-MODULE_AUTHOR("Antti Laakso <antti.laakso@intel.com>");
+-MODULE_AUTHOR("Bin Han <bin.b.han@intel.com>");
+-MODULE_AUTHOR("Renwei Wu <renwei.wu@intel.com>");
+-MODULE_AUTHOR("Jianxu Zheng <jian.xu.zheng@intel.com>");
+-MODULE_AUTHOR("Xia Wu <xia.wu@intel.com>");
++static int __init ipu_psys_init(void)
++{
++	int rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
++				       IPU_PSYS_NUM_DEVICES, ipu_psys_bus.name);
++	if (rval) {
++		pr_err("can't alloc psys chrdev region (%d)\n", rval);
++		return rval;
++	}
++
++	rval = bus_register(&ipu_psys_bus);
++	if (rval) {
++		pr_err("can't register psys bus (%d)\n", rval);
++		unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
++		return rval;
++	}
++
++	auxiliary_driver_register(&ipu6_psys_aux_driver);
++	return 0;
++}
++module_init(ipu_psys_init);
++
++static void __exit ipu_psys_exit(void)
++{
++	auxiliary_driver_unregister(&ipu6_psys_aux_driver);
++	bus_unregister(&ipu_psys_bus);
++	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
++}
++module_exit(ipu_psys_exit);
++
+ MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");
+-MODULE_AUTHOR("Zaikuo Wang <zaikuo.wang@intel.com>");
+-MODULE_AUTHOR("Yunliang Ding <yunliang.ding@intel.com>");
+ MODULE_LICENSE("GPL");
+-MODULE_DESCRIPTION("Intel ipu processing system driver");
++MODULE_DESCRIPTION("Intel IPU6 processing system driver");
+ MODULE_IMPORT_NS(DMA_BUF);
+ MODULE_IMPORT_NS(INTEL_IPU6);
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-psys.h b/drivers/media/pci/intel/ipu6/psys/ipu-psys.h
+index a552ff08dd96..8af6551fe302 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu-psys.h
++++ b/drivers/media/pci/intel/ipu6/psys/ipu-psys.h
+@@ -10,6 +10,7 @@
+ #include <linux/version.h>
+ #include "ipu6.h"
+ #include "ipu6-bus.h"
++#include "ipu6-dma.h"
+ #include "ipu-fw-psys.h"
+ #include "ipu-platform-psys.h"
+ 
+@@ -200,7 +201,7 @@ struct ipu_psys {
+ 	atomic_t wakeup_count;  /* Psys schedule thread wakeup count */
+ 
+ 	/* Resources needed to be managed for process groups */
+-	struct ipu_psys_resource_pool resource_pool_running;
++	struct ipu_psys_resource_pool res_pool_running;
+ 
+ 	const struct firmware *fw;
+ 	struct sg_table fw_sgt;
+@@ -217,7 +218,7 @@ struct ipu_psys {
+ 
+ struct ipu_psys_fh {
+ 	struct ipu_psys *psys;
+-	struct mutex mutex;	/* Protects bufs_list & kcmds fields */
++	struct mutex mutex;/* Protects bufs_list & kcmds fields */
+ 	struct list_head list;
+ 	/* Holds all buffers that this fh owns */
+ 	struct list_head bufs_list;
+@@ -273,7 +274,7 @@ struct ipu_psys_kcmd {
+ struct ipu_dma_buf_attach {
+ 	struct device *dev;
+ 	u64 len;
+-	void *userptr;
++	unsigned long userptr;
+ 	struct sg_table *sgt;
+ 	struct page **pages;
+ 	size_t npages;
+@@ -281,7 +282,7 @@ struct ipu_dma_buf_attach {
+ 
+ struct ipu_psys_kbuffer {
+ 	u64 len;
+-	void *userptr;
++	unsigned long userptr;
+ 	void *kaddr;
+ 	struct list_head list;
+ 	dma_addr_t dma_addr;
+@@ -289,15 +290,14 @@ struct ipu_psys_kbuffer {
+ 	struct dma_buf_attachment *db_attach;
+ 	struct dma_buf *dbuf;
+ 	u32 flags;
+-	/* The number of times this buffer is mapped */
+-	atomic_t map_count;
++	atomic_t map_count; /* The number of times this buffer is mapped */
+ 	bool valid;	/* True when buffer is usable */
+ };
+ 
+ struct ipu_psys_desc {
+-	struct ipu_psys_kbuffer	*kbuf;
+-	struct list_head	list;
+-	u32			fd;
++	struct ipu_psys_kbuffer *kbuf;
++	struct list_head list;
++	u32 fd;
+ };
+ 
+ #define inode_to_ipu_psys(inode) \
+@@ -315,8 +315,8 @@ struct ipu_psys_kbuffer *
+ ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh);
+ struct ipu_psys_kbuffer *
+ ipu_psys_lookup_kbuffer_by_kaddr(struct ipu_psys_fh *fh, void *kaddr);
+-int ipu_psys_resource_pool_init(struct ipu_psys_resource_pool *pool);
+-void ipu_psys_resource_pool_cleanup(struct ipu_psys_resource_pool *pool);
++int ipu_psys_res_pool_init(struct ipu_psys_resource_pool *pool);
++void ipu_psys_res_pool_cleanup(struct ipu_psys_resource_pool *pool);
+ struct ipu_psys_kcmd *ipu_get_completed_kcmd(struct ipu_psys_fh *fh);
+ long ipu_ioctl_dqevent(struct ipu_psys_event *event,
+ 		       struct ipu_psys_fh *fh, unsigned int f_flags);
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-resources.c b/drivers/media/pci/intel/ipu6/psys/ipu-resources.c
+index 824791856bc8..4068e344e187 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu-resources.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu-resources.c
+@@ -31,8 +31,7 @@ void ipu6_psys_hw_res_variant_init(void)
+ 	hw_var.set_proc_dev_chn = ipu6_fw_psys_set_proc_dev_chn;
+ 	hw_var.set_proc_dfm_bitmap = ipu6_fw_psys_set_proc_dfm_bitmap;
+ 	hw_var.set_proc_ext_mem = ipu6_fw_psys_set_process_ext_mem;
+-	hw_var.get_pgm_by_proc =
+-		ipu6_fw_psys_get_program_manifest_by_process;
++	hw_var.get_pgm_by_proc = ipu6_fw_psys_get_pgm_by_process;
+ }
+ 
+ static const struct ipu_fw_resource_definitions *get_res(void)
+@@ -140,7 +139,7 @@ static void ipu_resource_cleanup(struct ipu_resource *res)
+ }
+ 
+ /********** IPU PSYS-specific resource handling **********/
+-int ipu_psys_resource_pool_init(struct ipu_psys_resource_pool *pool)
++int ipu_psys_res_pool_init(struct ipu_psys_resource_pool *pool)
+ {
+ 	int i, j, k, ret;
+ 	const struct ipu_fw_resource_definitions *res_defs;
+@@ -214,8 +213,7 @@ void ipu_psys_resource_copy(struct ipu_psys_resource_pool *src,
+ 		*dest->dfms[i].bitmap = *src->dfms[i].bitmap;
+ }
+ 
+-void ipu_psys_resource_pool_cleanup(struct ipu_psys_resource_pool
+-				    *pool)
++void ipu_psys_res_pool_cleanup(struct ipu_psys_resource_pool *pool)
+ {
+ 	u32 i;
+ 	const struct ipu_fw_resource_definitions *res_defs;
+@@ -372,7 +370,7 @@ static int __alloc_mem_resrc(const struct device *dev,
+ 	return 0;
+ }
+ 
+-int ipu_psys_allocate_cmd_queue_resource(struct ipu_psys_resource_pool *pool)
++int ipu_psys_allocate_cmd_queue_res(struct ipu_psys_resource_pool *pool)
+ {
+ 	unsigned long p;
+ 	int size, start;
+@@ -400,8 +398,8 @@ int ipu_psys_allocate_cmd_queue_resource(struct ipu_psys_resource_pool *pool)
+ 	return p;
+ }
+ 
+-void ipu_psys_free_cmd_queue_resource(struct ipu_psys_resource_pool *pool,
+-				      u8 queue_id)
++void ipu_psys_free_cmd_queue_res(struct ipu_psys_resource_pool *pool,
++				 u8 queue_id)
+ {
+ 	spin_lock(&pool->queues_lock);
+ 	bitmap_clear(pool->cmd_queues, queue_id, 1);
+@@ -447,8 +445,7 @@ int ipu_psys_try_allocate_resources(struct device *dev,
+ 			goto free_out;
+ 		}
+ 
+-		ret = ipu_fw_psys_get_program_manifest_by_process
+-			(&pm, pg_manifest, process);
++		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
+ 		if (ret < 0) {
+ 			dev_err(dev, "can not get manifest\n");
+ 			goto free_out;
+@@ -556,9 +553,8 @@ free_out:
+ int ipu_psys_allocate_resources(const struct device *dev,
+ 				struct ipu_fw_psys_process_group *pg,
+ 				void *pg_manifest,
+-				struct ipu_psys_resource_alloc
+-				*alloc, struct ipu_psys_resource_pool
+-				*pool)
++				struct ipu_psys_resource_alloc *alloc,
++				struct ipu_psys_resource_pool *pool)
+ {
+ 	u32 id;
+ 	u32 mem_type_id;
+@@ -591,8 +587,7 @@ int ipu_psys_allocate_resources(const struct device *dev,
+ 			goto free_out;
+ 		}
+ 
+-		ret = ipu_fw_psys_get_program_manifest_by_process
+-		    (&pm, pg_manifest, process);
++		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
+ 		if (ret < 0) {
+ 			dev_err(dev, "can not get manifest\n");
+ 			goto free_out;
+@@ -836,9 +831,7 @@ void ipu_psys_reset_process_cell(const struct device *dev,
+ 		if (!process)
+ 			break;
+ 
+-		ret = ipu_fw_psys_get_program_manifest_by_process(&pm,
+-								  pg_manifest,
+-								  process);
++		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
+ 		if (ret < 0) {
+ 			dev_err(dev, "can not get manifest\n");
+ 			break;
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu6-fw-resources.c b/drivers/media/pci/intel/ipu6/psys/ipu6-fw-resources.c
+index cc89184346a5..fe65a0a76561 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu6-fw-resources.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu6-fw-resources.c
+@@ -481,7 +481,7 @@ int ipu6_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
+ }
+ 
+ static struct ipu_fw_psys_program_manifest *
+-get_program_manifest(const struct ipu_fw_psys_program_group_manifest *manifest,
++get_program_manifest(const struct ipu_fw_psys_pgm *manifest,
+ 		     const unsigned int program_index)
+ {
+ 	struct ipu_fw_psys_program_manifest *prg_manifest_base;
+@@ -504,10 +504,10 @@ get_program_manifest(const struct ipu_fw_psys_program_group_manifest *manifest,
+ 	return (struct ipu_fw_psys_program_manifest *)program_manifest;
+ }
+ 
+-int ipu6_fw_psys_get_program_manifest_by_process(
+-	struct ipu_fw_generic_program_manifest *gen_pm,
+-	const struct ipu_fw_psys_program_group_manifest *pg_manifest,
+-	struct ipu_fw_psys_process *process)
++int
++ipu6_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
++				const struct ipu_fw_psys_pgm *pg_manifest,
++				struct ipu_fw_psys_process *process)
+ {
+ 	u32 program_id = process->program_idx;
+ 	struct ipu_fw_psys_program_manifest *pm;
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu6-l-scheduler.c b/drivers/media/pci/intel/ipu6/psys/ipu6-l-scheduler.c
+index 5e82135f0dde..5d958432a3a5 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu6-l-scheduler.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu6-l-scheduler.c
+@@ -131,19 +131,19 @@ static int ipu_psys_detect_resource_contention(struct ipu_psys_ppg *kppg)
+ 	    state == PPG_STATE_RESUMED)
+ 		goto exit;
+ 
+-	ret = ipu_psys_resource_pool_init(try_res_pool);
++	ret = ipu_psys_res_pool_init(try_res_pool);
+ 	if (ret < 0) {
+ 		dev_err(dev, "unable to alloc pg resources\n");
+ 		WARN_ON(1);
+ 		goto exit;
+ 	}
+ 
+-	ipu_psys_resource_copy(&psys->resource_pool_running, try_res_pool);
++	ipu_psys_resource_copy(&psys->res_pool_running, try_res_pool);
+ 	ret = ipu_psys_try_allocate_resources(dev, kppg->kpg->pg,
+ 					      kppg->manifest,
+ 					      try_res_pool);
+ 
+-	ipu_psys_resource_pool_cleanup(try_res_pool);
++	ipu_psys_res_pool_cleanup(try_res_pool);
+ exit:
+ 	kfree(try_res_pool);
+ 
+@@ -231,7 +231,7 @@ static bool ipu_psys_scheduler_switch_ppg(struct ipu_psys *psys)
+ }
+ 
+ /*
+- * search all kppgs and sort them into start_list and stop_list, alway start
++ * search all kppgs and sort them into start_list and stop_list, always start
+  * first kppg(high priority) in start_list;
+  * if there is resource contention, it would switch kppgs in stop_list
+  * to suspend state one by one
+@@ -348,7 +348,8 @@ static bool ipu_psys_scheduler_ppg_halt(struct ipu_psys *psys)
+ 				ipu_psys_ppg_stop(kppg);
+ 				ipu_psys_scheduler_remove_kppg(kppg,
+ 							       SCHED_STOP_LIST);
+-			} else if (kppg->state == PPG_STATE_SUSPEND) {
++			} else if (kppg->state == PPG_STATE_SUSPEND &&
++				   list_empty(&kppg->kcmds_processing_list)) {
+ 				ipu_psys_ppg_suspend(kppg);
+ 				ipu_psys_scheduler_remove_kppg(kppg,
+ 							       SCHED_STOP_LIST);
+@@ -393,11 +394,11 @@ static void ipu_psys_update_ppg_state_by_kcmd(struct ipu_psys *psys,
+ 		else if (kcmd->state == KCMD_STATE_PPG_ENQUEUE)
+ 			kppg->state = PPG_STATE_RESUME;
+ 	} else if (kppg->state == PPG_STATE_STOPPED) {
+-		if (kcmd->state == KCMD_STATE_PPG_START)
++		if (kcmd->state == KCMD_STATE_PPG_START) {
+ 			kppg->state = PPG_STATE_START;
+-		else if (kcmd->state == KCMD_STATE_PPG_STOP)
++		} else if (kcmd->state == KCMD_STATE_PPG_STOP) {
+ 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
+-		else if (kcmd->state == KCMD_STATE_PPG_ENQUEUE) {
++		} else if (kcmd->state == KCMD_STATE_PPG_ENQUEUE) {
+ 			dev_err(dev, "ppg %p stopped!\n", kppg);
+ 			ipu_psys_kcmd_complete(kppg, kcmd, -EIO);
+ 		}
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu6-platform-resources.h b/drivers/media/pci/intel/ipu6/psys/ipu6-platform-resources.h
+index 4e275d32740a..1b6795653690 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu6-platform-resources.h
++++ b/drivers/media/pci/intel/ipu6/psys/ipu6-platform-resources.h
+@@ -4,8 +4,6 @@
+ #ifndef IPU6_PLATFORM_RESOURCES_H
+ #define IPU6_PLATFORM_RESOURCES_H
+ 
+-#include <linux/kernel.h>
+-#include <linux/device.h>
+ #include "ipu-platform-resources.h"
+ 
+ #define	IPU6_FW_PSYS_N_PADDING_UINT8_IN_PROCESS_EXT_STRUCT		0
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu6-ppg.c b/drivers/media/pci/intel/ipu6/psys/ipu6-ppg.c
+index fa47656d37b9..b6a90f8a8ba4 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu6-ppg.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu6-ppg.c
+@@ -2,11 +2,11 @@
+ // Copyright (C) 2020 - 2024 Intel Corporation
+ 
+ #include <linux/version.h>
++#include <linux/cacheflush.h>
+ #include <linux/module.h>
+ #include <linux/pm_runtime.h>
+ 
+-#include <asm/cacheflush.h>
+-
++#include "ipu6-dma.h"
+ #include "ipu6-ppg.h"
+ 
+ static bool enable_suspend_resume;
+@@ -49,7 +49,7 @@ struct ipu_psys_kcmd *ipu_psys_ppg_get_stop_kcmd(struct ipu_psys_ppg *kppg)
+ static struct ipu_psys_buffer_set *
+ __get_buf_set(struct ipu_psys_fh *fh, size_t buf_set_size)
+ {
+-	struct device *dev = &fh->psys->adev->auxdev.dev;
++	struct ipu6_bus_device *adev = fh->psys->adev;
+ 	struct ipu_psys_buffer_set *kbuf_set;
+ 	struct ipu_psys_scheduler *sched = &fh->sched;
+ 
+@@ -69,8 +69,8 @@ __get_buf_set(struct ipu_psys_fh *fh, size_t buf_set_size)
+ 	if (!kbuf_set)
+ 		return NULL;
+ 
+-	kbuf_set->kaddr = dma_alloc_attrs(dev, buf_set_size,
+-					  &kbuf_set->dma_addr, GFP_KERNEL, 0);
++	kbuf_set->kaddr = ipu6_dma_alloc(adev, buf_set_size,
++					 &kbuf_set->dma_addr, GFP_KERNEL, 0);
+ 	if (!kbuf_set->kaddr) {
+ 		kfree(kbuf_set);
+ 		return NULL;
+@@ -111,8 +111,8 @@ ipu_psys_create_buffer_set(struct ipu_psys_kcmd *kcmd,
+ 	ipu_fw_psys_ppg_buffer_set_vaddress(kbuf_set->buf_set,
+ 					    kbuf_set->dma_addr);
+ 	keb = kcmd->kernel_enable_bitmap;
+-	ipu_fw_psys_ppg_buffer_set_set_kernel_enable_bitmap(kbuf_set->buf_set,
+-							    keb);
++	ipu_fw_psys_ppg_buffer_set_set_keb(kbuf_set->buf_set, keb);
++	ipu6_dma_sync_single(psys->adev, kbuf_set->dma_addr, buf_set_size);
+ 
+ 	return kbuf_set;
+ }
+@@ -179,15 +179,15 @@ void ipu_psys_ppg_complete(struct ipu_psys *psys, struct ipu_psys_ppg *kppg)
+ 
+ 		kppg->state = PPG_STATE_STOPPED;
+ 		ipu_psys_free_resources(&kppg->kpg->resource_alloc,
+-					&psys->resource_pool_running);
++					&psys->res_pool_running);
+ 		queue_id = ipu_fw_psys_ppg_get_base_queue_id(&tmp_kcmd);
+-		ipu_psys_free_cmd_queue_resource(&psys->resource_pool_running, queue_id);
++		ipu_psys_free_cmd_queue_res(&psys->res_pool_running, queue_id);
+ 		pm_runtime_put(dev);
+ 	} else {
+ 		if (kppg->state == PPG_STATE_SUSPENDING) {
+ 			kppg->state = PPG_STATE_SUSPENDED;
+ 			ipu_psys_free_resources(&kppg->kpg->resource_alloc,
+-						&psys->resource_pool_running);
++						&psys->res_pool_running);
+ 		} else if (kppg->state == PPG_STATE_STARTED ||
+ 			   kppg->state == PPG_STATE_RESUMED) {
+ 			kppg->state = PPG_STATE_RUNNING;
+@@ -247,7 +247,7 @@ int ipu_psys_ppg_start(struct ipu_psys_ppg *kppg)
+ 
+ 	ret = ipu_psys_allocate_resources(dev, kcmd->kpg->pg, kcmd->pg_manifest,
+ 					  &kcmd->kpg->resource_alloc,
+-					  &psys->resource_pool_running);
++					  &psys->res_pool_running);
+ 	if (ret) {
+ 		dev_err(dev, "alloc resources failed!\n");
+ 		return ret;
+@@ -277,7 +277,7 @@ error:
+ 	ipu_psys_reset_process_cell(dev, kcmd->kpg->pg, kcmd->pg_manifest,
+ 				    kcmd->kpg->pg->process_count);
+ 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
+-				&psys->resource_pool_running);
++				&psys->res_pool_running);
+ 
+ 	dev_err(dev, "failed to start ppg\n");
+ 	return ret;
+@@ -301,7 +301,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
+ 		ret = ipu_psys_allocate_resources(dev, kppg->kpg->pg,
+ 						  kppg->manifest,
+ 						  &kppg->kpg->resource_alloc,
+-						  &psys->resource_pool_running);
++						  &psys->res_pool_running);
+ 		if (ret) {
+ 			dev_err(dev, "failed to allocate res\n");
+ 			return -EIO;
+@@ -323,7 +323,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
+ 		ret = ipu_psys_allocate_resources(dev, kppg->kpg->pg,
+ 						  kppg->manifest,
+ 						  &kppg->kpg->resource_alloc,
+-						  &psys->resource_pool_running);
++						  &psys->res_pool_running);
+ 		if (ret) {
+ 			dev_err(dev, "failed to allocate res\n");
+ 			return ret;
+@@ -345,7 +345,7 @@ error:
+ 	ipu_psys_reset_process_cell(dev, kppg->kpg->pg, kppg->manifest,
+ 				    kppg->kpg->pg->process_count);
+ 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
+-				&psys->resource_pool_running);
++				&psys->res_pool_running);
+ 
+ 	return ret;
+ }
+@@ -385,7 +385,7 @@ int ipu_psys_ppg_stop(struct ipu_psys_ppg *kppg)
+ 		} else if (kcmd != &kcmd_temp) {
+ 			u8 queue_id = ipu_fw_psys_ppg_get_base_queue_id(kcmd);
+ 
+-			ipu_psys_free_cmd_queue_resource(&psys->resource_pool_running,
++			ipu_psys_free_cmd_queue_res(&psys->res_pool_running,
+ 						    queue_id);
+ 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
+ 			dev_dbg(dev, "s_change:%s %p %d -> %d\n", __func__,
+@@ -513,7 +513,6 @@ void ipu_psys_enter_power_gating(struct ipu_psys *psys)
+ 				mutex_unlock(&kppg->mutex);
+ 				continue;
+ 			}
+-
+ 			pm_runtime_put(dev);
+ 			mutex_unlock(&kppg->mutex);
+ 		}
+diff --git a/drivers/media/pci/intel/ipu6/psys/ipu6-psys.c b/drivers/media/pci/intel/ipu6/psys/ipu6-psys.c
+index ea442b0fb50e..46c6bc885e9d 100644
+--- a/drivers/media/pci/intel/ipu6/psys/ipu6-psys.c
++++ b/drivers/media/pci/intel/ipu6/psys/ipu6-psys.c
+@@ -15,6 +15,7 @@
+ #include <linux/fs.h>
+ 
+ #include "ipu6.h"
++#include "ipu6-dma.h"
+ #include "ipu-psys.h"
+ #include "ipu6-ppg.h"
+ #include "ipu6-platform-regs.h"
+@@ -188,7 +189,8 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
+ 	unsigned int i;
+ 	int ret, prevfd, fd;
+ 
+-	fd = prevfd = -1;
++	fd = -1;
++	prevfd = -1;
+ 
+ 	if (cmd->bufcount > IPU_MAX_PSYS_CMD_BUFFERS)
+ 		return NULL;
+@@ -214,7 +216,7 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
+ 		goto error;
+ 	}
+ 
+-	/* check and remap if possibe */
++	/* check and remap if possible */
+ 	kpgbuf = ipu_psys_mapbuf_locked(fd, fh);
+ 	if (!kpgbuf || !kpgbuf->sgt) {
+ 		dev_err(dev, "%s remap failed\n", __func__);
+@@ -248,7 +250,7 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
+ 		goto error;
+ 
+ 	/*
+-	 * Kenel enable bitmap be used only.
++	 * Kernel enable bitmap be used only.
+ 	 */
+ 	memcpy(kcmd->kernel_enable_bitmap, cmd->kernel_enable_bitmap,
+ 	       sizeof(cmd->kernel_enable_bitmap));
+@@ -312,22 +314,27 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
+ 			mutex_unlock(&fh->mutex);
+ 			goto error;
+ 		}
++
+ 		mutex_unlock(&fh->mutex);
+ 		kcmd->kbufs[i] = kpgbuf;
+ 		if (!kcmd->kbufs[i] || !kcmd->kbufs[i]->sgt ||
+ 		    kcmd->kbufs[i]->len < kcmd->buffers[i].bytes_used)
+ 			goto error;
+-		if ((kcmd->kbufs[i]->flags &
+-		     IPU_BUFFER_FLAG_NO_FLUSH) ||
+-		    (kcmd->buffers[i].flags &
+-		     IPU_BUFFER_FLAG_NO_FLUSH) ||
++
++		if ((kcmd->kbufs[i]->flags & IPU_BUFFER_FLAG_NO_FLUSH) ||
++		    (kcmd->buffers[i].flags & IPU_BUFFER_FLAG_NO_FLUSH) ||
+ 		    prevfd == kcmd->buffers[i].base.fd)
+ 			continue;
+ 
+ 		prevfd = kcmd->buffers[i].base.fd;
+-		dma_sync_sg_for_device(dev, kcmd->kbufs[i]->sgt->sgl,
+-				       kcmd->kbufs[i]->sgt->orig_nents,
+-				       DMA_BIDIRECTIONAL);
++
++		/*
++		 * TODO: remove exported buffer sync here as the cache
++		 * coherency should be done by the exporter
++		 */
++		if (kcmd->kbufs[i]->kaddr)
++			clflush_cache_range(kcmd->kbufs[i]->kaddr,
++					    kcmd->kbufs[i]->len);
+ 	}
+ 
+ 	if (kcmd->state != KCMD_STATE_PPG_START)
+@@ -543,7 +550,7 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
+ 	int queue_id;
+ 	int ret;
+ 
+-	rpr = &psys->resource_pool_running;
++	rpr = &psys->res_pool_running;
+ 
+ 	kppg = kzalloc(sizeof(*kppg), GFP_KERNEL);
+ 	if (!kppg)
+@@ -570,7 +577,7 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
+ 	memcpy(kppg->manifest, kcmd->pg_manifest,
+ 	       kcmd->pg_manifest_size);
+ 
+-	queue_id = ipu_psys_allocate_cmd_queue_resource(rpr);
++	queue_id = ipu_psys_allocate_cmd_queue_res(rpr);
+ 	if (queue_id == -ENOSPC) {
+ 		dev_err(dev, "no available queue\n");
+ 		kfree(kppg->manifest);
+@@ -589,7 +596,8 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
+ 	ret = ipu_fw_psys_pg_set_ipu_vaddress(kcmd,
+ 					      kcmd->kpg->pg_dma_addr);
+ 	if (ret) {
+-		ipu_psys_free_cmd_queue_resource(rpr, queue_id);
++		ipu_psys_free_cmd_queue_res(rpr, queue_id);
++
+ 		kfree(kppg->manifest);
+ 		kfree(kppg);
+ 		return -EIO;
+@@ -625,7 +633,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
+ 	u8 id;
+ 	bool resche = true;
+ 
+-	rpr = &psys->resource_pool_running;
++	rpr = &psys->res_pool_running;
+ 	if (kcmd->state == KCMD_STATE_PPG_START)
+ 		return ipu_psys_kcmd_send_to_ppg_start(kcmd);
+ 
+@@ -641,8 +649,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
+ 	kcmd->kpg = kppg->kpg;
+ 
+ 	dev_dbg(dev, "%s ppg(%d, 0x%p) kcmd %p\n",
+-		(kcmd->state == KCMD_STATE_PPG_STOP) ?
+-		"STOP" : "ENQUEUE",
++		(kcmd->state == KCMD_STATE_PPG_STOP) ? "STOP" : "ENQUEUE",
+ 		ipu_fw_psys_pg_get_id(kcmd), kppg, kcmd);
+ 
+ 	if (kcmd->state == KCMD_STATE_PPG_STOP) {
+@@ -650,7 +657,7 @@ static int ipu_psys_kcmd_send_to_ppg(struct ipu_psys_kcmd *kcmd)
+ 		if (kppg->state == PPG_STATE_STOPPED) {
+ 			dev_dbg(dev, "kppg 0x%p  stopped!\n", kppg);
+ 			id = ipu_fw_psys_ppg_get_base_queue_id(kcmd);
+-			ipu_psys_free_cmd_queue_resource(rpr, id);
++			ipu_psys_free_cmd_queue_res(rpr, id);
+ 			ipu_psys_kcmd_complete(kppg, kcmd, 0);
+ 			pm_runtime_put(dev);
+ 			resche = false;
+@@ -854,7 +861,6 @@ void ipu_psys_handle_events(struct ipu_psys *psys)
+ int ipu_psys_fh_init(struct ipu_psys_fh *fh)
+ {
+ 	struct ipu_psys *psys = fh->psys;
+-	struct device *dev = &psys->adev->auxdev.dev;
+ 	struct ipu_psys_buffer_set *kbuf_set, *kbuf_set_tmp;
+ 	struct ipu_psys_scheduler *sched = &fh->sched;
+ 	int i;
+@@ -868,10 +874,10 @@ int ipu_psys_fh_init(struct ipu_psys_fh *fh)
+ 		kbuf_set = kzalloc(sizeof(*kbuf_set), GFP_KERNEL);
+ 		if (!kbuf_set)
+ 			goto out_free_buf_sets;
+-		kbuf_set->kaddr = dma_alloc_attrs(dev,
+-						  IPU_PSYS_BUF_SET_MAX_SIZE,
+-						  &kbuf_set->dma_addr,
+-						  GFP_KERNEL, 0);
++		kbuf_set->kaddr = ipu6_dma_alloc(psys->adev,
++						 IPU_PSYS_BUF_SET_MAX_SIZE,
++						 &kbuf_set->dma_addr,
++						 GFP_KERNEL, 0);
+ 		if (!kbuf_set->kaddr) {
+ 			kfree(kbuf_set);
+ 			goto out_free_buf_sets;
+@@ -885,8 +891,8 @@ int ipu_psys_fh_init(struct ipu_psys_fh *fh)
+ out_free_buf_sets:
+ 	list_for_each_entry_safe(kbuf_set, kbuf_set_tmp,
+ 				 &sched->buf_sets, list) {
+-		dma_free_attrs(dev, kbuf_set->size, kbuf_set->kaddr,
+-			       kbuf_set->dma_addr, 0);
++		ipu6_dma_free(psys->adev, kbuf_set->size, kbuf_set->kaddr,
++			      kbuf_set->dma_addr, 0);
+ 		list_del(&kbuf_set->list);
+ 		kfree(kbuf_set);
+ 	}
+@@ -920,15 +926,16 @@ int ipu_psys_fh_deinit(struct ipu_psys_fh *fh)
+ 					.kpg = kppg->kpg,
+ 				};
+ 
+-				rpr = &psys->resource_pool_running;
++				rpr = &psys->res_pool_running;
+ 				alloc = &kppg->kpg->resource_alloc;
+ 				id = ipu_fw_psys_ppg_get_base_queue_id(&tmp);
+ 				ipu_psys_ppg_stop(kppg);
+ 				ipu_psys_free_resources(alloc, rpr);
+-				ipu_psys_free_cmd_queue_resource(rpr, id);
++				ipu_psys_free_cmd_queue_res(rpr, id);
+ 				dev_dbg(dev,
+-				    "s_change:%s %p %d -> %d\n", __func__,
+-				    kppg, kppg->state, PPG_STATE_STOPPED);
++				    "s_change:%s %p %d -> %d\n",
++					__func__, kppg, kppg->state,
++					PPG_STATE_STOPPED);
+ 				kppg->state = PPG_STATE_STOPPED;
+ 				if (psys->power_gating != PSYS_POWER_GATED)
+ 					pm_runtime_put(dev);
+@@ -975,8 +982,8 @@ int ipu_psys_fh_deinit(struct ipu_psys_fh *fh)
+ 
+ 	mutex_lock(&sched->bs_mutex);
+ 	list_for_each_entry_safe(kbuf_set, kbuf_set0, &sched->buf_sets, list) {
+-		dma_free_attrs(dev, kbuf_set->size, kbuf_set->kaddr,
+-			       kbuf_set->dma_addr, 0);
++		ipu6_dma_free(psys->adev, kbuf_set->size, kbuf_set->kaddr,
++			      kbuf_set->dma_addr, 0);
+ 		list_del(&kbuf_set->list);
+ 		kfree(kbuf_set);
+ 	}
+-- 
+2.34.1
+
