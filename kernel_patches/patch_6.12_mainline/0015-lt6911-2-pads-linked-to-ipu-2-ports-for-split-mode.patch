@@ -1,0 +1,337 @@
+From d509e554adc5f5842e097d8ddebe6864ef79a0cc Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Thu, 26 Dec 2024 17:41:32 +0800
+Subject: [PATCH] lt6911 2 pads linked to ipu 2 ports for split mode
+
+Change Description:
+single camera in bios setting, pprval for dummy port.
+create software node and link connection in ipu-brige.
+match the connection and port num in v4l2-async.
+finally create the media links.
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+---
+ drivers/media/i2c/lt6911uxc.c            |  7 +-
+ drivers/media/pci/intel/ipu-bridge.c     | 94 ++++++++++++++++++++----
+ drivers/media/pci/intel/ipu6/ipu6-isys.c | 16 +++-
+ drivers/media/v4l2-core/v4l2-async.c     | 16 +++-
+ include/media/ipu-bridge.h               |  8 +-
+ include/media/v4l2-async.h               |  2 +
+ 6 files changed, 124 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/media/i2c/lt6911uxc.c b/drivers/media/i2c/lt6911uxc.c
+index 61fd316a72f3..eb8ff5747100 100644
+--- a/drivers/media/i2c/lt6911uxc.c
++++ b/drivers/media/i2c/lt6911uxc.c
+@@ -95,7 +95,7 @@ struct lt6911uxc_mode {
+
+ struct lt6911uxc {
+ 	struct v4l2_subdev sd;
+-	struct media_pad pad;
++	struct media_pad pad[2];
+ 	struct v4l2_ctrl_handler ctrl_handler;
+
+ 	struct v4l2_ctrl *pixel_rate;
+@@ -635,8 +635,9 @@ static int lt6911uxc_probe(struct i2c_client *client)
+ 			       V4L2_SUBDEV_FL_HAS_EVENTS;
+ 	lt6911uxc->sd.entity.ops = &lt6911uxc_subdev_entity_ops;
+ 	lt6911uxc->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+-	lt6911uxc->pad.flags = MEDIA_PAD_FL_SOURCE;
+-	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 1, &lt6911uxc->pad);
++	lt6911uxc->pad[0].flags = MEDIA_PAD_FL_SOURCE;
++	lt6911uxc->pad[1].flags = MEDIA_PAD_FL_SOURCE;
++	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 2, lt6911uxc->pad);
+ 	if (ret) {
+ 		dev_err(&client->dev, "Init entity pads failed:%d\n", ret);
+ 		goto err_v4l2_ctrl_handler_free;
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index cfd5d89f4224..21fa05436c24 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -91,6 +91,11 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("INTC10B1", 0),
+ };
+
++static const struct ipu_sensor_config ipu_supported_sensors_dummy[] = {
++	/* Lontium lt6911uxc dummy port for split mode */
++	IPU_SENSOR_CONFIG("INTC10B1", 0),
++};
++
+ static const struct ipu_property_names prop_names = {
+ 	.clock_frequency = "clock-frequency",
+ 	.rotation = "rotation",
+@@ -319,6 +324,7 @@ int ipu_bridge_parse_ssdb(struct acpi_device *adev, struct ipu_sensor *sensor)
+ 	}
+
+ 	sensor->link = ssdb.link;
++	sensor->pprval = ssdb.pprval;
+ 	sensor->lanes = ssdb.lanes;
+ 	sensor->mclkspeed = ssdb.mclkspeed;
+ 	sensor->rotation = ipu_bridge_parse_rotation(adev, &ssdb);
+@@ -478,18 +484,49 @@ static void ipu_bridge_init_swnode_group(struct ipu_sensor *sensor)
+ 	}
+ }
+
++static struct ipu_sensor *find_real_sensor(struct ipu_bridge *bridge,
++					   struct acpi_device *adev)
++{
++	struct ipu_sensor *sensor;
++	unsigned int i;
++
++	for (i = 0; i < bridge->n_sensors; i++) {
++		sensor = &bridge->sensors[i];
++		if (sensor->adev == ACPI_PTR(acpi_dev_get(adev)))
++			return sensor;
++	}
++
++	return NULL;
++}
++
+ static void ipu_bridge_create_connection_swnodes(struct ipu_bridge *bridge,
+-						 struct ipu_sensor *sensor)
++						 struct ipu_sensor *sensor,
++						 bool dummy)
+ {
+ 	struct ipu_node_names *names = &sensor->node_names;
+ 	struct software_node *nodes = sensor->swnodes;
+
+ 	ipu_bridge_init_swnode_names(sensor);
+
+-	nodes[SWNODE_SENSOR_HID] = NODE_SENSOR(sensor->name,
+-					       sensor->dev_properties);
+-	nodes[SWNODE_SENSOR_PORT] = NODE_PORT(sensor->node_names.port,
+-					      &nodes[SWNODE_SENSOR_HID]);
++	if (dummy) {
++		struct ipu_sensor *real_sensor;
++
++		real_sensor = find_real_sensor(bridge, sensor->adev);
++		nodes[SWNODE_SENSOR_HID] =
++				real_sensor->swnodes[SWNODE_SENSOR_HID];
++		/* 1 for dummy port */
++		snprintf(sensor->node_names.port,
++				sizeof(sensor->node_names.port),
++				SWNODE_GRAPH_PORT_NAME_FMT, 1);
++		nodes[SWNODE_SENSOR_PORT] = NODE_PORT(sensor->node_names.port,
++				&real_sensor->swnodes[SWNODE_SENSOR_HID]);
++	} else {
++		nodes[SWNODE_SENSOR_HID] = NODE_SENSOR(sensor->name,
++				sensor->dev_properties);
++		nodes[SWNODE_SENSOR_PORT] = NODE_PORT(sensor->node_names.port,
++				&nodes[SWNODE_SENSOR_HID]);
++	}
++
+ 	nodes[SWNODE_SENSOR_ENDPOINT] = NODE_ENDPOINT(
+ 						sensor->node_names.endpoint,
+ 						&nodes[SWNODE_SENSOR_PORT],
+@@ -670,7 +707,7 @@ static void ipu_bridge_unregister_sensors(struct ipu_bridge *bridge)
+ }
+
+ static int ipu_bridge_connect_sensor(const struct ipu_sensor_config *cfg,
+-				     struct ipu_bridge *bridge)
++				     struct ipu_bridge *bridge, bool dummy)
+ {
+ 	struct fwnode_handle *fwnode, *primary;
+ 	struct ipu_sensor *sensor;
+@@ -697,31 +734,53 @@ static int ipu_bridge_connect_sensor(const struct ipu_sensor_config *cfg,
+ 		if (ret)
+ 			goto err_put_adev;
+
++		if (dummy) {
++			if (sensor->link == sensor->pprval) {
++				acpi_dev_put(adev);
++				continue;
++			} else {
++				dev_info(ADEV_DEV(adev),
++					 "dummy sensor, link %d, pprval %d\n",
++					 sensor->link, sensor->pprval);
++				sensor->link = sensor->pprval;
++			}
++		}
++
+ 		snprintf(sensor->name, sizeof(sensor->name), "%s-%u",
+ 			 cfg->hid, sensor->link);
+-
+ 		ret = ipu_bridge_check_ivsc_dev(sensor, adev);
+ 		if (ret)
+ 			goto err_put_adev;
+
+ 		ipu_bridge_create_fwnode_properties(sensor, bridge, cfg);
+-		ipu_bridge_create_connection_swnodes(bridge, sensor);
++		if (dummy) {
++			/* need adev to match the dummy port with the real one */
++			sensor->adev = adev;
++		}
++		ipu_bridge_create_connection_swnodes(bridge, sensor, dummy);
+
+-		ret = software_node_register_node_group(sensor->group);
++		if (dummy) {
++			ret = software_node_register_node_group(&sensor->group[1]);
++		} else {
++			ret = software_node_register_node_group(sensor->group);
++		}
+ 		if (ret)
+ 			goto err_put_ivsc;
+
++		if (!dummy) {
+ 		fwnode = software_node_fwnode(&sensor->swnodes[
+ 						      SWNODE_SENSOR_HID]);
+ 		if (!fwnode) {
+ 			ret = -ENODEV;
+ 			goto err_free_swnodes;
+ 		}
++		}
+
+ 		sensor->adev = ACPI_PTR(acpi_dev_get(adev));
+-
+-		primary = acpi_fwnode_handle(adev);
+-		primary->secondary = fwnode;
++		if (!dummy) {
++			primary = acpi_fwnode_handle(adev);
++			primary->secondary = fwnode;
++		}
+
+ 		ret = ipu_bridge_instantiate_ivsc(sensor);
+ 		if (ret)
+@@ -754,7 +813,16 @@ static int ipu_bridge_connect_sensors(struct ipu_bridge *bridge)
+ 		const struct ipu_sensor_config *cfg =
+ 			&ipu_supported_sensors[i];
+
+-		ret = ipu_bridge_connect_sensor(cfg, bridge);
++		ret = ipu_bridge_connect_sensor(cfg, bridge, 0);
++		if (ret)
++			goto err_unregister_sensors;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(ipu_supported_sensors_dummy); i++) {
++		const struct ipu_sensor_config *cfg =
++			&ipu_supported_sensors_dummy[i];
++
++		ret = ipu_bridge_connect_sensor(cfg, bridge, 1);
+ 		if (ret)
+ 			goto err_unregister_sensors;
+ 	}
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+index d210cda1fa36..37b0607e8e56 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+@@ -104,6 +104,7 @@ static int isys_isr_one(struct ipu6_bus_device *adev);
+ static int
+ isys_complete_ext_device_registration(struct ipu6_isys *isys,
+ 				      struct v4l2_subdev *sd,
++				      s16 src_pad,
+ 				      struct ipu6_isys_csi2_config *csi2)
+ {
+ 	struct device *dev = &isys->adev->auxdev.dev;
+@@ -121,6 +122,17 @@ isys_complete_ext_device_registration(struct ipu6_isys *isys,
+ 		goto unregister_subdev;
+ 	}
+
++	if (src_pad >= 0)
++		i = (unsigned int)src_pad;
++
++	if (sd->entity.pads[i].flags & MEDIA_PAD_FL_SOURCE) {
++		dev_info(dev, "src pad %d\n", src_pad);
++	} else {
++		dev_warn(dev, "src pad %d not for src\n", src_pad);
++		ret = -ENOENT;
++		goto unregister_subdev;
++	}
++
+ 	ret = media_create_pad_link(&sd->entity, i,
+ 				    &isys->csi2[csi2->port].asd.sd.entity,
+ 				    0, MEDIA_LNK_FL_ENABLED |
+@@ -692,7 +704,9 @@ static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
+
+ 	dev_dbg(&isys->adev->auxdev.dev, "bind %s nlanes is %d port is %d\n",
+ 		sd->name, s_asd->csi2.nlanes, s_asd->csi2.port);
+-	ret = isys_complete_ext_device_registration(isys, sd, &s_asd->csi2);
++	ret = isys_complete_ext_device_registration(isys, sd,
++						    asc->match.src_pad,
++						    &s_asd->csi2);
+ 	if (ret)
+ 		return ret;
+
+diff --git a/drivers/media/v4l2-core/v4l2-async.c b/drivers/media/v4l2-core/v4l2-async.c
+index ee884a8221fb..665e0e1a133a 100644
+--- a/drivers/media/v4l2-core/v4l2-async.c
++++ b/drivers/media/v4l2-core/v4l2-async.c
+@@ -123,6 +123,18 @@ match_fwnode_one(struct v4l2_async_notifier *notifier,
+ 		"v4l2-async: device--endpoint match %sfound\n",
+ 		ret ? "" : "not ");
+
++	if (ret) {
++		struct fwnode_endpoint fwnode_ep = { 0 };
++		int ret_ep;
++		ret_ep = fwnode_graph_parse_endpoint(match->fwnode, &fwnode_ep);
++		if (ret_ep >=0) {
++			match->src_pad = fwnode_ep.port;
++		} else {
++			match->src_pad = -1;
++		}
++
++	}
++
+ 	return ret;
+ }
+
+@@ -200,8 +212,10 @@ v4l2_async_find_match(struct v4l2_async_notifier *notifier,
+ 		}
+
+ 		/* match cannot be NULL here */
+-		if (match(notifier, sd, &asc->match))
++		if (match(notifier, sd, &asc->match)) {
++			asc->src_pad = asc->match.src_pad;
+ 			return asc;
++		}
+ 	}
+
+ 	return NULL;
+diff --git a/include/media/ipu-bridge.h b/include/media/ipu-bridge.h
+index 16fac765456e..176b55ab69c6 100644
+--- a/include/media/ipu-bridge.h
++++ b/include/media/ipu-bridge.h
+@@ -91,7 +91,12 @@ struct ipu_sensor_ssdb {
+ 	u8 controllogicid;
+ 	u8 reserved1[3];
+ 	u8 mclkport;
+-	u8 reserved2[13];
++	u8 pmicpos;
++	u8 voltagerail;
++	u8 pprval;
++	u8 pprunit;
++	u8 flashid;
++	u8 reserved2[8];
+ } __packed;
+
+ struct ipu_property_names {
+@@ -134,6 +139,7 @@ struct ipu_sensor {
+ 	struct ipu_node_names node_names;
+
+ 	u8 link;
++	u8 pprval;
+ 	u8 lanes;
+ 	u32 mclkspeed;
+ 	u32 rotation;
+diff --git a/include/media/v4l2-async.h b/include/media/v4l2-async.h
+index f26c323e9c96..3d1573a7bfab 100644
+--- a/include/media/v4l2-async.h
++++ b/include/media/v4l2-async.h
+@@ -59,6 +59,7 @@ struct v4l2_async_match_desc {
+ 			unsigned short address;
+ 		} i2c;
+ 	};
++	s16 src_pad;
+ };
+
+ /**
+@@ -82,6 +83,7 @@ struct v4l2_async_connection {
+ 	struct list_head asc_entry;
+ 	struct list_head asc_subdev_entry;
+ 	struct v4l2_subdev *sd;
++	s16 src_pad;
+ };
+
+ /**
+--
+2.34.1
+

@@ -61,8 +61,10 @@ There are 4 repositories:
         Such as 'kernel_patches/patch_6.11_mainline/README'.
 ```
 ### Build with dkms
+- Requires kernel header installed on build machine
+- For kernel >= v6.10, apply patch 'dkms_patch/0001-v6.10-IPU6-headers-used-by-PSYS.patch', refer to 'dkms.conf'.
+
 ```sh
-	Install kernel header src.
 	sudo dkms add .
 	sudo dkms build -m ipu6-drivers -v 0.0.1
 	sudo dkms autoinstall ipu6-drivers/0.0.1

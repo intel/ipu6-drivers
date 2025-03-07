@@ -17,8 +17,17 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0013-media-i2c-add-support-for-lt6911uxc.patch
        git am 0014-media-i2c-add-lt6911uxc-driver-and-enable-in-ipu-bridge.patch
 
+       git am 0014-media-i2c-update-lt6911uxc-driver-to-fix-COV-issue.patch
+       git am 0015-lt6911-2-pads-linked-to-ipu-2-ports-for-split-mode.patch
+       git am 0016-media-i2c-add-dv_timings-api-in-lt6911uxe_for_ecg_kernel.patch
+       git am 0017-media-intel-ipu6-use-vc1-dma-for-MTL-and-ARL.patch
+       git am 0018-some-changes-in-lt6911uxe.patch
+
     b. for PSYS driver (the patch be integrated in NEX kernel 6.12):
        git am 0001-media-pci-intel-psys-driver.patch
+
+       git am 0002-media-pci-update-IPU6-PSYS-driver.patch
+
        echo "obj-\$(CONFIG_VIDEO_INTEL_IPU6)  += psys/" >> ./drivers/media/pci/intel/ipu6/Makefile
 
     c. for USB device need to apply below 2 patches, they are merged to kernel 6.13.
