@@ -21,6 +21,8 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0015-lt6911-2-pads-linked-to-ipu-2-ports-for-split-mode.patch
        git am 0016-media-i2c-add-dv_timings-api-in-lt6911uxe_for_ecg_kernel.patch
        git am 0018-some-changes-in-lt6911uxe.patch
+       git am 0019-media-i2c-update-format-in-irq-for-lt6911uxe.patch
+       git am 0020-media-i2c-remove-unused-func-in-lt6911uxe.patch
 
     b. for PSYS driver (the patch be integrated in NEX kernel 6.12):
        git am 0001-media-pci-intel-psys-driver.patch
