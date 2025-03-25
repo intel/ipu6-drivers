@@ -1,0 +1,49 @@
+From b882acf1d8def194dc96f3c9ea96b29455b7ca76 Mon Sep 17 00:00:00 2001
+From: Dongcheng Yan <dongcheng.yan@intel.com>
+Date: Wed, 19 Mar 2025 10:53:53 +0800
+Subject: [PATCH] media: i2c: remove unused func in lt6911uxe
+
+restore ".reserved = { 0 }" for compatibility with CLANG
+
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+---
+ drivers/media/i2c/lt6911uxe.c | 16 ++--------------
+ 1 file changed, 2 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/media/i2c/lt6911uxe.c b/drivers/media/i2c/lt6911uxe.c
+index d874febfdd9b..87258af399a0 100644
+--- a/drivers/media/i2c/lt6911uxe.c
++++ b/drivers/media/i2c/lt6911uxe.c
+@@ -42,6 +42,8 @@
+
+ static const struct v4l2_dv_timings_cap lt6911uxe_timings_cap_4kp30 = {
+ 	.type = V4L2_DV_BT_656_1120,
++	/* keep this initialization for compatibility with CLANG */
++	.reserved = { 0 },
+ 	/* Pixel clock from REF_01 p. 20. Min/max height/width are unknown */
+ 	V4L2_INIT_BT_TIMINGS(160, 3840,			/* min/max width */
+ 			     120, 2160,			/* min/max height */
+@@ -411,20 +413,6 @@ static int lt6911uxe_set_format(struct v4l2_subdev *sd,
+ 	return 0;
+ }
+
+-static int lt6911uxe_get_format(struct v4l2_subdev *sd,
+-				struct v4l2_subdev_state *sd_state,
+-				struct v4l2_subdev_format *fmt)
+-{
+-	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
+-
+-	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+-		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
+-	else
+-		lt6911uxe_update_pad_format(&lt6911uxe->cur_mode, &fmt->format);
+-
+-	return 0;
+-}
+-
+ static int lt6911uxe_enum_mbus_code(struct v4l2_subdev *sd,
+ 				    struct v4l2_subdev_state *sd_state,
+ 				    struct v4l2_subdev_mbus_code_enum *code)
+--
+2.34.1
+
