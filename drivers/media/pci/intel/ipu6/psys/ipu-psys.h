@@ -10,7 +10,6 @@
 #include <linux/version.h>
 #include "ipu6.h"
 #include "ipu6-bus.h"
-#include "ipu6-dma.h"
 #include "ipu-fw-psys.h"
 #include "ipu-platform-psys.h"
 
