@@ -15,13 +15,22 @@
 #include <linux/pm_runtime.h>
 #include <linux/version.h>
 #include <linux/poll.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+#include <linux/sched.h>
+#else
 #include <uapi/linux/sched/types.h>
+#endif
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+#include <linux/dma-attrs.h>
+#else
 #include <linux/dma-mapping.h>
+#endif
 
 #include <uapi/linux/ipu-psys.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #include "ipu.h"
 #include "ipu-mmu.h"
 #include "ipu-bus.h"
@@ -33,11 +42,26 @@
 #include "ipu-platform-psys.h"
 #include "ipu-platform-regs.h"
 #include "ipu-fw-com.h"
+#else
+#include "ipu6.h"
+#include "ipu6-mmu.h"
+#include "ipu6-bus.h"
+#include "ipu6-buttress.h"
+#include "ipu6-cpd.h"
+#include "ipu-fw-psys.h"
+#include "ipu-psys.h"
+#include "ipu6-platform-regs.h"
+#include "ipu6-fw-com.h"
+#endif
 
 static bool async_fw_init;
 module_param(async_fw_init, bool, 0664);
 MODULE_PARM_DESC(async_fw_init, "Enable asynchronous firmware initialization");
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#define SYSCOM_BUTTRESS_FW_PARAMS_PSYS_OFFSET	7
+
+#endif
 #define IPU_PSYS_NUM_DEVICES		4
 
 #define IPU_PSYS_MAX_NUM_DESCS		1024
@@ -56,11 +80,53 @@ static struct fw_init_task {
 	struct ipu_psys *psys;
 } fw_init_task;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static void ipu_psys_remove(struct ipu_bus_device *adev);
+#else
+static void ipu6_psys_remove(struct auxiliary_device *auxdev);
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static struct bus_type ipu_psys_bus = {
 	.name = IPU_PSYS_NAME,
 };
+#else
+static const struct bus_type ipu_psys_bus = {
+	.name = "intel-ipu6-psys",
+};
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#define PKG_DIR_ENT_LEN_FOR_PSYS	2
+#define PKG_DIR_SIZE_MASK_FOR_PSYS	GENMASK(23, 0)
+
+enum ipu6_version ipu_ver;
+
+static u32 ipu6_cpd_pkg_dir_get_address(const u64 *pkg_dir, int pkg_dir_idx)
+{
+	return pkg_dir[++pkg_dir_idx * PKG_DIR_ENT_LEN_FOR_PSYS];
+}
+
+static u32 ipu6_cpd_pkg_dir_get_num_entries(const u64 *pkg_dir)
+{
+	return pkg_dir[1];
+}
+
+static u32 ipu6_cpd_pkg_dir_get_size(const u64 *pkg_dir, int pkg_dir_idx)
+{
+	return pkg_dir[++pkg_dir_idx * PKG_DIR_ENT_LEN_FOR_PSYS + 1] &
+	       PKG_DIR_SIZE_MASK_FOR_PSYS;
+}
+
+#define PKG_DIR_ID_SHIFT		48
+#define PKG_DIR_ID_MASK			0x7f
+
+static u32 ipu6_cpd_pkg_dir_get_type(const u64 *pkg_dir, int pkg_dir_idx)
+{
+	return pkg_dir[++pkg_dir_idx * PKG_DIR_ENT_LEN_FOR_PSYS + 1] >>
+	    PKG_DIR_ID_SHIFT & PKG_DIR_ID_MASK;
+}
+
+#endif
 /*
  * These are some trivial wrappers that save us from open-coding some
  * common patterns and also that's were we have some checking (for the
@@ -138,6 +204,9 @@ static struct ipu_psys_desc *ipu_psys_desc_alloc(int fd)
 
 struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+	struct device *dev = &psys->adev->auxdev.dev;
+#endif
 	struct ipu_psys_pg *kpg;
 	unsigned long flags;
 
@@ -155,8 +224,16 @@ struct ipu_psys_pg *__get_pg_buf(struct ipu_psys *psys, size_t pg_size)
 	if (!kpg)
 		return NULL;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	kpg->pg = dma_alloc_attrs(&psys->adev->dev, pg_size,
 				  &kpg->pg_dma_addr, GFP_KERNEL, 0);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+	kpg->pg = dma_alloc_attrs(dev, pg_size,  &kpg->pg_dma_addr,
+				  GFP_KERNEL, 0);
+#else
+	kpg->pg = ipu6_dma_alloc(psys->adev, pg_size,  &kpg->pg_dma_addr,
+				 GFP_KERNEL, 0);
+#endif
 	if (!kpg->pg) {
 		kfree(kpg);
 		return NULL;
@@ -249,6 +326,7 @@ ipu_psys_lookup_kbuffer_by_kaddr(struct ipu_psys_fh *fh, void *kaddr)
 	return NULL;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 {
 	struct vm_area_struct *vma;
@@ -279,7 +357,11 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 	if (!pages)
 		goto free_sgt;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	down_read(&current->mm->mmap_sem);
+#else
 	mmap_read_lock(current->mm);
+#endif
 	vma = find_vma(current->mm, start);
 	if (!vma) {
 		ret = -EFAULT;
@@ -312,13 +394,28 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 			pages[nr] = pfn_to_page(pfn);
 		}
 	} else {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+		nr = get_user_pages(current, current->mm, start & PAGE_MASK,
+				    npages, 1, 0, pages, NULL);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+		nr = get_user_pages(start & PAGE_MASK, npages,
+				    1, 0, pages, NULL);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
 		nr = get_user_pages(start & PAGE_MASK, npages,
 				    FOLL_WRITE,
 				    pages, NULL);
+#else
+		nr = get_user_pages(start & PAGE_MASK, npages,
+				    FOLL_WRITE, pages);
+#endif
 		if (nr < npages)
 			goto error_up_read;
 	}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	up_read(&current->mm->mmap_sem);
+#else
 	mmap_read_unlock(current->mm);
+#endif
 
 	attach->pages = pages;
 	attach->npages = npages;
@@ -335,7 +432,11 @@ skip_pages:
 	return 0;
 
 error_up_read:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	up_read(&current->mm->mmap_sem);
+#else
 	mmap_read_unlock(current->mm);
+#endif
 error:
 	if (!attach->vma_is_io)
 		while (nr > 0)
@@ -373,9 +474,95 @@ static void ipu_psys_put_userpages(struct ipu_dma_buf_attach *attach)
 	kfree(attach->sgt);
 	attach->sgt = NULL;
 }
+#else
+static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
+{
+	struct vm_area_struct *vma;
+	unsigned long start, end;
+	int npages, array_size;
+	struct page **pages;
+	struct sg_table *sgt;
+	int ret = -ENOMEM;
+	int nr = 0;
+	u32 flags;
 
+	start = attach->userptr;
+	end = PAGE_ALIGN(start + attach->len);
+	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
+	array_size = npages * sizeof(struct page *);
+
+	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
+	if (!sgt)
+		return -ENOMEM;
+
+	WARN_ON_ONCE(attach->npages);
+
+	pages = kvzalloc(array_size, GFP_KERNEL);
+	if (!pages)
+		goto free_sgt;
+
+	mmap_read_lock(current->mm);
+	vma = vma_lookup(current->mm, start);
+	if (unlikely(!vma)) {
+		ret = -EFAULT;
+		goto error_up_read;
+	}
+	mmap_read_unlock(current->mm);
+
+	flags = FOLL_WRITE | FOLL_FORCE | FOLL_LONGTERM;
+	nr = pin_user_pages_fast(start & PAGE_MASK, npages,
+				 flags, pages);
+	if (nr < npages)
+		goto error;
+
+	attach->pages = pages;
+	attach->npages = npages;
+
+	ret = sg_alloc_table_from_pages(sgt, pages, npages,
+					start & ~PAGE_MASK, attach->len,
+					GFP_KERNEL);
+	if (ret < 0)
+		goto error;
+
+	attach->sgt = sgt;
+
+	return 0;
+
+error_up_read:
+	mmap_read_unlock(current->mm);
+error:
+	if (nr)
+		unpin_user_pages(pages, nr);
+	kvfree(pages);
+free_sgt:
+	kfree(sgt);
+
+	pr_err("failed to get userpages:%d\n", ret);
+
+	return ret;
+}
+
+static void ipu_psys_put_userpages(struct ipu_dma_buf_attach *attach)
+{
+	if (!attach || !attach->userptr || !attach->sgt)
+		return;
+
+	unpin_user_pages(attach->pages, attach->npages);
+	kvfree(attach->pages);
+
+	sg_free_table(attach->sgt);
+	kfree(attach->sgt);
+	attach->sgt = NULL;
+}
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 static int ipu_dma_buf_attach(struct dma_buf *dbuf,
 			      struct dma_buf_attachment *attach)
+#else
+static int ipu_dma_buf_attach(struct dma_buf *dbuf, struct device *dev,
+			      struct dma_buf_attachment *attach)
+#endif
 {
 	struct ipu_psys_kbuffer *kbuf = dbuf->priv;
 	struct ipu_dma_buf_attach *ipu_attach;
@@ -385,6 +572,9 @@ static int ipu_dma_buf_attach(struct dma_buf *dbuf,
 	if (!ipu_attach)
 		return -ENOMEM;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+	ipu_attach->dev = dev;
+#endif
 	ipu_attach->len = kbuf->len;
 	ipu_attach->userptr = kbuf->userptr;
 
@@ -412,9 +602,37 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 					enum dma_data_direction dir)
 {
 	struct ipu_dma_buf_attach *ipu_attach = attach->priv;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	DEFINE_DMA_ATTRS(attrs);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	struct pci_dev *pdev = to_pci_dev(attach->dev);
+	struct ipu6_device *isp = pci_get_drvdata(pdev);
+	struct ipu6_bus_device *adev = isp->psys;
+#endif
 	unsigned long attrs;
 	int ret;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
+	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
+			       ipu_attach->sgt->orig_nents, dir, &attrs);
+	if (!ret) {
+		dev_dbg(attach->dev, "buf map failed\n");
+
+		return ERR_PTR(-EIO);
+	}
+	ipu_attach->sgt->nents = ret;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	ret = dma_map_sg_attrs(attach->dev, ipu_attach->sgt->sgl,
+			       ipu_attach->sgt->orig_nents, dir, attrs);
+	if (!ret) {
+		dev_dbg(attach->dev, "buf map failed\n");
+
+		return ERR_PTR(-EIO);
+	}
+	ipu_attach->sgt->nents = ret;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 	attrs = DMA_ATTR_SKIP_CPU_SYNC;
 	ret = dma_map_sgtable(attach->dev, ipu_attach->sgt, dir, attrs);
 	if (ret < 0) {
@@ -422,13 +640,33 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 
 		return ERR_PTR(-EIO);
 	}
+#else
+	attrs = DMA_ATTR_SKIP_CPU_SYNC;
+	ret = dma_map_sgtable(&pdev->dev, ipu_attach->sgt, dir, attrs);
+	if (ret) {
+		dev_err(attach->dev, "pci buf map failed\n");
+		return ERR_PTR(-EIO);
+	}
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 	/*
 	 * Initial cache flush to avoid writing dirty pages for buffers which
 	 * are later marked as IPU_BUFFER_FLAG_NO_FLUSH.
 	 */
 	dma_sync_sg_for_device(attach->dev, ipu_attach->sgt->sgl,
 			       ipu_attach->sgt->orig_nents, DMA_BIDIRECTIONAL);
+#else
+	dma_sync_sgtable_for_device(&pdev->dev, ipu_attach->sgt, dir);
+
+	ret = ipu6_dma_map_sgtable(adev, ipu_attach->sgt, dir, 0);
+	if (ret) {
+		dev_err(attach->dev, "ipu6 buf map failed\n");
+		return ERR_PTR(-EIO);
+	}
+
+	ipu6_dma_sync_sgtable(adev, ipu_attach->sgt);
+#endif
 
 	return ipu_attach->sgt;
 }
@@ -436,14 +674,33 @@ static struct sg_table *ipu_dma_buf_map(struct dma_buf_attachment *attach,
 static void ipu_dma_buf_unmap(struct dma_buf_attachment *attach,
 			      struct sg_table *sgt, enum dma_data_direction dir)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	struct pci_dev *pdev = to_pci_dev(attach->dev);
+	struct ipu6_device *isp = pci_get_drvdata(pdev);
+	struct ipu6_bus_device *adev = isp->psys;
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+	dma_unmap_sg(attach->dev, sgt->sgl, sgt->orig_nents, dir);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	ipu6_dma_unmap_sgtable(adev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
+	dma_unmap_sgtable(&pdev->dev, sgt, dir, 0);
+#else
 	dma_unmap_sgtable(attach->dev, sgt, dir, DMA_ATTR_SKIP_CPU_SYNC);
+#endif
 }
 
 static int ipu_dma_buf_mmap(struct dma_buf *dbuf, struct vm_area_struct *vma)
 {
 	return -ENOTTY;
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+static void *ipu_dma_buf_kmap_atomic(struct dma_buf *dbuf, unsigned long pgnum)
+{
+	return NULL;
+}
+#endif
 
 static void ipu_dma_buf_release(struct dma_buf *buf)
 {
@@ -459,11 +716,16 @@ static void ipu_dma_buf_release(struct dma_buf *buf)
 }
 
 static int ipu_dma_buf_begin_cpu_access(struct dma_buf *dma_buf,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+					size_t start, size_t len,
+#endif
 					enum dma_data_direction dir)
 {
 	return -ENOTTY;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
+	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct iosys_map *map)
 {
 	struct dma_buf_attachment *attach;
@@ -486,7 +748,56 @@ static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct iosys_map *map)
 
 	return 0;
 }
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+static int ipu_dma_buf_vmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
+{
+	struct dma_buf_attachment *attach;
+	struct ipu_dma_buf_attach *ipu_attach;
 
+	if (list_empty(&dmabuf->attachments))
+		return -EINVAL;
+
+	attach = list_last_entry(&dmabuf->attachments,
+				 struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (!ipu_attach || !ipu_attach->pages || !ipu_attach->npages)
+		return -EINVAL;
+
+	map->vaddr = vm_map_ram(ipu_attach->pages, ipu_attach->npages, 0);
+	map->is_iomem = false;
+	if (!map->vaddr)
+		return -EINVAL;
+
+	return 0;
+}
+#else
+static void *ipu_dma_buf_vmap(struct dma_buf *dmabuf)
+{
+	struct dma_buf_attachment *attach;
+	struct ipu_dma_buf_attach *ipu_attach;
+
+	if (list_empty(&dmabuf->attachments))
+		return NULL;
+
+	attach = list_last_entry(&dmabuf->attachments,
+				 struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (!ipu_attach || !ipu_attach->pages || !ipu_attach->npages)
+		return NULL;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+	return vm_map_ram(ipu_attach->pages,
+			  ipu_attach->npages, 0, PAGE_KERNEL);
+#else
+	return vm_map_ram(ipu_attach->pages, ipu_attach->npages, 0);
+#endif
+}
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
+	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
 {
 	struct dma_buf_attachment *attach;
@@ -504,14 +815,62 @@ static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
 
 	vm_unmap_ram(map->vaddr, ipu_attach->npages);
 }
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, struct dma_buf_map *map)
+{
+	struct dma_buf_attachment *attach;
+	struct ipu_dma_buf_attach *ipu_attach;
 
+	if (WARN_ON(list_empty(&dmabuf->attachments)))
+		return;
+
+	attach = list_last_entry(&dmabuf->attachments,
+				 struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (WARN_ON(!ipu_attach || !ipu_attach->pages || !ipu_attach->npages))
+		return;
+
+	vm_unmap_ram(map->vaddr, ipu_attach->npages);
+}
+#else
+static void ipu_dma_buf_vunmap(struct dma_buf *dmabuf, void *vaddr)
+{
+	struct dma_buf_attachment *attach;
+	struct ipu_dma_buf_attach *ipu_attach;
+
+	if (WARN_ON(list_empty(&dmabuf->attachments)))
+		return;
+
+	attach = list_last_entry(&dmabuf->attachments,
+				 struct dma_buf_attachment, node);
+	ipu_attach = attach->priv;
+
+	if (WARN_ON(!ipu_attach || !ipu_attach->pages || !ipu_attach->npages))
+		return;
+
+	vm_unmap_ram(vaddr, ipu_attach->npages);
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 struct dma_buf_ops ipu_dma_buf_ops = {
+#else
+static const struct dma_buf_ops ipu_dma_buf_ops = {
+#endif
 	.attach = ipu_dma_buf_attach,
 	.detach = ipu_dma_buf_detach,
 	.map_dma_buf = ipu_dma_buf_map,
 	.unmap_dma_buf = ipu_dma_buf_unmap,
 	.release = ipu_dma_buf_release,
 	.begin_cpu_access = ipu_dma_buf_begin_cpu_access,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+	.kmap = ipu_dma_buf_kmap,
+	.kmap_atomic = ipu_dma_buf_kmap_atomic,
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+	.map_atomic = ipu_dma_buf_kmap_atomic,
+#endif
 	.mmap = ipu_dma_buf_mmap,
 	.vmap = ipu_dma_buf_vmap,
 	.vunmap = ipu_dma_buf_vunmap,
@@ -520,13 +879,17 @@ struct dma_buf_ops ipu_dma_buf_ops = {
 static int ipu_psys_open(struct inode *inode, struct file *file)
 {
 	struct ipu_psys *psys = inode_to_ipu_psys(inode);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct ipu_device *isp = psys->adev->isp;
+#endif
 	struct ipu_psys_fh *fh;
 	int rval;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	if (isp->flr_done)
 		return -EIO;
 
+#endif
 	fh = kzalloc(sizeof(*fh), GFP_KERNEL);
 	if (!fh)
 		return -ENOMEM;
@@ -557,23 +920,61 @@ open_failed:
 	return rval;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 static inline void ipu_psys_kbuf_unmap(struct ipu_psys_kbuffer *kbuf)
+#else
+static inline void ipu_psys_kbuf_unmap(struct ipu_psys_fh *fh,
+				       struct ipu_psys_kbuffer *kbuf)
+#endif
 {
 	if (!kbuf)
 		return;
 
 	kbuf->valid = false;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) \
+	|| LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 	if (kbuf->kaddr) {
 		struct iosys_map dmap;
 
 		iosys_map_set_vaddr(&dmap, kbuf->kaddr);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 255)
+		dma_buf_vunmap_unlocked(kbuf->dbuf, &dmap);
+#else
 		dma_buf_vunmap(kbuf->dbuf, &dmap);
+#endif
 	}
 
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+	if (kbuf->kaddr) {
+		struct dma_buf_map dmap;
+
+		dma_buf_map_set_vaddr(&dmap, kbuf->kaddr);
+		dma_buf_vunmap(kbuf->dbuf, &dmap);
+	}
+#else
+	if (kbuf->kaddr)
+		dma_buf_vunmap(kbuf->dbuf, kbuf->kaddr);
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 255) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+	if (!IS_ERR_OR_NULL(kbuf->sgt))
+		dma_buf_unmap_attachment_unlocked(kbuf->db_attach,
+						  kbuf->sgt,
+						  DMA_BIDIRECTIONAL);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	if (!kbuf->userptr)
+		ipu6_dma_unmap_sgtable(fh->psys->adev, kbuf->sgt,
+				       DMA_BIDIRECTIONAL, 0);
+
+	if (!IS_ERR_OR_NULL(kbuf->sgt))
+		dma_buf_unmap_attachment_unlocked(kbuf->db_attach,
+						  kbuf->sgt,
+						  DMA_BIDIRECTIONAL);
+#else
 	if (kbuf->sgt)
 		dma_buf_unmap_attachment(kbuf->db_attach,
 					 kbuf->sgt,
 					 DMA_BIDIRECTIONAL);
+#endif
 	if (!IS_ERR_OR_NULL(kbuf->db_attach))
 		dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
 	dma_buf_put(kbuf->dbuf);
@@ -587,7 +988,11 @@ static void __ipu_psys_unmapbuf(struct ipu_psys_fh *fh,
 				struct ipu_psys_kbuffer *kbuf)
 {
 	/* From now on it is not safe to use this kbuffer */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 	ipu_psys_kbuf_unmap(kbuf);
+#else
+	ipu_psys_kbuf_unmap(fh, kbuf);
+#endif
 	ipu_buffer_del(fh, kbuf);
 	if (!kbuf->userptr)
 		kfree(kbuf);
@@ -596,12 +1001,19 @@ static void __ipu_psys_unmapbuf(struct ipu_psys_fh *fh,
 static int ipu_psys_unmapbuf_locked(int fd, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys *psys = fh->psys;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	struct device *dev = &psys->adev->auxdev.dev;
+#endif
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys_desc *desc;
 
 	desc = psys_desc_lookup(fh, fd);
 	if (WARN_ON_ONCE(!desc)) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_err(&psys->adev->dev, "descriptor not found: %d\n", fd);
+#else
+		dev_err(dev, "descriptor not found: %d\n", fd);
+#endif
 		return -EINVAL;
 	}
 
@@ -611,7 +1023,11 @@ static int ipu_psys_unmapbuf_locked(int fd, struct ipu_psys_fh *fh)
 	kfree(desc);
 
 	if (WARN_ON_ONCE(!kbuf || !kbuf->dbuf)) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_err(&psys->adev->dev,
+#else
+		dev_err(dev,
+#endif
 			"descriptor with no buffer: %d\n", fd);
 		return -EINVAL;
 	}
@@ -666,7 +1082,11 @@ static int ipu_psys_release(struct inode *inode, struct file *file)
 
 		/* Unmap and release buffers */
 		if (kbuf->dbuf && db_attach) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 			ipu_psys_kbuf_unmap(kbuf);
+#else
+			ipu_psys_kbuf_unmap(fh, kbuf);
+#endif
 		} else {
 			if (db_attach)
 				ipu_psys_put_userpages(db_attach->priv);
@@ -695,14 +1115,20 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys *psys = fh->psys;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	struct device *dev = &psys->adev->auxdev.dev;
+#endif
 	struct ipu_psys_desc *desc;
-
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 	struct dma_buf *dbuf;
 	int ret;
 
 	if (!buf->base.userptr) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_err(&psys->adev->dev, "Buffer allocation not supported\n");
+#else
+		dev_err(dev, "Buffer allocation not supported\n");
+#endif
 		return -EINVAL;
 	}
 
@@ -749,7 +1175,11 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 	ipu_buffer_add(fh, kbuf);
 	mutex_unlock(&fh->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	dev_dbg(&psys->adev->dev, "IOC_GETBUF: userptr %p size %llu to fd %d",
+#else
+	dev_dbg(dev, "IOC_GETBUF: userptr %p size %llu to fd %d",
+#endif
 		buf->base.userptr, buf->len, buf->base.fd);
 
 	return 0;
@@ -779,10 +1209,22 @@ static void ipu_psys_kbuffer_lru(struct ipu_psys_fh *fh,
 struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys *psys = fh->psys;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	struct device *dev = &psys->adev->isp->pdev->dev;
+	int ret;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	struct device *dev = &psys->adev->auxdev.dev;
+#endif
 	struct ipu_psys_kbuffer *kbuf;
 	struct ipu_psys_desc *desc;
 	struct dma_buf *dbuf;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || \
+	LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 255) || \
+	LINUX_VERSION_CODE == KERNEL_VERSION(5, 15, 71)
 	struct iosys_map dmap;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+	struct dma_buf_map dmap;
+#endif
 
 	dbuf = dma_buf_get(fd);
 	if (IS_ERR(dbuf))
@@ -822,7 +1264,11 @@ struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
 	desc->kbuf = kbuf;
 
 	if (kbuf->sgt) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_dbg(&psys->adev->dev, "fd %d has been mapped!\n", fd);
+#else
+		dev_dbg(dev, "fd %d has been mapped!\n", fd);
+#endif
 		dma_buf_put(dbuf);
 		goto mapbuf_end;
 	}
@@ -832,37 +1278,113 @@ struct ipu_psys_kbuffer *ipu_psys_mapbuf_locked(int fd, struct ipu_psys_fh *fh)
 	if (kbuf->len == 0)
 		kbuf->len = kbuf->dbuf->size;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	kbuf->db_attach = dma_buf_attach(kbuf->dbuf, &psys->adev->dev);
 	if (IS_ERR(kbuf->db_attach)) {
 		dev_dbg(&psys->adev->dev, "dma buf attach failed\n");
 		goto kbuf_map_fail;
 	}
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+	kbuf->db_attach = dma_buf_attach(kbuf->dbuf, dev);
+	if (IS_ERR(kbuf->db_attach)) {
+		dev_dbg(dev, "dma buf attach failed\n");
+		goto kbuf_map_fail;
+	}
+#else
+	kbuf->db_attach = dma_buf_attach(kbuf->dbuf, dev);
+	if (IS_ERR(kbuf->db_attach)) {
+		dev_dbg(dev, "dma buf attach failed\n");
+		goto attach_fail;
+	}
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 255)
+	kbuf->sgt = dma_buf_map_attachment_unlocked(kbuf->db_attach,
+						    DMA_BIDIRECTIONAL);
+#else
 	kbuf->sgt = dma_buf_map_attachment(kbuf->db_attach, DMA_BIDIRECTIONAL);
+#endif
 	if (IS_ERR_OR_NULL(kbuf->sgt)) {
 		kbuf->sgt = NULL;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_dbg(&psys->adev->dev, "dma buf map attachment failed\n");
+#else
+		dev_dbg(dev, "dma buf map attachment failed\n");
+#endif
 		goto kbuf_map_fail;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	if (!kbuf->userptr) {
+		ret = ipu6_dma_map_sgtable(psys->adev, kbuf->sgt,
+					   DMA_BIDIRECTIONAL, 0);
+		if (ret) {
+			dev_dbg(dev, "ipu6 buf map failed\n");
+			goto kbuf_map_fail;
+		}
+	}
+#endif
+
 	kbuf->dma_addr = sg_dma_address(kbuf->sgt->sgl);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE != KERNEL_VERSION(5, 10, 46)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 255)
+	dmap.is_iomem = false;
+	if (dma_buf_vmap_unlocked(kbuf->dbuf, &dmap)) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
+#else
+		dev_dbg(dev, "dma buf vmap failed\n");
+#endif
+		goto kbuf_map_fail;
+	}
+#else
 	if (dma_buf_vmap(kbuf->dbuf, &dmap)) {
 		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
 		goto kbuf_map_fail;
 	}
+#endif
 	kbuf->kaddr = dmap.vaddr;
+#else
+	kbuf->kaddr = dma_buf_vmap(kbuf->dbuf);
+	if (!kbuf->kaddr) {
+		dev_dbg(&psys->adev->dev, "dma buf vmap failed\n");
+		goto kbuf_map_fail;
+	}
+#endif
 
 mapbuf_end:
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	dev_dbg(&psys->adev->dev, "%s kbuf %p fd %d with len %llu mapped\n",
 		__func__, kbuf, fd, kbuf->len);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+	dev_dbg(dev, "%s kbuf %p fd %d with len %llu mapped\n",
+		__func__, kbuf, fd, kbuf->len);
+#else
+	dev_dbg(dev, "%s %s kbuf %p fd %d with len %llu mapped\n",
+		__func__, kbuf->userptr ? "private" : "imported", kbuf, fd,
+		kbuf->len);
+#endif
 
 	kbuf->valid = true;
 	return kbuf;
 
 kbuf_map_fail:
 	ipu_buffer_del(fh, kbuf);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
 	ipu_psys_kbuf_unmap(kbuf);
+#else
+	if (!IS_ERR_OR_NULL(kbuf->sgt)) {
+		if (!kbuf->userptr)
+			ipu6_dma_unmap_sgtable(psys->adev, kbuf->sgt,
+					       DMA_BIDIRECTIONAL, 0);
+		dma_buf_unmap_attachment_unlocked(kbuf->db_attach, kbuf->sgt,
+						  DMA_BIDIRECTIONAL);
+	}
+	dma_buf_detach(kbuf->dbuf, kbuf->db_attach);
+attach_fail:
+	ipu_buffer_del(fh, kbuf);
+#endif
 	dbuf = ERR_PTR(-EINVAL);
 	if (!kbuf->userptr)
 		kfree(kbuf);
@@ -881,7 +1403,11 @@ static long ipu_psys_mapbuf(int fd, struct ipu_psys_fh *fh)
 {
 	struct ipu_psys_kbuffer *kbuf;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	dev_dbg(&fh->psys->adev->dev, "IOC_MAPBUF\n");
+#else
+	dev_dbg(&fh->psys->adev->auxdev.dev, "IOC_MAPBUF\n");
+#endif
 
 	mutex_lock(&fh->mutex);
 	kbuf = ipu_psys_mapbuf_locked(fd, fh);
@@ -892,7 +1418,11 @@ static long ipu_psys_mapbuf(int fd, struct ipu_psys_fh *fh)
 
 static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct device *dev = &fh->psys->adev->dev;
+#else
+	struct device *dev = &fh->psys->adev->auxdev.dev;
+#endif
 	long ret;
 
 	dev_dbg(dev, "IOC_UNMAPBUF\n");
@@ -904,6 +1434,7 @@ static long ipu_psys_unmapbuf(int fd, struct ipu_psys_fh *fh)
 	return ret;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static unsigned int ipu_psys_poll(struct file *file,
 				  struct poll_table_struct *wait)
 {
@@ -922,20 +1453,53 @@ static unsigned int ipu_psys_poll(struct file *file,
 
 	return res;
 }
+#else
+static __poll_t ipu_psys_poll(struct file *file,
+			      struct poll_table_struct *wait)
+{
+	struct ipu_psys_fh *fh = file->private_data;
+	struct ipu_psys *psys = fh->psys;
+	struct device *dev = &psys->adev->auxdev.dev;
+	__poll_t ret = 0;
+
+	dev_dbg(dev, "ipu psys poll\n");
+
+	poll_wait(file, &fh->wait, wait);
+
+	if (ipu_get_completed_kcmd(fh))
+		ret = POLLIN;
+
+	dev_dbg(dev, "ipu psys poll ret %u\n", ret);
+
+	return ret;
+}
+#endif
 
 static long ipu_get_manifest(struct ipu_psys_manifest *manifest,
 			     struct ipu_psys_fh *fh)
 {
 	struct ipu_psys *psys = fh->psys;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct ipu_device *isp = psys->adev->isp;
 	struct ipu_cpd_client_pkg_hdr *client_pkg;
+#else
+	struct device *dev = &psys->adev->auxdev.dev;
+	struct ipu6_bus_device *adev = psys->adev;
+	struct ipu6_device *isp = adev->isp;
+	struct ipu6_cpd_client_pkg_hdr *client_pkg;
+#endif
 	u32 entries;
 	void *host_fw_data;
 	dma_addr_t dma_fw_data;
 	u32 client_pkg_offset;
 
 	host_fw_data = (void *)isp->cpd_fw->data;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	dma_fw_data = sg_dma_address(psys->fw_sgt.sgl);
+#else
+	dma_fw_data = sg_dma_address(adev->fw_sgt.sgl);
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	entries = ipu_cpd_pkg_dir_get_num_entries(psys->pkg_dir);
 	if (!manifest || manifest->index > entries - 1) {
 		dev_err(&psys->adev->dev, "invalid argument\n");
@@ -951,6 +1515,23 @@ static long ipu_get_manifest(struct ipu_psys_manifest *manifest,
 
 	client_pkg_offset = ipu_cpd_pkg_dir_get_address(psys->pkg_dir,
 							manifest->index);
+#else
+	entries = ipu6_cpd_pkg_dir_get_num_entries(adev->pkg_dir);
+	if (!manifest || manifest->index > entries - 1) {
+		dev_err(dev, "invalid argument\n");
+		return -EINVAL;
+	}
+
+	if (!ipu6_cpd_pkg_dir_get_size(adev->pkg_dir, manifest->index) ||
+	    ipu6_cpd_pkg_dir_get_type(adev->pkg_dir, manifest->index) <
+	    IPU6_CPD_PKG_DIR_CLIENT_PG_TYPE) {
+		dev_dbg(dev, "invalid pkg dir entry\n");
+		return -ENOENT;
+	}
+
+	client_pkg_offset = ipu6_cpd_pkg_dir_get_address(adev->pkg_dir,
+							 manifest->index);
+#endif
 	client_pkg_offset -= dma_fw_data;
 
 	client_pkg = host_fw_data + client_pkg_offset;
@@ -1048,8 +1629,13 @@ static void ipu_psys_dev_release(struct device *dev)
 
 static int psys_runtime_pm_resume(struct device *dev)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 	struct ipu_psys *psys = ipu_bus_get_drvdata(adev);
+#else
+	struct ipu6_bus_device *adev = to_ipu6_bus_device(dev);
+	struct ipu_psys *psys = ipu6_bus_get_drvdata(adev);
+#endif
 	unsigned long flags;
 	int retval;
 
@@ -1063,7 +1649,11 @@ static int psys_runtime_pm_resume(struct device *dev)
 	}
 	spin_unlock_irqrestore(&psys->ready_lock, flags);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	retval = ipu_mmu_hw_init(adev->mmu);
+#else
+	retval = ipu6_mmu_hw_init(adev->mmu);
+#endif
 	if (retval)
 		return retval;
 
@@ -1072,7 +1662,11 @@ static int psys_runtime_pm_resume(struct device *dev)
 		return 0;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	if (!ipu_buttress_auth_done(adev->isp)) {
+#else
+	if (!ipu6_buttress_auth_done(adev->isp)) {
+#endif
 		dev_dbg(dev, "fw not yet authenticated, skipping\n");
 		return 0;
 	}
@@ -1080,17 +1674,31 @@ static int psys_runtime_pm_resume(struct device *dev)
 	ipu_psys_setup_hw(psys);
 
 	ipu_psys_subdomains_power(psys, 1);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	ipu_trace_restore(&psys->adev->dev);
 
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	ipu_configure_spc(adev->isp,
 			  &psys->pdata->ipdata->hw_variant,
 			  IPU_CPD_PKG_DIR_PSYS_SERVER_IDX,
 			  psys->pdata->base, psys->pkg_dir,
 			  psys->pkg_dir_dma_addr);
+#else
+	ipu6_configure_spc(adev->isp,
+			   &psys->pdata->ipdata->hw_variant,
+			   IPU6_CPD_PKG_DIR_PSYS_SERVER_IDX,
+			   psys->pdata->base, adev->pkg_dir,
+			   adev->pkg_dir_dma_addr);
+#endif
 
 	retval = ipu_fw_psys_open(psys);
 	if (retval) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dev_err(&psys->adev->dev, "Failed to open abi.\n");
+#else
+		dev_err(dev, "Failed to open abi.\n");
+#endif
 		return retval;
 	}
 
@@ -1103,8 +1711,13 @@ static int psys_runtime_pm_resume(struct device *dev)
 
 static int psys_runtime_pm_suspend(struct device *dev)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct ipu_bus_device *adev = to_ipu_bus_device(dev);
 	struct ipu_psys *psys = ipu_bus_get_drvdata(adev);
+#else
+	struct ipu6_bus_device *adev = to_ipu6_bus_device(dev);
+	struct ipu_psys *psys = ipu6_bus_get_drvdata(adev);
+#endif
 	unsigned long flags;
 	int rval;
 
@@ -1129,7 +1742,11 @@ static int psys_runtime_pm_suspend(struct device *dev)
 
 	ipu_psys_subdomains_power(psys, 0);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	ipu_mmu_hw_cleanup(adev->mmu);
+#else
+	ipu6_mmu_hw_cleanup(adev->mmu);
+#endif
 
 	return 0;
 }
@@ -1155,6 +1772,7 @@ static const struct dev_pm_ops psys_pm_ops = {
 	.resume = psys_resume,
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static int cpd_fw_reload(struct ipu_device *isp)
 {
 	struct ipu_psys *psys = ipu_bus_get_drvdata(isp->psys);
@@ -1231,7 +1849,9 @@ out_release_firmware:
 
 	return rval;
 }
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #ifdef CONFIG_DEBUG_FS
 static int ipu_psys_icache_prefetch_sp_get(void *data, u64 *val)
 {
@@ -1308,6 +1928,7 @@ err:
 	return -ENOMEM;
 }
 #endif
+#endif
 
 static int ipu_psys_sched_cmd(void *ptr)
 {
@@ -1335,6 +1956,7 @@ static int ipu_psys_sched_cmd(void *ptr)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static void start_sp(struct ipu_bus_device *adev)
 {
 	struct ipu_psys *psys = ipu_bus_get_drvdata(adev);
@@ -1362,7 +1984,37 @@ static int query_sp(struct ipu_bus_device *adev)
 
 	return val == IPU_PSYS_SPC_STATUS_READY;
 }
+#else
+static void start_sp(struct ipu6_bus_device *adev)
+{
+	struct ipu_psys *psys = ipu6_bus_get_drvdata(adev);
+	void __iomem *spc_regs_base = psys->pdata->base +
+	    psys->pdata->ipdata->hw_variant.spc_offset;
+	u32 val = 0;
 
+	val |= IPU6_PSYS_SPC_STATUS_START |
+	    IPU6_PSYS_SPC_STATUS_RUN |
+	    IPU6_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
+	val |= psys->icache_prefetch_sp ?
+	    IPU6_PSYS_SPC_STATUS_ICACHE_PREFETCH : 0;
+	writel(val, spc_regs_base + IPU6_PSYS_REG_SPC_STATUS_CTRL);
+}
+
+static int query_sp(struct ipu6_bus_device *adev)
+{
+	struct ipu_psys *psys = ipu6_bus_get_drvdata(adev);
+	void __iomem *spc_regs_base = psys->pdata->base +
+	    psys->pdata->ipdata->hw_variant.spc_offset;
+	u32 val = readl(spc_regs_base + IPU6_PSYS_REG_SPC_STATUS_CTRL);
+
+	/* return true when READY == 1, START == 0 */
+	val &= IPU6_PSYS_SPC_STATUS_READY | IPU6_PSYS_SPC_STATUS_START;
+
+	return val == IPU6_PSYS_SPC_STATUS_READY;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static int ipu_psys_fw_init(struct ipu_psys *psys)
 {
 	unsigned int size;
@@ -1433,7 +2085,84 @@ static void run_fw_init_work(struct work_struct *work)
 		dev_info(&psys->adev->dev, "FW init done\n");
 	}
 }
+#else
+static int ipu_psys_fw_init(struct ipu_psys *psys)
+{
+	struct ipu6_fw_syscom_queue_config *queue_cfg;
+	struct device *dev = &psys->adev->auxdev.dev;
+	unsigned int size;
+	struct ipu6_fw_syscom_queue_config fw_psys_event_queue_cfg[] = {
+		{
+			IPU_FW_PSYS_EVENT_QUEUE_SIZE,
+			sizeof(struct ipu_fw_psys_event)
+		}
+	};
+	struct ipu_fw_psys_srv_init server_init = {
+		.ddr_pkg_dir_address = 0,
+		.host_ddr_pkg_dir = NULL,
+		.pkg_dir_size = 0,
+		.icache_prefetch_sp = psys->icache_prefetch_sp,
+		.icache_prefetch_isp = psys->icache_prefetch_isp,
+	};
+	struct ipu6_fw_com_cfg fwcom = {
+		.num_output_queues = IPU_FW_PSYS_N_PSYS_EVENT_QUEUE_ID,
+		.output = fw_psys_event_queue_cfg,
+		.specific_addr = &server_init,
+		.specific_size = sizeof(server_init),
+		.cell_start = start_sp,
+		.cell_ready = query_sp,
+		.buttress_boot_offset = SYSCOM_BUTTRESS_FW_PARAMS_PSYS_OFFSET,
+	};
+	int i;
 
+	size = IPU6SE_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
+	if (ipu_ver == IPU6_VER_6 || ipu_ver == IPU6_VER_6EP ||
+	    ipu_ver == IPU6_VER_6EP_MTL)
+		size = IPU6_FW_PSYS_N_PSYS_CMD_QUEUE_ID;
+
+	queue_cfg = devm_kzalloc(dev, sizeof(*queue_cfg) * size,
+				 GFP_KERNEL);
+	if (!queue_cfg)
+		return -ENOMEM;
+
+	for (i = 0; i < size; i++) {
+		queue_cfg[i].queue_size = IPU_FW_PSYS_CMD_QUEUE_SIZE;
+		queue_cfg[i].token_size = sizeof(struct ipu_fw_psys_cmd);
+	}
+
+	fwcom.input = queue_cfg;
+	fwcom.num_input_queues = size;
+	fwcom.dmem_addr = psys->pdata->ipdata->hw_variant.dmem_offset;
+
+	psys->fwcom = ipu6_fw_com_prepare(&fwcom, psys->adev,
+					  psys->pdata->base);
+	if (!psys->fwcom) {
+		dev_err(dev, "psys fw com prepare failed\n");
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static void run_fw_init_work(struct work_struct *work)
+{
+	struct fw_init_task *task = (struct fw_init_task *)work;
+	struct ipu_psys *psys = task->psys;
+	struct device *dev = &psys->adev->auxdev.dev;
+	int rval;
+
+	rval = ipu_psys_fw_init(psys);
+
+	if (rval) {
+		dev_err(dev, "FW init failed(%d)\n", rval);
+		ipu6_psys_remove(&psys->adev->auxdev);
+	} else {
+		dev_info(dev, "FW init done\n");
+	}
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static int ipu_psys_probe(struct ipu_bus_device *adev)
 {
 	struct ipu_device *isp = adev->isp;
@@ -1472,17 +2201,6 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 
 	ipu_trace_init(adev->isp, psys->pdata->base, &adev->dev,
 		       psys_trace_blocks);
-
-	cdev_init(&psys->cdev, &ipu_psys_fops);
-	psys->cdev.owner = ipu_psys_fops.owner;
-
-	rval = cdev_add(&psys->cdev, MKDEV(MAJOR(ipu_psys_dev_t), minor), 1);
-	if (rval) {
-		dev_err(&adev->dev, "cdev_add failed (%d)\n", rval);
-		goto out_unlock;
-	}
-
-	set_bit(minor, ipu_psys_devices);
 
 	spin_lock_init(&psys->ready_lock);
 	spin_lock_init(&psys->pgs_lock);
@@ -1564,11 +2282,18 @@ static int ipu_psys_probe(struct ipu_bus_device *adev)
 	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
 	psys->dev.release = ipu_psys_dev_release;
 	dev_set_name(&psys->dev, "ipu-psys%d", minor);
-	rval = device_register(&psys->dev);
+	device_initialize(&psys->dev);
+
+	cdev_init(&psys->cdev, &ipu_psys_fops);
+	psys->cdev.owner = ipu_psys_fops.owner;
+
+	rval = cdev_device_add(&psys->cdev, &psys->dev);
 	if (rval < 0) {
 		dev_err(&psys->dev, "psys device_register failed\n");
 		goto out_release_fw_com;
 	}
+
+	set_bit(minor, ipu_psys_devices);
 
 	/* Add the hw stepping information to caps */
 	strscpy(psys->caps.dev_model, IPU_MEDIA_DEV_MODEL_NAME,
@@ -1601,7 +2326,6 @@ out_free_pgs:
 	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
 out_mutex_destroy:
 	mutex_destroy(&psys->mutex);
-	cdev_del(&psys->cdev);
 	if (psys->sched_cmd_thread) {
 		kthread_stop(psys->sched_cmd_thread);
 		psys->sched_cmd_thread = NULL;
@@ -1615,16 +2339,207 @@ out_unlock:
 
 	return rval;
 }
+#else
+static int ipu6_psys_probe(struct auxiliary_device *auxdev,
+			   const struct auxiliary_device_id *auxdev_id)
+{
+	struct ipu6_bus_device *adev = auxdev_to_adev(auxdev);
+	struct device *dev = &auxdev->dev;
+	struct ipu_psys_pg *kpg, *kpg0;
+	struct ipu_psys *psys;
+	unsigned int minor;
+	int i, rval = -E2BIG;
 
+	if (!adev->isp->bus_ready_to_probe)
+		return -EPROBE_DEFER;
+
+	if (!adev->pkg_dir)
+		return -EPROBE_DEFER;
+
+	ipu_ver = adev->isp->hw_ver;
+
+	rval = ipu6_mmu_hw_init(adev->mmu);
+	if (rval)
+		return rval;
+
+	mutex_lock(&ipu_psys_mutex);
+
+	minor = find_next_zero_bit(ipu_psys_devices, IPU_PSYS_NUM_DEVICES, 0);
+	if (minor == IPU_PSYS_NUM_DEVICES) {
+		dev_err(dev, "too many devices\n");
+		goto out_unlock;
+	}
+
+	psys = devm_kzalloc(dev, sizeof(*psys), GFP_KERNEL);
+	if (!psys) {
+		rval = -ENOMEM;
+		goto out_unlock;
+	}
+
+	adev->auxdrv_data =
+		(const struct ipu6_auxdrv_data *)auxdev_id->driver_data;
+	adev->auxdrv = to_auxiliary_drv(dev->driver);
+
+	psys->adev = adev;
+	psys->pdata = adev->pdata;
+	psys->icache_prefetch_sp = 0;
+
+	psys->power_gating = 0;
+
+	spin_lock_init(&psys->ready_lock);
+	spin_lock_init(&psys->pgs_lock);
+	psys->ready = 0;
+	psys->timeout = IPU_PSYS_CMD_TIMEOUT_MS;
+
+	mutex_init(&psys->mutex);
+	INIT_LIST_HEAD(&psys->fhs);
+	INIT_LIST_HEAD(&psys->pgs);
+	INIT_LIST_HEAD(&psys->started_kcmds_list);
+
+	init_waitqueue_head(&psys->sched_cmd_wq);
+	atomic_set(&psys->wakeup_count, 0);
+	/*
+	 * Create a thread to schedule commands sent to IPU firmware.
+	 * The thread reduces the coupling between the command scheduler
+	 * and queueing commands from the user to driver.
+	 */
+	psys->sched_cmd_thread = kthread_run(ipu_psys_sched_cmd, psys,
+					     "psys_sched_cmd");
+
+	if (IS_ERR(psys->sched_cmd_thread)) {
+		psys->sched_cmd_thread = NULL;
+		mutex_destroy(&psys->mutex);
+		goto out_unlock;
+	}
+
+	dev_set_drvdata(dev, psys);
+
+	rval = ipu_psys_res_pool_init(&psys->res_pool_running);
+	if (rval < 0) {
+		dev_err(&psys->dev,
+			"unable to alloc process group resources\n");
+		goto out_mutex_destroy;
+	}
+
+	ipu6_psys_hw_res_variant_init();
+
+	/* allocate and map memory for process groups */
+	for (i = 0; i < IPU_PSYS_PG_POOL_SIZE; i++) {
+		kpg = kzalloc(sizeof(*kpg), GFP_KERNEL);
+		if (!kpg)
+			goto out_free_pgs;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+		kpg->pg = dma_alloc_attrs(dev, IPU_PSYS_PG_MAX_SIZE,
+					  &kpg->pg_dma_addr,
+					  GFP_KERNEL, 0);
+#else
+		kpg->pg = ipu6_dma_alloc(adev, IPU_PSYS_PG_MAX_SIZE,
+					 &kpg->pg_dma_addr,
+					 GFP_KERNEL, 0);
+#endif
+		if (!kpg->pg) {
+			kfree(kpg);
+			goto out_free_pgs;
+		}
+		kpg->size = IPU_PSYS_PG_MAX_SIZE;
+		list_add(&kpg->list, &psys->pgs);
+	}
+
+	psys->caps.pg_count = ipu6_cpd_pkg_dir_get_num_entries(adev->pkg_dir);
+
+	dev_info(dev, "pkg_dir entry count:%d\n", psys->caps.pg_count);
+	if (async_fw_init) {
+		INIT_DELAYED_WORK((struct delayed_work *)&fw_init_task,
+				  run_fw_init_work);
+		fw_init_task.psys = psys;
+		schedule_delayed_work((struct delayed_work *)&fw_init_task, 0);
+	} else {
+		rval = ipu_psys_fw_init(psys);
+	}
+
+	if (rval) {
+		dev_err(dev, "FW init failed(%d)\n", rval);
+		goto out_free_pgs;
+	}
+
+	psys->dev.bus = &ipu_psys_bus;
+	psys->dev.parent = dev;
+	psys->dev.devt = MKDEV(MAJOR(ipu_psys_dev_t), minor);
+	psys->dev.release = ipu_psys_dev_release;
+	dev_set_name(&psys->dev, "ipu-psys%d", minor);
+	device_initialize(&psys->dev);
+
+	cdev_init(&psys->cdev, &ipu_psys_fops);
+	psys->cdev.owner = ipu_psys_fops.owner;
+
+	rval = cdev_device_add(&psys->cdev, &psys->dev);
+	if (rval < 0) {
+		dev_err(dev, "psys device_register failed\n");
+		goto out_release_fw_com;
+	}
+
+	set_bit(minor, ipu_psys_devices);
+
+	/* Add the hw stepping information to caps */
+	strscpy(psys->caps.dev_model, IPU6_MEDIA_DEV_MODEL_NAME,
+		sizeof(psys->caps.dev_model));
+
+	mutex_unlock(&ipu_psys_mutex);
+
+	dev_info(dev, "psys probe minor: %d\n", minor);
+
+	ipu6_mmu_hw_cleanup(adev->mmu);
+
+	return 0;
+
+out_release_fw_com:
+	ipu6_fw_com_release(psys->fwcom, 1);
+out_free_pgs:
+	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+		dma_free_attrs(dev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+#else
+		ipu6_dma_free(adev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+#endif
+		kfree(kpg);
+	}
+
+	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
+out_mutex_destroy:
+	mutex_destroy(&psys->mutex);
+	if (psys->sched_cmd_thread) {
+		kthread_stop(psys->sched_cmd_thread);
+		psys->sched_cmd_thread = NULL;
+	}
+out_unlock:
+	/* Safe to call even if the init is not called */
+	mutex_unlock(&ipu_psys_mutex);
+	ipu6_mmu_hw_cleanup(adev->mmu);
+	return rval;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static void ipu_psys_remove(struct ipu_bus_device *adev)
 {
 	struct ipu_device *isp = adev->isp;
 	struct ipu_psys *psys = ipu_bus_get_drvdata(adev);
+#else
+static void ipu6_psys_remove(struct auxiliary_device *auxdev)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 5)
+	struct ipu6_bus_device *adev = auxdev_to_adev(auxdev);
+#endif
+	struct device *dev = &auxdev->dev;
+	struct ipu_psys *psys = dev_get_drvdata(&auxdev->dev);
+#endif
 	struct ipu_psys_pg *kpg, *kpg0;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #ifdef CONFIG_DEBUG_FS
 	if (isp->ipu_dir)
 		debugfs_remove_recursive(psys->debugfsdir);
+#endif
 #endif
 
 	if (psys->sched_cmd_thread) {
@@ -1635,32 +2550,49 @@ static void ipu_psys_remove(struct ipu_bus_device *adev)
 	mutex_lock(&ipu_psys_mutex);
 
 	list_for_each_entry_safe(kpg, kpg0, &psys->pgs, list) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		dma_free_attrs(&adev->dev, kpg->size, kpg->pg,
 			       kpg->pg_dma_addr, 0);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 5)
+		dma_free_attrs(dev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+#else
+		ipu6_dma_free(adev, kpg->size, kpg->pg, kpg->pg_dma_addr, 0);
+#endif
 		kfree(kpg);
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	if (psys->fwcom && ipu_fw_com_release(psys->fwcom, 1))
 		dev_err(&adev->dev, "fw com release failed.\n");
+#else
+	if (psys->fwcom && ipu6_fw_com_release(psys->fwcom, 1))
+		dev_err(dev, "fw com release failed.\n");
+#endif
 
 	kfree(psys->server_init);
 	kfree(psys->syscom_config);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	ipu_trace_uninit(&adev->dev);
+#endif
 	ipu_psys_res_pool_cleanup(&psys->res_pool_running);
 
-	device_unregister(&psys->dev);
+	cdev_device_del(&psys->cdev, &psys->dev);
 
 	clear_bit(MINOR(psys->cdev.dev), ipu_psys_devices);
-	cdev_del(&psys->cdev);
 
 	mutex_unlock(&ipu_psys_mutex);
 
 	mutex_destroy(&psys->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	dev_info(&adev->dev, "removed\n");
+#else
+	dev_info(dev, "removed\n");
+#endif
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static irqreturn_t psys_isr_threaded(struct ipu_bus_device *adev)
 {
 	struct ipu_psys *psys = ipu_bus_get_drvdata(adev);
@@ -1688,7 +2620,38 @@ static irqreturn_t psys_isr_threaded(struct ipu_bus_device *adev)
 
 	return status ? IRQ_HANDLED : IRQ_NONE;
 }
+#else
+static irqreturn_t psys_isr_threaded(struct ipu6_bus_device *adev)
+{
+	struct ipu_psys *psys = ipu6_bus_get_drvdata(adev);
+	struct device *dev = &psys->adev->auxdev.dev;
+	void __iomem *base = psys->pdata->base;
+	u32 status;
+	int r;
 
+	mutex_lock(&psys->mutex);
+	r = pm_runtime_get_if_in_use(dev);
+	if (!r || WARN_ON_ONCE(r < 0)) {
+		mutex_unlock(&psys->mutex);
+		return IRQ_NONE;
+	}
+
+	status = readl(base + IPU6_REG_PSYS_GPDEV_IRQ_STATUS);
+	writel(status, base + IPU6_REG_PSYS_GPDEV_IRQ_CLEAR);
+
+	if (status & IPU6_PSYS_GPDEV_IRQ_FWIRQ(IPU6_PSYS_GPDEV_FWIRQ0)) {
+		writel(0, base + IPU6_REG_PSYS_GPDEV_FWIRQ(0));
+		ipu_psys_handle_events(psys);
+	}
+
+	pm_runtime_put(dev);
+	mutex_unlock(&psys->mutex);
+
+	return status ? IRQ_HANDLED : IRQ_NONE;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static struct ipu_bus_driver ipu_psys_driver = {
 	.probe = ipu_psys_probe,
 	.remove = ipu_psys_remove,
@@ -1702,38 +2665,6 @@ static struct ipu_bus_driver ipu_psys_driver = {
 	},
 };
 
-static int __init ipu_psys_init(void)
-{
-	int rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
-				       IPU_PSYS_NUM_DEVICES, IPU_PSYS_NAME);
-	if (rval) {
-		pr_err("can't alloc psys chrdev region (%d)\n", rval);
-		return rval;
-	}
-
-	rval = bus_register(&ipu_psys_bus);
-	if (rval) {
-		pr_warn("can't register psys bus (%d)\n", rval);
-		goto out_bus_register;
-	}
-
-	ipu_bus_register_driver(&ipu_psys_driver);
-
-	return rval;
-
-out_bus_register:
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-
-	return rval;
-}
-
-static void __exit ipu_psys_exit(void)
-{
-	ipu_bus_unregister_driver(&ipu_psys_driver);
-	bus_unregister(&ipu_psys_bus);
-	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
-}
-
 static const struct pci_device_id ipu_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6_PCI_ID)},
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, IPU6SE_PCI_ID)},
@@ -1744,12 +2675,76 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
+#else
+static const struct ipu6_auxdrv_data ipu6_psys_auxdrv_data = {
+	.isr_threaded = psys_isr_threaded,
+	.wake_isr_thread = true,
+};
 
+static const struct auxiliary_device_id ipu6_psys_id_table[] = {
+	{
+		.name = "intel_ipu6.psys",
+		.driver_data = (kernel_ulong_t)&ipu6_psys_auxdrv_data,
+	},
+	{ }
+};
+MODULE_DEVICE_TABLE(auxiliary, ipu6_psys_id_table);
+
+static struct auxiliary_driver ipu6_psys_aux_driver = {
+	.name = IPU6_PSYS_NAME,
+	.probe = ipu6_psys_probe,
+	.remove = ipu6_psys_remove,
+	.id_table = ipu6_psys_id_table,
+	.driver = {
+		.pm = &psys_pm_ops,
+	},
+};
+#endif
+
+static int __init ipu_psys_init(void)
+{
+	int rval = alloc_chrdev_region(&ipu_psys_dev_t, 0,
+				       IPU_PSYS_NUM_DEVICES, ipu_psys_bus.name);
+	if (rval) {
+		pr_err("can't alloc psys chrdev region (%d)\n", rval);
+		return rval;
+	}
+
+	rval = bus_register(&ipu_psys_bus);
+	if (rval) {
+		pr_err("can't register psys bus (%d)\n", rval);
+		unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+		return rval;
+	}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	ipu_bus_register_driver(&ipu_psys_driver);
+#else
+	auxiliary_driver_register(&ipu6_psys_aux_driver);
+#endif
+	return 0;
+}
 module_init(ipu_psys_init);
+
+static void __exit ipu_psys_exit(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	ipu_bus_unregister_driver(&ipu_psys_driver);
+#else
+	auxiliary_driver_unregister(&ipu6_psys_aux_driver);
+#endif
+	bus_unregister(&ipu_psys_bus);
+	unregister_chrdev_region(ipu_psys_dev_t, IPU_PSYS_NUM_DEVICES);
+}
 module_exit(ipu_psys_exit);
 
 MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Intel IPU6 processing system driver");
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
 MODULE_IMPORT_NS(DMA_BUF);
 MODULE_IMPORT_NS(INTEL_IPU6);
+#else
+MODULE_IMPORT_NS("DMA_BUF");
+MODULE_IMPORT_NS("INTEL_IPU6");
+#endif

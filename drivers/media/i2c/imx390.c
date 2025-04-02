@@ -9,11 +9,18 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
+#endif
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
 #include <media/imx390.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#include <media/mipi-csi2.h>
+#endif
 
 #define IMX390_LINK_FREQ_360MHZ		360000000ULL
 #define IMX390_LINK_FREQ_300MHZ		300000000ULL
@@ -1673,7 +1680,12 @@ static int imx390_set_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int imx390_g_frame_interval(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 		struct v4l2_subdev_frame_interval *fival)
+#else
+		struct v4l2_subdev_state *sd_state,
+		struct v4l2_subdev_frame_interval *fival)
+#endif
 {
 	struct imx390 *imx390 = to_imx390(sd);
 
@@ -1737,7 +1749,11 @@ static int __maybe_unused imx390_resume(struct device *dev)
 }
 
 static int imx390_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct imx390 *imx390 = to_imx390(sd);
@@ -1765,7 +1781,13 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 
 	imx390_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		imx390->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(imx390->link_freq, mode->link_freq_index);
@@ -1797,15 +1819,27 @@ static int imx390_set_format(struct v4l2_subdev *sd,
 }
 
 static int imx390_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct imx390 *imx390 = to_imx390(sd);
 
 	mutex_lock(&imx390->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		fmt->format = *v4l2_subdev_get_try_format(&imx390->sd, cfg,
+							  fmt->pad);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&imx390->sd, sd_state,
 							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(sd_state,
+							  fmt->pad);
+#endif
 	else
 		imx390_update_pad_format(imx390->cur_mode, &fmt->format);
 
@@ -1814,24 +1848,78 @@ static int imx390_get_format(struct v4l2_subdev *sd,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+static unsigned int imx390_mbus_code_to_mipi(u32 code)
+{
+	switch (code) {
+	case MEDIA_BUS_FMT_RGB565_1X16:
+		return MIPI_CSI2_DT_RGB565;
+	case MEDIA_BUS_FMT_RGB888_1X24:
+		return MIPI_CSI2_DT_RGB888;
+	case MEDIA_BUS_FMT_UYVY8_1X16:
+	case MEDIA_BUS_FMT_YUYV8_1X16:
+		return MIPI_CSI2_DT_YUV422_8B;
+	case MEDIA_BUS_FMT_SBGGR16_1X16:
+	case MEDIA_BUS_FMT_SGBRG16_1X16:
+	case MEDIA_BUS_FMT_SGRBG16_1X16:
+	case MEDIA_BUS_FMT_SRGGB16_1X16:
+		return MIPI_CSI2_DT_RAW16;
+	case MEDIA_BUS_FMT_SBGGR12_1X12:
+	case MEDIA_BUS_FMT_SGBRG12_1X12:
+	case MEDIA_BUS_FMT_SGRBG12_1X12:
+	case MEDIA_BUS_FMT_SRGGB12_1X12:
+		return MIPI_CSI2_DT_RAW12;
+	case MEDIA_BUS_FMT_SBGGR10_1X10:
+	case MEDIA_BUS_FMT_SGBRG10_1X10:
+	case MEDIA_BUS_FMT_SGRBG10_1X10:
+	case MEDIA_BUS_FMT_SRGGB10_1X10:
+		return MIPI_CSI2_DT_RAW10;
+	case MEDIA_BUS_FMT_SBGGR8_1X8:
+	case MEDIA_BUS_FMT_SGBRG8_1X8:
+	case MEDIA_BUS_FMT_SGRBG8_1X8:
+	case MEDIA_BUS_FMT_SRGGB8_1X8:
+		return MIPI_CSI2_DT_RAW8;
+	default:
+		/* return unavailable MIPI data type - 0x3f */
+		WARN_ON(1);
+		return 0x3f;
+	}
+}
+#endif
+
 static int imx390_get_frame_desc(struct v4l2_subdev *sd,
 	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	struct imx390 *imx390 = to_imx390(sd);
+#endif
 	unsigned int i;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	desc->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
+#endif
 	desc->num_entries = V4L2_FRAME_DESC_ENTRY_MAX;
 
 	for (i = 0; i < desc->num_entries; i++) {
 		desc->entry[i].flags = 0;
 		desc->entry[i].pixelcode = MEDIA_BUS_FMT_FIXED;
 		desc->entry[i].length = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+		desc->entry[i].stream = i;
+		desc->entry[i].bus.csi2.vc = i;
+		desc->entry[i].bus.csi2.dt = imx390_mbus_code_to_mipi(imx390->cur_mode->code);
+#endif
 	}
 
 	return 0;
 }
 
 static int imx390_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				 struct v4l2_subdev_pad_config *cfg,
+#else
 				 struct v4l2_subdev_state *sd_state,
+#endif
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(supported_formats))
@@ -1843,7 +1931,11 @@ static int imx390_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx390_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				  struct v4l2_subdev_pad_config *cfg,
+#else
 				  struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1860,7 +1952,11 @@ static int imx390_enum_frame_size(struct v4l2_subdev *sd,
 static int imx390_frame_rate[] = { 40, 20 };
 
 static int imx390_enum_frame_interval(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		struct v4l2_subdev_pad_config *cfg,
+#else
 		struct v4l2_subdev_state *sd_state,
+#endif
 		struct v4l2_subdev_frame_interval_enum *fie)
 {
 	int mode_size = ARRAY_SIZE(supported_modes);
@@ -1889,8 +1985,16 @@ static int imx390_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct imx390 *imx390 = to_imx390(sd);
 
 	mutex_lock(&imx390->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	imx390_update_pad_format(&supported_modes[0],
+				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	imx390_update_pad_format(&supported_modes[0],
 				 v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	imx390_update_pad_format(&supported_modes[0],
+				 v4l2_subdev_state_get_format(fh->state, 0));
+#endif
 	mutex_unlock(&imx390->mutex);
 
 	return 0;
@@ -1898,7 +2002,9 @@ static int imx390_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 static const struct v4l2_subdev_video_ops imx390_video_ops = {
 	.s_stream = imx390_set_stream,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 	.g_frame_interval = imx390_g_frame_interval,
+#endif
 };
 
 static const struct v4l2_subdev_pad_ops imx390_pad_ops = {
@@ -1908,6 +2014,9 @@ static const struct v4l2_subdev_pad_ops imx390_pad_ops = {
 	.enum_mbus_code = imx390_enum_mbus_code,
 	.enum_frame_size = imx390_enum_frame_size,
 	.enum_frame_interval = imx390_enum_frame_interval,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	.get_frame_interval = imx390_g_frame_interval,
+#endif
 };
 
 static const struct v4l2_subdev_ops imx390_subdev_ops = {
@@ -1923,7 +2032,11 @@ static const struct v4l2_subdev_internal_ops imx390_internal_ops = {
 	.open = imx390_open,
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int imx390_remove(struct i2c_client *client)
+#else
 static void imx390_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx390 *imx390 = to_imx390(sd);
@@ -1934,6 +2047,9 @@ static void imx390_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&imx390->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	return 0;
+#endif
 }
 static int imx390_probe(struct i2c_client *client)
 {
@@ -1999,7 +2115,11 @@ static int imx390_probe(struct i2c_client *client)
 		goto probe_error_v4l2_ctrl_handler_free;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
+	ret = v4l2_async_register_subdev_sensor_common(&imx390->sd);
+#else
 	ret = v4l2_async_register_subdev_sensor(&imx390->sd);
+#endif
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);
@@ -2043,7 +2163,11 @@ static struct i2c_driver imx390_i2c_driver = {
 		.name = "imx390",
 		.pm = &imx390_pm_ops,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = imx390_probe,
+#else
+	.probe = imx390_probe,
+#endif
 	.remove = imx390_remove,
 	.id_table = imx390_id_table,
 };

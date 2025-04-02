@@ -283,7 +283,11 @@ static int ti964_set_routing(struct v4l2_subdev *sd,
 }
 
 static int ti964_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				struct v4l2_subdev_pad_config *cfg,
+#else
 				struct v4l2_subdev_state *sd_state,
+#endif
 				struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ti964 *va = to_ti964(sd);
@@ -351,8 +355,13 @@ static int ti964_get_frame_desc(struct v4l2_subdev *sd,
 		const struct ti964_csi_data_format *csi_format =
 			ti964_validate_csi_data_format(ffmt->code);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 		entry->two_dim.width = ffmt->width;
 		entry->two_dim.height = ffmt->height;
+#else
+		entry->size.two_dim.width = ffmt->width;
+		entry->size.two_dim.height = ffmt->height;
+#endif
 		entry->pixelcode = ffmt->code;
 		entry->bus.csi2.channel = vc++;
 		entry->bpp = csi_format->compressed;
@@ -364,20 +373,34 @@ static int ti964_get_frame_desc(struct v4l2_subdev *sd,
 
 static struct v4l2_mbus_framefmt *
 __ti964_get_ffmt(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			 struct v4l2_subdev_pad_config *cfg,
+#else
 			 struct v4l2_subdev_state *sd_state,
+#endif
 			 unsigned int pad, unsigned int which,
 			 unsigned int stream)
 {
 	struct ti964 *va = to_ti964(subdev);
 
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		return v4l2_subdev_get_try_format(subdev, cfg, pad);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		return v4l2_subdev_get_try_format(subdev, sd_state, pad);
+#else
+		return v4l2_subdev_state_get_format(sd_state, pad);
+#endif
 	else
 		return &va->ffmts[pad][stream];
 }
 
 static int ti964_get_format(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			    struct v4l2_subdev_pad_config *cfg,
+#else
 			    struct v4l2_subdev_state *sd_state,
+#endif
 			    struct v4l2_subdev_format *fmt)
 {
 	struct ti964 *va = to_ti964(subdev);
@@ -386,8 +409,13 @@ static int ti964_get_format(struct v4l2_subdev *subdev,
 		return -EINVAL;
 
 	mutex_lock(&va->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	fmt->format = *__ti964_get_ffmt(subdev, cfg, fmt->pad,
+					fmt->which, fmt->stream);
+#else
 	fmt->format = *__ti964_get_ffmt(subdev, sd_state, fmt->pad,
 					fmt->which, fmt->stream);
+#endif
 	mutex_unlock(&va->mutex);
 
 	dev_dbg(subdev->dev, "subdev_format: which: %s, pad: %d, stream: %d.\n",
@@ -402,7 +430,11 @@ static int ti964_get_format(struct v4l2_subdev *subdev,
 }
 
 static int ti964_set_format(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			    struct v4l2_subdev_pad_config *cfg,
+#else
 			    struct v4l2_subdev_state *sd_state,
+#endif
 			    struct v4l2_subdev_format *fmt)
 {
 	struct ti964 *va = to_ti964(subdev);
@@ -416,8 +448,13 @@ static int ti964_set_format(struct v4l2_subdev *subdev,
 		fmt->format.code);
 
 	mutex_lock(&va->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	ffmt = __ti964_get_ffmt(subdev, cfg, fmt->pad, fmt->which,
+				fmt->stream);
+#else
 	ffmt = __ti964_get_ffmt(subdev, sd_state, fmt->pad, fmt->which,
 				fmt->stream);
+#endif
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		ffmt->width = fmt->format.width;
@@ -436,8 +473,16 @@ static int ti964_set_format(struct v4l2_subdev *subdev,
 static int ti964_open(struct v4l2_subdev *subdev,
 				struct v4l2_subdev_fh *fh)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	struct v4l2_mbus_framefmt *try_fmt =
+		v4l2_subdev_get_try_format(subdev, fh->pad, 0);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	struct v4l2_mbus_framefmt *try_fmt =
 		v4l2_subdev_get_try_format(subdev, fh->state, 0);
+#else
+	struct v4l2_mbus_framefmt *try_fmt =
+		v4l2_subdev_state_get_format(fh->state, 0);
+#endif
 	struct v4l2_subdev_format fmt = {
 		.which = V4L2_SUBDEV_FORMAT_TRY,
 		.pad = TI964_PAD_SOURCE,
@@ -548,7 +593,11 @@ static int ti964_registered(struct v4l2_subdev *subdev)
 		}
 
 		for (l = 0; l < va->nsinks; l++) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+			rval = media_entity_create_link(
+#else
 			rval = media_create_pad_link(
+#endif
 				&va->sub_devs[k].sd->entity, j,
 				&va->sd.entity, l, 0);
 			if (rval) {
@@ -958,6 +1007,14 @@ static const struct v4l2_subdev_video_ops ti964_sd_video_ops = {
 
 static const struct v4l2_subdev_core_ops ti964_core_subdev_ops = {
 	.s_power = ti964_set_power,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	.g_ctrl = v4l2_subdev_g_ctrl,
+	.s_ctrl = v4l2_subdev_s_ctrl,
+	.g_ext_ctrls = v4l2_subdev_g_ext_ctrls,
+	.s_ext_ctrls = v4l2_subdev_s_ext_ctrls,
+	.try_ext_ctrls = v4l2_subdev_try_ext_ctrls,
+	.queryctrl = v4l2_subdev_queryctrl,
+#endif
 };
 
 static int ti964_s_ctrl(struct v4l2_ctrl *ctrl)
@@ -1059,8 +1116,12 @@ static int ti964_register_subdev(struct ti964 *va)
 		va->pad[i].flags = MEDIA_PAD_FL_SINK;
 	va->pad[TI964_PAD_SOURCE].flags =
 		MEDIA_PAD_FL_SOURCE | MEDIA_PAD_FL_MULTIPLEX;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	rval = media_entity_init(&va->sd.entity, NR_OF_TI964_PADS, va->pad, 0);
+#else
 	rval = media_entity_pads_init(&va->sd.entity,
 				      NR_OF_TI964_PADS, va->pad);
+#endif
 	if (rval) {
 		dev_err(va->sd.dev,
 			"Failed to init media entity for ti964!\n");
@@ -1108,7 +1169,11 @@ static int ti964_init(struct ti964 *va)
 
 static void ti964_gpio_set(struct gpio_chip *chip, unsigned gpio, int value)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	struct i2c_client *client = to_i2c_client(chip->dev);
+#else
 	struct i2c_client *client = to_i2c_client(chip->parent);
+#endif
 	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
 	struct ti964 *va = to_ti964(subdev);
 	unsigned int reg_val;
@@ -1152,8 +1217,12 @@ static int ti964_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int ti964_probe(struct i2c_client *client)
+#else
 static int ti964_probe(struct i2c_client *client,
 			const struct i2c_device_id *devid)
+#endif
 {
 	struct ti964 *va;
 	int i, rval = 0;
@@ -1251,7 +1320,11 @@ static int ti964_probe(struct i2c_client *client,
 	 * TI964 has several back channel GPIOs.
 	 * We export GPIO0 and GPIO1 to control reset or fsin.
 	 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	va->gc.dev = &client->dev;
+#else
 	va->gc.parent = &client->dev;
+#endif
 	va->gc.owner = THIS_MODULE;
 	va->gc.label = "TI964 GPIO";
 	va->gc.ngpio = NR_OF_TI964_GPIOS;

@@ -12,7 +12,11 @@
 #include <linux/of_gpio.h>
 #include <linux/v4l2-dv-timings.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
+#endif
 
 #include <media/v4l2-dv-timings.h>
 #include <media/v4l2-ctrls.h>
@@ -948,7 +952,12 @@ static int lt6911uxc_set_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int lt6911uxc_g_frame_interval(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 		struct v4l2_subdev_frame_interval *fival)
+#else
+		struct v4l2_subdev_state *sd_state,
+		 struct v4l2_subdev_frame_interval *fival)
+#endif
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
 
@@ -960,7 +969,11 @@ static int lt6911uxc_g_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxc_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 				struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
@@ -970,7 +983,13 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&lt6911uxc->mutex);
 	lt6911uxc_update_pad_format(lt6911uxc->cur_mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		__v4l2_ctrl_s_ctrl(lt6911uxc->link_freq,
 			lt6911uxc->cur_mode->link_freq_index);
@@ -1006,15 +1025,27 @@ static int lt6911uxc_set_format(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxc_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
 
 	mutex_lock(&lt6911uxc->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		fmt->format = *v4l2_subdev_get_try_format(&lt6911uxc->sd, cfg,
+							  fmt->pad);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&lt6911uxc->sd, sd_state,
 							fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(sd_state,
+							fmt->pad);
+#endif
 	else
 		lt6911uxc_update_pad_format(lt6911uxc->cur_mode, &fmt->format);
 
@@ -1024,7 +1055,11 @@ static int lt6911uxc_get_format(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxc_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				 struct v4l2_subdev_pad_config *cfg,
+#else
 				 struct v4l2_subdev_state *sd_state,
+#endif
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
@@ -1034,7 +1069,11 @@ static int lt6911uxc_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxc_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				  struct v4l2_subdev_pad_config *cfg,
+#else
 				  struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
@@ -1048,7 +1087,11 @@ static int lt6911uxc_enum_frame_size(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxc_enum_frame_interval(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		struct v4l2_subdev_pad_config *cfg,
+#else
 		struct v4l2_subdev_state *sd_state,
+#endif
 		struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
@@ -1059,27 +1102,58 @@ static int lt6911uxc_enum_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static int lt6911uxc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct lt6911uxc_state *lt6911uxc = to_state(sd);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	lt6911uxc_update_pad_format(lt6911uxc->cur_mode,
+			v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	lt6911uxc_update_pad_format(lt6911uxc->cur_mode,
 			v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	lt6911uxc_update_pad_format(lt6911uxc->cur_mode,
+			v4l2_subdev_state_get_format(fh->state, 0));
+#endif
+#else
+static int lt6911uxc_init_state(struct v4l2_subdev *sd,
+				struct v4l2_subdev_state *sd_state)
+{
+	struct v4l2_subdev_format fmt = {
+		.which = V4L2_SUBDEV_FORMAT_TRY,
+		.pad = 0,
+		.format = {
+			.code = MEDIA_BUS_FMT_UYVY8_1X16,
+			.width = 3840,
+			.height = 2160,
+		},
+	};
+
+	lt6911uxc_set_format(sd, sd_state, &fmt);
+#endif
 
 	return 0;
 }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static const struct v4l2_subdev_internal_ops lt6911uxc_subdev_internal_ops = {
 	.open = lt6911uxc_open,
 };
+#endif
 
 static const struct v4l2_subdev_video_ops lt6911uxc_video_ops = {
 	.s_stream = lt6911uxc_set_stream,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 	.g_frame_interval = lt6911uxc_g_frame_interval,
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	.g_input_status	= lt6911uxc_g_input_status,
 //	.s_dv_timings	= lt6911uxc_s_dv_timings,
 	.g_dv_timings	= lt6911uxc_g_dv_timings,
 //	.query_dv_timings	= lt6911uxc_query_dv_timings,
 	.s_stream	= lt6911uxc_set_stream,
+#endif
 };
 
 static const struct v4l2_subdev_pad_ops lt6911uxc_pad_ops = {
@@ -1088,6 +1162,9 @@ static const struct v4l2_subdev_pad_ops lt6911uxc_pad_ops = {
 	.enum_mbus_code = lt6911uxc_enum_mbus_code,
 	.enum_frame_size = lt6911uxc_enum_frame_size,
 	.enum_frame_interval = lt6911uxc_enum_frame_interval,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	.get_frame_interval = lt6911uxc_g_frame_interval,
+#endif
 };
 
 static struct v4l2_subdev_core_ops lt6911uxc_subdev_core_ops = {
@@ -1107,7 +1184,11 @@ static const struct media_entity_operations lt6911uxc_subdev_entity_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops lt6911uxc_internal_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	.open = lt6911uxc_open,
+#else
+	.init_state = lt6911uxc_init_state,
+#endif
 };
 
 static int lt6911uxc_identify_module(struct lt6911uxc_state *lt6911uxc)
@@ -1127,8 +1208,15 @@ static int lt6911uxc_identify_module(struct lt6911uxc_state *lt6911uxc)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 255)
+static int lt6911uxc_remove(struct i2c_client *client)
+#else
 static void lt6911uxc_remove(struct i2c_client *client)
+#endif
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 255)
+	return 0;
+#endif
 }
 
 static int lt6911uxc_video_status_update(struct lt6911uxc_state *lt6911uxc)
@@ -1453,10 +1541,16 @@ static int lt6911uxc_probe(struct i2c_client *client)
 	}
 
 	lt6911uxc->sd.dev = &client->dev;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	lt6911uxc->sd.internal_ops = &lt6911uxc_subdev_internal_ops;
+#endif
 	lt6911uxc->sd.flags |=
 			V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	ret = v4l2_async_register_subdev_sensor_common(&lt6911uxc->sd);
+#else
 	ret = v4l2_async_register_subdev_sensor(&lt6911uxc->sd);
+#endif
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);
@@ -1550,7 +1644,11 @@ static struct i2c_driver lt6911uxc_i2c_driver = {
 		.name = "lt6911uxc",
 		.pm = &lt6911uxc_pm_ops,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = lt6911uxc_probe,
+#else
+	.probe = lt6911uxc_probe,
+#endif
 	.remove = lt6911uxc_remove,
 	.id_table = lt6911uxc_id_table,
 };

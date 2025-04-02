@@ -10,9 +10,13 @@
 #include <linux/platform_device.h>
 #include <linux/version.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #include <linux/ipu-isys.h>
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
 #include <linux/gpio/driver.h>
+#endif
 
 #include <media/media-device.h>
 #include <media/media-entity.h>
@@ -30,7 +34,10 @@
 
 #define NUM_ALIASES 8
 
+#define MIPI_CSI2_TYPE_RAW10   0x2b
 #define MIPI_CSI2_TYPE_RAW12   0x2c
+#define MIPI_CSI2_TYPE_RAW14   0x2d
+#define MIPI_CSI2_TYPE_RAW16   0x2e
 #define MIPI_CSI2_TYPE_YUV422_8	0x1e
 #define SUFFIX_BASE 96
 
@@ -82,6 +89,9 @@ struct ti960 {
 	struct v4l2_ctrl *link_freq;
 	struct v4l2_ctrl *test_pattern;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	int ref_count;
+#endif
 };
 
 #define to_ti960(_sd) container_of(_sd, struct ti960, sd)
@@ -100,20 +110,24 @@ static const s64 ti960_op_sys_clock[] =  {800000000,
  *    orders must be defined.
  */
 static const struct ti960_csi_data_format va_csi_data_formats[] = {
-	{ MEDIA_BUS_FMT_YUYV8_1X16, 16, 16, PIXEL_ORDER_GBRG, 0x1e },
-	{ MEDIA_BUS_FMT_UYVY8_1X16, 16, 16, PIXEL_ORDER_GBRG, 0x1e },
-	{ MEDIA_BUS_FMT_SGRBG16_1X16, 16, 16, PIXEL_ORDER_GRBG, 0x2e },
-	{ MEDIA_BUS_FMT_SRGGB16_1X16, 16, 16, PIXEL_ORDER_RGGB, 0x2e },
-	{ MEDIA_BUS_FMT_SBGGR16_1X16, 16, 16, PIXEL_ORDER_BGGR, 0x2e },
-	{ MEDIA_BUS_FMT_SGBRG16_1X16, 16, 16, PIXEL_ORDER_GBRG, 0x2e },
-	{ MEDIA_BUS_FMT_SGRBG12_1X12, 12, 12, PIXEL_ORDER_GRBG, 0x2c },
-	{ MEDIA_BUS_FMT_SRGGB12_1X12, 12, 12, PIXEL_ORDER_RGGB, 0x2c },
-	{ MEDIA_BUS_FMT_SBGGR12_1X12, 12, 12, PIXEL_ORDER_BGGR, 0x2c },
-	{ MEDIA_BUS_FMT_SGBRG12_1X12, 12, 12, PIXEL_ORDER_GBRG, 0x2c },
-	{ MEDIA_BUS_FMT_SGRBG10_1X10, 10, 10, PIXEL_ORDER_GRBG, 0x2b },
-	{ MEDIA_BUS_FMT_SRGGB10_1X10, 10, 10, PIXEL_ORDER_RGGB, 0x2b },
-	{ MEDIA_BUS_FMT_SBGGR10_1X10, 10, 10, PIXEL_ORDER_BGGR, 0x2b },
-	{ MEDIA_BUS_FMT_SGBRG10_1X10, 10, 10, PIXEL_ORDER_GBRG, 0x2b },
+	{ MEDIA_BUS_FMT_YUYV8_1X16, 16, 16, GBRG, MIPI_CSI2_TYPE_YUV422_8 },
+	{ MEDIA_BUS_FMT_UYVY8_1X16, 16, 16, GBRG, MIPI_CSI2_TYPE_YUV422_8 },
+	{ MEDIA_BUS_FMT_SGRBG16_1X16, 16, 16, GRBG, MIPI_CSI2_TYPE_RAW16 },
+	{ MEDIA_BUS_FMT_SRGGB16_1X16, 16, 16, RGGB, MIPI_CSI2_TYPE_RAW16 },
+	{ MEDIA_BUS_FMT_SBGGR16_1X16, 16, 16, BGGR, MIPI_CSI2_TYPE_RAW16 },
+	{ MEDIA_BUS_FMT_SGBRG16_1X16, 16, 16, GBRG, MIPI_CSI2_TYPE_RAW16 },
+	{ MEDIA_BUS_FMT_SGRBG14_1X14, 14, 14, GRBG, MIPI_CSI2_TYPE_RAW14 },
+	{ MEDIA_BUS_FMT_SRGGB14_1X14, 14, 14, RGGB, MIPI_CSI2_TYPE_RAW14 },
+	{ MEDIA_BUS_FMT_SBGGR14_1X14, 14, 14, BGGR, MIPI_CSI2_TYPE_RAW14 },
+	{ MEDIA_BUS_FMT_SGBRG14_1X14, 14, 14, GBRG, MIPI_CSI2_TYPE_RAW14 },
+	{ MEDIA_BUS_FMT_SGRBG12_1X12, 12, 12, GRBG, MIPI_CSI2_TYPE_RAW12 },
+	{ MEDIA_BUS_FMT_SRGGB12_1X12, 12, 12, RGGB, MIPI_CSI2_TYPE_RAW12 },
+	{ MEDIA_BUS_FMT_SBGGR12_1X12, 12, 12, BGGR, MIPI_CSI2_TYPE_RAW12 },
+	{ MEDIA_BUS_FMT_SGBRG12_1X12, 12, 12, GBRG, MIPI_CSI2_TYPE_RAW12 },
+	{ MEDIA_BUS_FMT_SGRBG10_1X10, 10, 10, GRBG, MIPI_CSI2_TYPE_RAW10 },
+	{ MEDIA_BUS_FMT_SRGGB10_1X10, 10, 10, RGGB, MIPI_CSI2_TYPE_RAW10 },
+	{ MEDIA_BUS_FMT_SBGGR10_1X10, 10, 10, BGGR, MIPI_CSI2_TYPE_RAW10 },
+	{ MEDIA_BUS_FMT_SGBRG10_1X10, 10, 10, GBRG, MIPI_CSI2_TYPE_RAW10 },
 };
 
 static const uint32_t ti960_supported_codes_pad[] = {
@@ -463,7 +477,11 @@ static int ti960_fsin_gpio_init(struct ti960 *va, struct ti960_subdev *subdev)
 }
 
 static int ti960_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				struct v4l2_subdev_pad_config *cfg,
+#else
 				struct v4l2_subdev_state *sd_state,
+#endif
 				struct v4l2_subdev_mbus_code_enum *code)
 {
 	const uint32_t *supported_code =
@@ -480,27 +498,60 @@ static int ti960_enum_mbus_code(struct v4l2_subdev *sd,
 	return -EINVAL;
 }
 
-static const struct ti960_csi_data_format
-		*ti960_validate_csi_data_format(u32 code)
+static int ti960_validate_csi_data_format(u32 code)
 {
-	unsigned int i;
+	int i;
 
 	for (i = 0; i < ARRAY_SIZE(va_csi_data_formats); i++) {
 		if (va_csi_data_formats[i].code == code)
-			return &va_csi_data_formats[i];
+			return i;
 	}
 
-	return &va_csi_data_formats[0];
+	if (i == ARRAY_SIZE(va_csi_data_formats))
+		return -1;
+
+	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+static int ti960_get_frame_desc(struct v4l2_subdev *sd,
+	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
+{
+	int source_pad = pad;
+
+	if (source_pad == NR_OF_TI960_SINK_PADS) {
+		struct media_pad *remote_pad = NULL;
+		int i = 0;
+		while (i < NR_OF_TI960_SINK_PADS && !remote_pad) {
+			remote_pad = media_pad_remote_pad_first(&sd->entity.pads[i]);
+			if (remote_pad) {
+				struct v4l2_subdev *rsd =
+					media_entity_to_v4l2_subdev(remote_pad->entity);
+				dev_dbg(sd->dev, "%s remote sd: %s\n", __func__, rsd->name);
+				v4l2_subdev_call(rsd, pad, get_frame_desc, 0, desc);
+				break;
+			}
+			i++;
+		}
+	} else
+		dev_err(sd->dev, "can't find the frame desc\n");
+
+	return 0;
+}
+#else
 static int ti960_get_frame_desc(struct v4l2_subdev *sd,
 	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
 {
 	int sink_pad = pad;
 
 	if (sink_pad >= 0) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+		struct media_pad *remote_pad =
+			media_entity_remote_pad(&sd->entity.pads[sink_pad]);
+#else
 		struct media_pad *remote_pad =
 			media_pad_remote_pad_first(&sd->entity.pads[sink_pad]);
+#endif
 		if (remote_pad) {
 			struct v4l2_subdev *rsd = media_entity_to_v4l2_subdev(remote_pad->entity);
 
@@ -512,10 +563,15 @@ static int ti960_get_frame_desc(struct v4l2_subdev *sd,
 
 	return 0;
 }
+#endif
 
 static struct v4l2_mbus_framefmt *
 __ti960_get_ffmt(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		 struct v4l2_subdev_pad_config *cfg,
+#else
 		 struct v4l2_subdev_state *sd_state,
+#endif
 		 unsigned int pad, unsigned int which,
 		 unsigned int stream)
 {
@@ -528,20 +584,38 @@ __ti960_get_ffmt(struct v4l2_subdev *subdev,
 	}
 
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		return v4l2_subdev_get_try_format(subdev, cfg, pad);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		return v4l2_subdev_get_try_format(subdev, sd_state, pad);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+		return v4l2_subdev_state_get_format(sd_state, pad);
+#else
+		return v4l2_subdev_state_get_format(sd_state, pad, stream);
+#endif
 	else
 		return &va->ffmts[pad][stream];
 }
 
 static int ti960_get_format(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			    struct v4l2_subdev_pad_config *cfg,
+#else
 			    struct v4l2_subdev_state *sd_state,
+#endif
 			    struct v4l2_subdev_format *fmt)
 {
 	struct ti960 *va = to_ti960(subdev);
 	struct v4l2_mbus_framefmt *ffmt;
 
 	mutex_lock(&va->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	ffmt = __ti960_get_ffmt(subdev, cfg, fmt->pad, fmt->which, 0);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	ffmt = __ti960_get_ffmt(subdev, sd_state, fmt->pad, fmt->which, 0);
+#else
+	ffmt = __ti960_get_ffmt(subdev, sd_state, fmt->pad, fmt->which, fmt->stream);
+#endif
 	if (!ffmt) {
 		mutex_unlock(&va->mutex);
 		return -EINVAL;
@@ -561,19 +635,36 @@ static int ti960_get_format(struct v4l2_subdev *subdev,
 }
 
 static int ti960_set_format(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			    struct v4l2_subdev_pad_config *cfg,
+#else
 			    struct v4l2_subdev_state *sd_state,
+#endif
 			    struct v4l2_subdev_format *fmt)
 {
 	struct ti960 *va = to_ti960(subdev);
-	const struct ti960_csi_data_format *csi_format;
+	struct ti960_csi_data_format *csi_format;
 	struct v4l2_mbus_framefmt *ffmt;
+	int fmt_idx;
 	u8 port = va->pdata->suffix - SUFFIX_BASE;
 
-	csi_format = ti960_validate_csi_data_format(
+	fmt_idx = ti960_validate_csi_data_format(
 		fmt->format.code);
+	if (fmt_idx == -1) {
+		dev_err(subdev->dev, "not supported format code 0x%x",
+			fmt->format.code);
+		return -EINVAL;
+	}
+	csi_format = &va_csi_data_formats[fmt_idx];
 
 	mutex_lock(&va->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	ffmt = __ti960_get_ffmt(subdev, cfg, fmt->pad, fmt->which, 0);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	ffmt = __ti960_get_ffmt(subdev, sd_state, fmt->pad, fmt->which, 0);
+#else
+	ffmt = __ti960_get_ffmt(subdev, sd_state, fmt->pad, fmt->which, fmt->stream);
+#endif
 
 	if (!ffmt) {
 		mutex_unlock(&va->mutex);
@@ -590,17 +681,12 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 		set_sub_stream_fmt(port, fmt->pad, ffmt->code);
 		set_sub_stream_h(port, fmt->pad, ffmt->height);
 		set_sub_stream_w(port, fmt->pad, ffmt->width);
-
-		/* select correct csi-2 data type id */
-		if (ffmt->code >= MEDIA_BUS_FMT_UYVY8_1X16 &&
-				ffmt->code <= MEDIA_BUS_FMT_YVYU8_1X16)
-			set_sub_stream_dt(port, fmt->pad, MIPI_CSI2_TYPE_YUV422_8);
-		else
-			set_sub_stream_dt(port, fmt->pad, MIPI_CSI2_TYPE_RAW12);
+		set_sub_stream_dt(port, fmt->pad, csi_format->mipi_dt_code);
 		set_sub_stream_vc_id(port, fmt->pad, fmt->pad);
 		dev_dbg(subdev->dev,
-			"framefmt: width: %d, height: %d, code: 0x%x.\n",
-			ffmt->width, ffmt->height, ffmt->code);
+			"framefmt: width: %d, height: %d, code: 0x%x, "
+			"dt: 0x%x.\n", ffmt->width, ffmt->height,
+			ffmt->code, csi_format->mipi_dt_code);
 	}
 
 	mutex_unlock(&va->mutex);
@@ -610,8 +696,16 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 static int ti960_open(struct v4l2_subdev *subdev,
 				struct v4l2_subdev_fh *fh)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	struct v4l2_mbus_framefmt *try_fmt =
+		v4l2_subdev_get_try_format(subdev, fh->pad, 0);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	struct v4l2_mbus_framefmt *try_fmt =
 		v4l2_subdev_get_try_format(subdev, fh->state, 0);
+#else
+	struct v4l2_mbus_framefmt *try_fmt =
+		v4l2_subdev_state_get_format(fh->state, 0);
+#endif
 
 	struct v4l2_subdev_format fmt = {
 		.which = V4L2_SUBDEV_FORMAT_TRY,
@@ -851,10 +945,12 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 	}
 
 	/* Configure ti953 CSI lane */
-	rval = ti953_reg_read(subdev->serializer,
-			      TI953_GENERAL_CFG, &val);
-	dev_dbg(va->sd.dev, "ti953 read default general CFG (%x)\n", val);
-	if (va->pdata->ser_nlanes == 2)
+	val = TI953_I2C_STRAP_MODE;
+	val |= TI953_CRC_TX_GEN_ENABLE;
+	val |= TI953_CONTS_CLK;
+	if (va->pdata->ser_nlanes == 1)
+		val |= TI953_CSI_1LANE;
+	else if (va->pdata->ser_nlanes == 2)
 		val |= TI953_CSI_2LANE;
 	else if (va->pdata->ser_nlanes == 4)
 		val |= TI953_CSI_4LANE;
@@ -866,6 +962,9 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 		dev_err(va->sd.dev, "ti953 write failed(%d)\n", rval);
 		return rval;
 	}
+	rval = ti953_reg_read(subdev->serializer,
+			      TI953_GENERAL_CFG, &val);
+	dev_dbg(va->sd.dev, "ti953 read general CFG (%x)\n", val);
 
 	ti953_bus_speed(subdev->serializer,
 			TI953_I2C_SPEED_FAST_PLUS);
@@ -994,7 +1093,11 @@ static int ti960_registered(struct v4l2_subdev *subdev)
 		}
 
 		for (l = 0; l < va->nsinks; l++) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+			rval = media_entity_create_link(
+#else
 			rval = media_create_pad_link(
+#endif
 			&va->sub_devs[k].sd->entity, j,
 			&va->sd.entity, l, MEDIA_LNK_FL_DYNAMIC);
 			if (rval) {
@@ -1064,8 +1167,13 @@ static bool ti960_broadcast_mode(struct v4l2_subdev *subdev)
 	u8 port = va->pdata->suffix - SUFFIX_BASE;
 
 	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+		struct media_pad *remote_pad =
+			media_entity_remote_pad(&va->pad[i]);
+#else
 		struct media_pad *remote_pad =
 			media_pad_remote_pad_first(&va->pad[i]);
+#endif
 
 		if (!remote_pad)
 			continue;
@@ -1187,6 +1295,7 @@ static int ti960_set_frame_sync(struct ti960 *va, int enable)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 {
 	struct ti960 *va = to_ti960(subdev);
@@ -1209,8 +1318,13 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 
 	bitmap_zero(rx_port_enabled, 32);
 	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+		struct media_pad *remote_pad =
+			media_entity_remote_pad(&va->pad[i]);
+#else
 		struct media_pad *remote_pad =
 			media_pad_remote_pad_first(&va->pad[i]);
+#endif
 
 		if (!remote_pad)
 			continue;
@@ -1334,6 +1448,7 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 
 	return 0;
 }
+#endif
 
 static int ti960_set_stream_vc(struct ti960 *va, u8 vc_id, u8 state)
 {
@@ -1390,17 +1505,87 @@ static int ti960_set_stream_vc(struct ti960 *va, u8 vc_id, u8 state)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+static int _ti960_set_routing(struct v4l2_subdev *sd,
+			      struct v4l2_subdev_state *state,
+			      struct v4l2_subdev_krouting *routing)
+{
+	static const struct v4l2_mbus_framefmt format = {
+		.width = TI960_MAX_WIDTH,
+		.height = TI960_MAX_HEIGHT,
+		.code = MEDIA_BUS_FMT_SBGGR12_1X12,
+	};
+	int ret;
+
+	/*
+	 * Note: we can only support up to V4L2_FRAME_DESC_ENTRY_MAX, until
+	 * frame desc is made dynamically allocated.
+	 */
+
+	if (routing->num_routes > V4L2_FRAME_DESC_ENTRY_MAX)
+		return -E2BIG;
+
+	ret = v4l2_subdev_routing_validate(sd, routing,
+					   V4L2_SUBDEV_ROUTING_ONLY_1_TO_1 |
+					   V4L2_SUBDEV_ROUTING_NO_SINK_STREAM_MIX);
+	if (ret)
+		return ret;
+
+	ret = v4l2_subdev_set_routing_with_fmt(sd, state, routing, &format);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static int ti960_init_state(struct v4l2_subdev *sd,
+			    struct v4l2_subdev_state *state)
+{
+	struct v4l2_subdev_route routes[] = {
+		{
+			.sink_pad = 0,
+			.sink_stream = 0,
+			.source_pad = 4,
+			.source_stream = 0,
+			.flags = V4L2_SUBDEV_ROUTE_FL_ACTIVE,
+		},
+	};
+
+	struct v4l2_subdev_krouting routing = {
+		.num_routes = ARRAY_SIZE(routes),
+		.routes = routes,
+	};
+
+	return _ti960_set_routing(sd, state, &routing);
+}
+#endif
+
 static struct v4l2_subdev_internal_ops ti960_sd_internal_ops = {
 	.open = ti960_open,
 	.registered = ti960_registered,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	.init_state = ti960_init_state,
+#endif
 };
 
 static const struct v4l2_subdev_video_ops ti960_sd_video_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	.s_stream = ti960_set_stream,
+#endif
 };
 
 static const struct v4l2_subdev_core_ops ti960_core_subdev_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	.s_power = ti960_set_power,
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	.g_ctrl = v4l2_subdev_g_ctrl,
+	.s_ctrl = v4l2_subdev_s_ctrl,
+	.g_ext_ctrls = v4l2_subdev_g_ext_ctrls,
+	.s_ext_ctrls = v4l2_subdev_s_ext_ctrls,
+	.try_ext_ctrls = v4l2_subdev_try_ext_ctrls,
+	.queryctrl = v4l2_subdev_queryctrl,
+#endif
 };
 
 static u8 ti960_get_nubmer_of_streaming(struct ti960 *va, u8 port)
@@ -1426,6 +1611,7 @@ static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 	u8 port = va->pdata->suffix - SUFFIX_BASE;
 
 	switch (ctrl->id) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	case V4L2_CID_IPU_SET_SUB_STREAM:
 		val = (*ctrl->p_new.p_s64 & 0xFFFF);
 		dev_info(va->sd.dev, "V4L2_CID_IPU_SET_SUB_STREAM %x\n", val);
@@ -1455,6 +1641,7 @@ static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 			}
 		}
 		break;
+#endif
 	default:
 		dev_info(va->sd.dev, "unknown control id: 0x%X\n", ctrl->id);
 	}
@@ -1488,6 +1675,7 @@ static const struct v4l2_ctrl_config ti960_basic_controls[] = {
 		.step = 1,
 		.def = 0,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	{
 		.ops = &ti960_ctrl_ops,
 		.id = V4L2_CID_IPU_SET_SUB_STREAM,
@@ -1498,8 +1686,10 @@ static const struct v4l2_ctrl_config ti960_basic_controls[] = {
 		.def = 0,
 		.step = 1,
 	},
+#endif
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static const struct v4l2_ctrl_config ti960_query_sub_control[NR_OF_TI960_DEVS] = {
 	{
 		.ops = &ti960_ctrl_ops,
@@ -1547,12 +1737,126 @@ static const struct v4l2_ctrl_config ti960_query_sub_control[NR_OF_TI960_DEVS] =
 	},
 
 };
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+static int ti960_set_routing(struct v4l2_subdev *sd,
+			     struct v4l2_subdev_state *state,
+			     enum v4l2_subdev_format_whence which,
+			     struct v4l2_subdev_krouting *routing)
+{
+	return _ti960_set_routing(sd, state, routing);
+}
+
+static u32 ti960_get_sink_pad_by_pad(u32 source_pad, u32 source_stream,
+					    struct v4l2_subdev_state *state)
+{
+	struct v4l2_subdev_route *routes;
+	u32 sink_pad = 0;
+	unsigned int i;
+
+	if (!state)
+		return 0;
+
+	routes = state->routing.routes;
+	for (i = 0; i < state->routing.num_routes; i++) {
+		if (routes[i].source_pad == source_pad &&
+		    routes[i].source_stream == source_stream) {
+			sink_pad = routes[i].sink_pad;
+			break;
+		}
+	}
+
+	return sink_pad;
+}
+
+static void ti960_set_csi_conts_clock(struct ti960 *va, int state)
+{
+	u32 val;
+
+	ti960_reg_write(va, TI960_CSI_PORT_SEL, 0x01);
+	ti960_reg_read(va, TI960_CSI_CTL, &val);
+	if (state) {
+		val |= TI960_CSI_CONTS_CLOCK;
+	} else {
+		val &= ~TI960_CSI_CONTS_CLOCK;
+	}
+
+	ti960_reg_write(va, TI960_CSI_CTL, val);
+}
+
+static int _ti960_set_stream(struct v4l2_subdev *subdev,
+					 struct v4l2_subdev_state *state,
+					 u32 pad, u64 streams_mask, int enable)
+{
+	struct ti960 *va = to_ti960(subdev);
+	struct v4l2_subdev *sd;
+	int j, rval;
+	unsigned short rx_port;
+	unsigned short ser_alias;
+	int i = 0;
+	u32 sink_pad = 0;
+
+	dev_dbg(va->sd.dev, "%s TI960\n", enable != 0 ? "enable" : "disable");
+
+	for (i = 0; i < 64; i++) {
+		if (streams_mask & ((u64)1 << i))
+			break;
+	}
+
+	sink_pad = ti960_get_sink_pad_by_pad(pad, i, state);
+
+	struct media_pad *remote_pad =
+		media_pad_remote_pad_first(&va->pad[sink_pad]);
+
+	if (!remote_pad)
+		return -EINVAL;
+
+	/* Find ti960 subdev */
+	sd = media_entity_to_v4l2_subdev(remote_pad->entity);
+	j = ti960_find_subdev_index(va, sd);
+	if (j < 0)
+		return -EINVAL;
+
+	mutex_lock(&va->mutex);
+	if (enable)
+		va->ref_count++;
+	else
+		va->ref_count--;
+	if ((enable && va->ref_count == 1) || (!enable && va->ref_count == 0)) {
+		ti960_set_power(&va->sd, enable);
+		ti960_set_csi_conts_clock(va, enable);
+	}
+	mutex_unlock(&va->mutex);
+
+	return ti960_set_stream_vc(va, va->sub_devs[j].rx_port, enable);
+}
+
+static int ti960_enable_streams(struct v4l2_subdev *subdev,
+					 struct v4l2_subdev_state *state,
+					 u32 pad, u64 streams_mask)
+{
+	return _ti960_set_stream(subdev, state, pad, streams_mask, true);
+}
+
+static int ti960_disable_streams(struct v4l2_subdev *subdev,
+					  struct v4l2_subdev_state *state,
+					  u32 pad, u64 streams_mask)
+{
+	return _ti960_set_stream(subdev, state, pad, streams_mask, false);
+}
+#endif
 
 static const struct v4l2_subdev_pad_ops ti960_sd_pad_ops = {
 	.get_fmt = ti960_get_format,
 	.set_fmt = ti960_set_format,
 	.get_frame_desc = ti960_get_frame_desc,
 	.enum_mbus_code = ti960_enum_mbus_code,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	.set_routing = ti960_set_routing,
+	.enable_streams = ti960_enable_streams,
+	.disable_streams = ti960_disable_streams,
+#endif
 };
 
 static struct v4l2_subdev_ops ti960_sd_ops = {
@@ -1570,7 +1874,11 @@ static int ti960_register_subdev(struct ti960 *va)
 	snprintf(va->sd.name, sizeof(va->sd.name), "TI960 %c",
 		va->pdata->suffix);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	va->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
+#else
+	va->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_STREAMS;
+#endif
 
 	va->sd.internal_ops = &ti960_sd_internal_ops;
 	va->sd.entity.function = MEDIA_ENT_F_VID_MUX;
@@ -1602,6 +1910,7 @@ static int ti960_register_subdev(struct ti960 *va)
 		}
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	const struct v4l2_ctrl_config *cfg =
 			&ti960_query_sub_control[port];
 	struct v4l2_ctrl *ctrl;
@@ -1613,6 +1922,7 @@ static int ti960_register_subdev(struct ti960 *va)
 		ret = va->ctrl_handler.error;
 		goto failed_out;
 	}
+#endif
 
 	va->link_freq = v4l2_ctrl_find(&va->ctrl_handler, V4L2_CID_LINK_FREQ);
 	if (va->link_freq == NULL) {
@@ -1643,8 +1953,12 @@ static int ti960_register_subdev(struct ti960 *va)
 	for (i = 0; i < va->nsinks; i++)
 		va->pad[i].flags = MEDIA_PAD_FL_SINK;
 	va->pad[TI960_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	ret = media_entity_init(&va->sd.entity, NR_OF_TI960_PADS, va->pad, 0);
+#else
 	ret = media_entity_pads_init(&va->sd.entity,
 				      NR_OF_TI960_PADS, va->pad);
+#endif
 	if (ret) {
 		dev_err(va->sd.dev,
 			"Failed to init media entity for ti960!\n");
@@ -1724,7 +2038,11 @@ static int ti960_init(struct ti960 *va)
 
 static void ti960_gpio_set(struct gpio_chip *chip, unsigned int gpio, int value)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	struct i2c_client *client = to_i2c_client(chip->dev);
+#else
 	struct i2c_client *client = to_i2c_client(chip->parent);
+#endif
 	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
 	struct ti960 *va = to_ti960(subdev);
 	unsigned int reg_val;
@@ -1768,8 +2086,12 @@ static int ti960_gpio_direction_output(struct gpio_chip *chip,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int ti960_probe(struct i2c_client *client)
+#else
 static int ti960_probe(struct i2c_client *client,
 			const struct i2c_device_id *devid)
+#endif
 {
 	struct ti960 *va;
 	int i, rval = 0;
@@ -1869,24 +2191,46 @@ static int ti960_probe(struct i2c_client *client,
 	 * TI960 has several back channel GPIOs.
 	 * We export GPIO0 and GPIO1 to control reset or fsin.
 	 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	va->gc.dev = &client->dev;
+#else
 	va->gc.parent = &client->dev;
+#endif
 	va->gc.owner = THIS_MODULE;
 	va->gc.label = "TI960 GPIO";
 	va->gc.ngpio = NR_OF_TI960_GPIOS;
 	va->gc.base = -1;
 	va->gc.set = ti960_gpio_set;
 	va->gc.direction_output = ti960_gpio_direction_output;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	rval = gpiochip_add(&va->gc);
+#else
+	rval = gpiochip_add_data(&va->gc, va);
+#endif
 	if (rval) {
 		dev_err(&client->dev, "Failed to add gpio chip! %d\n", rval);
 		rval = -EIO;
 		goto free_gpio;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	va->ref_count = 0;
+
+	rval = v4l2_subdev_init_finalize(&va->sd);
+	if (rval) {
+		dev_err(&client->dev, "failed to init v4l2 subdev\n");
+		goto err_entity_cleanup;
+	}
+#endif
+
 	dev_err(&client->dev, "%s Probe Succeeded", va->sd.name);
 	dev_err(&client->dev, "%s Link Freq %d Mbps", va->sd.name, va->pdata->link_freq_mbps);
 	return 0;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+err_entity_cleanup:
+	media_entity_cleanup(&va->sd.entity);
+#endif
 free_gpio:
 	if (va->pdata->FPD_gpio != -1) {
 		dev_err(&client->dev, "restore and free FPD gpio!\n");
@@ -1894,21 +2238,34 @@ free_gpio:
 		if (gpio_FPD == 0)
 			gpio_set_value(va->pdata->FPD_gpio, 0);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
+		devm_gpio_free(&client->dev,
+			va->pdata->FPD_gpio);
+#else
 		gpio_free(va->pdata->FPD_gpio);
+#endif
 	}
 
 	dev_err(&client->dev, "%s Probe Failed", va->sd.name);
 	return rval;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int ti960_remove(struct i2c_client *client)
+#else
 static void ti960_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
 	struct ti960 *va = to_ti960(subdev);
 	int i;
 
 	if (!va)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+		return 0;
+#else
 		return;
+#endif
 
 	mutex_destroy(&va->mutex);
 	v4l2_ctrl_handler_free(&va->ctrl_handler);
@@ -1941,6 +2298,9 @@ static void ti960_remove(struct i2c_client *client)
 
 	gpiochip_remove(&va->gc);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	return 0;
+#endif
 }
 
 #ifdef CONFIG_PM

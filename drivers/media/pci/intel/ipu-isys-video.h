@@ -93,6 +93,10 @@ struct ipu_isys_pipeline {
 	struct completion stream_stop_completion;
 	struct ipu_isys *isys;
 
+	spinlock_t listlock;	/* Protect framebuflist */
+	struct list_head framebuflist;
+	struct list_head framebuflist_fw;
+
 	void (*capture_done[IPU_NUM_CAPTURE_DONE])
 	 (struct ipu_isys_pipeline *ip,
 	  struct ipu_fw_isys_resp_info_abi *resp);
@@ -111,7 +115,13 @@ struct ipu_isys_pipeline {
 	spinlock_t short_packet_queue_lock;
 	struct list_head pending_interlaced_bufs;
 	unsigned int short_packet_trace_index;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	struct media_graph graph;
+#else
+	struct media_entity_graph graph;
+#endif
+#endif
 	struct media_entity_enum entity_enum;
 	unsigned int vc;
 	struct ipu_isys_sub_stream_vc asv[CSI2_BE_SOC_SOURCE_PADS_NUM];
@@ -179,6 +189,9 @@ ipu_isys_video_try_fmt_vid_mplane(struct ipu_isys_video *av,
 void
 ipu_isys_prepare_fw_cfg_default(struct ipu_isys_video *av,
 				struct ipu_fw_isys_stream_cfg_data_abi *cfg);
+struct isys_fw_msgs *ipu_get_fw_msg_buf(struct ipu_isys_pipeline *ip);
+void ipu_put_fw_msg_buf(struct ipu_isys_pipeline *ip, u64 data);
+void ipu_cleanup_fw_msg_bufs(struct ipu_isys *isys);
 int ipu_isys_video_prepare_streaming(struct ipu_isys_video *av,
 				     unsigned int state);
 int ipu_isys_video_set_streaming(struct ipu_isys_video *av, unsigned int state,

@@ -27,6 +27,10 @@
 #include "ipu-platform-regs.h"
 #include "ipu-platform-isys-csi2-reg.h"
 #include "ipu-trace.h"
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
+LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+#include <media/ipu-bridge.h>
+#endif
 
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
@@ -59,6 +63,24 @@ static int isys_init_acpi_add_device(struct device *dev, void *priv,
 }
 #endif
 
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+static int ipu_isys_check_fwnode_graph(struct fwnode_handle *fwnode)
+{
+	struct fwnode_handle *endpoint;
+
+	if (IS_ERR_OR_NULL(fwnode))
+		return -EINVAL;
+
+	endpoint = fwnode_graph_get_next_endpoint(fwnode, NULL);
+	if (endpoint) {
+		fwnode_handle_put(endpoint);
+		return 0;
+	}
+
+	return ipu_isys_check_fwnode_graph(fwnode->secondary);
+}
+#endif
+
 static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 					    struct device *parent,
 					    struct ipu_buttress_ctrl *ctrl,
@@ -77,6 +99,25 @@ static struct ipu_bus_device *ipu_isys_init(struct pci_dev *pdev,
 	struct ipu_isys_subdev_pdata *acpi_pdata;
 #endif
 	int ret;
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+struct fwnode_handle *fwnode = dev_fwnode(&pdev->dev);
+
+	ret = ipu_isys_check_fwnode_graph(fwnode);
+	if (ret) {
+		if (fwnode && !IS_ERR_OR_NULL(fwnode->secondary)) {
+			dev_err(&pdev->dev,
+				"fwnode graph has no endpoints connection\n");
+			return ERR_PTR(-EINVAL);
+		}
+
+		ret = ipu_bridge_init(&pdev->dev, ipu_bridge_parse_ssdb);
+		if (ret) {
+			dev_err_probe(&pdev->dev, ret,
+				      "IPU bridge init failed\n");
+			return ERR_PTR(ret);
+		}
+	}
+#endif
 
 	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -846,6 +887,29 @@ static void ipu_pci_remove(struct pci_dev *pdev)
 	release_firmware(isp->cpd_fw);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
+static void ipu_pci_reset_notify(struct pci_dev *pdev, bool prepare)
+{
+	struct ipu_device *isp = pci_get_drvdata(pdev);
+
+	if (prepare) {
+		dev_err(&pdev->dev, "FLR prepare\n");
+		pm_runtime_forbid(&isp->pdev->dev);
+		isp->flr_done = true;
+		return;
+	}
+
+	ipu_buttress_restore(isp);
+	if (isp->secure_mode)
+		ipu_buttress_reset_authentication(isp);
+
+	ipu_bus_flr_recovery();
+	isp->ipc_reinit = true;
+	pm_runtime_allow(&isp->pdev->dev);
+
+	dev_err(&pdev->dev, "FLR completed\n");
+}
+#else
 static void ipu_pci_reset_prepare(struct pci_dev *pdev)
 {
 	struct ipu_device *isp = pci_get_drvdata(pdev);
@@ -869,6 +933,7 @@ static void ipu_pci_reset_done(struct pci_dev *pdev)
 
 	dev_warn(&pdev->dev, "FLR completed\n");
 }
+#endif
 
 /*
  * PCI base driver code requires driver to provide these to enable
@@ -962,8 +1027,12 @@ static const struct pci_device_id ipu_pci_tbl[] = {
 MODULE_DEVICE_TABLE(pci, ipu_pci_tbl);
 
 static const struct pci_error_handlers pci_err_handlers = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
+	.reset_notify = ipu_pci_reset_notify,
+#else
 	.reset_prepare = ipu_pci_reset_prepare,
 	.reset_done = ipu_pci_reset_done,
+#endif
 };
 
 static struct pci_driver ipu_pci_driver = {
@@ -1009,6 +1078,10 @@ static void __exit ipu_exit(void)
 module_init(ipu_init);
 module_exit(ipu_exit);
 
+#if IS_ENABLED(CONFIG_IPU_BRIDGE) && \
+LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+#endif
 MODULE_AUTHOR("Sakari Ailus <sakari.ailus@linux.intel.com>");
 MODULE_AUTHOR("Jouni Högander <jouni.hogander@intel.com>");
 MODULE_AUTHOR("Antti Laakso <antti.laakso@intel.com>");

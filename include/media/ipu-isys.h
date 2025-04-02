@@ -89,9 +89,16 @@ struct ipu_isys_subdev_pdata {
 	struct ipu_isys_clk_mapping *clk_map;
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 struct sensor_async_subdev {
 	struct v4l2_async_subdev asd;
 	struct ipu_isys_csi2_config csi2;
 };
 
+#else
+struct sensor_async_sd {
+	struct v4l2_async_connection asc;
+	struct ipu_isys_csi2_config csi2;
+};
+#endif
 #endif /* MEDIA_IPU_H */

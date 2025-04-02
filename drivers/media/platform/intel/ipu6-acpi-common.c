@@ -257,10 +257,14 @@ int ipu_acpi_get_dep_data(struct device *dev,
 		return 0;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 	status = acpi_evaluate_reference(dev_handle, "_DEP", NULL,
 					 &dep_devices);
 
 	if (ACPI_FAILURE(status)) {
+#else
+	if (!acpi_evaluate_reference(dev_handle, "_DEP", NULL, &dep_devices)) {
+#endif
 		pr_err("IPU6 ACPI: %s failed to evaluate _DEP", dev_name(dev));
 		return -ENODEV;
 	}
@@ -286,8 +290,12 @@ int ipu_acpi_get_dep_data(struct device *dev,
 			continue;
 
 		/* Process device IN3472 created by acpi */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+		if (acpi_bus_get_device(dep_devices.handles[i], &device)) {
+#else
 		device = acpi_fetch_acpi_dev(dep_devices.handles[i]);
 		if (!device) {
+#endif
 			pr_err("IPU6 ACPI: Failed to get ACPI device");
 			return -ENODEV;
 		}
