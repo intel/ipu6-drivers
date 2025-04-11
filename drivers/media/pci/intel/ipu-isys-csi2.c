@@ -81,6 +81,7 @@ static struct v4l2_subdev_internal_ops csi2_sd_internal_ops = {
 	.close = ipu_isys_subdev_close,
 };
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 255)
 int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 {
 	struct media_pipeline *mp = media_entity_pipeline(&csi2->asd.sd.entity);
@@ -112,6 +113,60 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 
 	return 0;
 }
+#else
+int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, __s64 *link_freq)
+{
+	struct media_pipeline *mp = media_entity_pipeline(&csi2->asd.sd.entity);
+	struct ipu_isys_pipeline *pipe = container_of(mp,
+						      struct ipu_isys_pipeline,
+						      pipe);
+	struct v4l2_subdev *ext_sd =
+	    media_entity_to_v4l2_subdev(pipe->external->entity);
+	struct v4l2_ext_control c = {.id = V4L2_CID_LINK_FREQ, };
+	struct v4l2_ext_controls cs = {.count = 1,
+		.controls = &c,
+	};
+	struct v4l2_querymenu qm = {.id = c.id, };
+	int rval;
+
+	if (!ext_sd) {
+		WARN_ON(1);
+		return -ENODEV;
+	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler,
+				ext_sd->devnode,
+				ext_sd->v4l2_dev->mdev,
+				&cs);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler,
+				ext_sd->v4l2_dev->mdev,
+				&cs);
+#else
+	rval = v4l2_g_ext_ctrls(ext_sd->ctrl_handler, &cs);
+#endif
+	if (rval) {
+		dev_info(&csi2->isys->adev->dev, "can't get link frequency\n");
+		return rval;
+	}
+
+	qm.index = c.value;
+
+	rval = v4l2_querymenu(ext_sd->ctrl_handler, &qm);
+	if (rval) {
+		dev_info(&csi2->isys->adev->dev, "can't get menu item\n");
+		return rval;
+	}
+
+	dev_dbg(&csi2->isys->adev->dev, "%s: link frequency %lld\n", __func__,
+		qm.value);
+
+	if (!qm.value)
+		return -EINVAL;
+	*link_freq = qm.value;
+	return 0;
+}
+#endif
 
 static int subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
 			   struct v4l2_event_subscription *sub)
@@ -323,19 +378,37 @@ static const struct v4l2_subdev_video_ops csi2_sd_video_ops = {
 	.s_stream = set_stream,
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_format *fmt)
+{
+	return ipu_isys_subdev_get_ffmt(sd, cfg, fmt);
+}
+#else
 static int ipu_isys_csi2_get_fmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
 	return ipu_isys_subdev_get_ffmt(sd, state, fmt);
 }
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_format *fmt)
+{
+	return ipu_isys_subdev_set_ffmt(sd, cfg, fmt);
+}
+#else
 static int ipu_isys_csi2_set_fmt(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
 	return ipu_isys_subdev_set_ffmt(sd, state, fmt);
 }
+#endif
 
 static int __subdev_link_validate(struct v4l2_subdev *sd,
 				  struct media_link *link,
@@ -371,12 +444,20 @@ static struct media_entity_operations csi2_entity_ops = {
 };
 
 static void csi2_set_ffmt(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			  struct v4l2_subdev_pad_config *cfg,
+#else
 			  struct v4l2_subdev_state *state,
+#endif
 			  struct v4l2_subdev_format *fmt)
 {
 	enum isys_subdev_prop_tgt tgt = IPU_ISYS_SUBDEV_PROP_TGT_SINK_FMT;
 	struct v4l2_mbus_framefmt *ffmt =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		__ipu_isys_get_ffmt(sd, cfg, fmt->pad,
+#else
 		__ipu_isys_get_ffmt(sd, state, fmt->pad,
+#endif
 				    fmt->which);
 
 	if (fmt->format.field != V4L2_FIELD_ALTERNATE)
@@ -384,8 +465,13 @@ static void csi2_set_ffmt(struct v4l2_subdev *sd,
 
 	if (fmt->pad == CSI2_PAD_SINK) {
 		*ffmt = fmt->format;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		ipu_isys_subdev_fmt_propagate(sd, cfg, &fmt->format, NULL,
+					      tgt, fmt->pad, fmt->which);
+#else
 		ipu_isys_subdev_fmt_propagate(sd, state, &fmt->format, NULL,
 					      tgt, fmt->pad, fmt->which);
+#endif
 		return;
 	}
 
@@ -405,10 +491,16 @@ static const struct ipu_isys_pixelformat *
 csi2_try_fmt(struct ipu_isys_video *av,
 	     struct v4l2_pix_format_mplane *mpix)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	struct v4l2_subdev *sd =
+	    media_entity_to_v4l2_subdev(av->vdev.entity.links[0].source->
+					entity);
+#else
 	struct media_link *link = list_first_entry(&av->vdev.entity.links,
 						   struct media_link, list);
 	struct v4l2_subdev *sd =
 	    media_entity_to_v4l2_subdev(link->source->entity);
+#endif
 	struct ipu_isys_csi2 *csi2;
 
 	if (!sd)

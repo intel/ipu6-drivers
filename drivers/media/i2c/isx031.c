@@ -9,7 +9,11 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
+#endif
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
@@ -447,7 +451,11 @@ static int __maybe_unused isx031_resume(struct device *dev)
 }
 
 static int isx031_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct isx031 *isx031 = to_isx031(sd);
@@ -470,7 +478,13 @@ static int isx031_set_format(struct v4l2_subdev *sd,
 
 	isx031_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		isx031->cur_mode = mode;
 	}
@@ -489,15 +503,27 @@ static int isx031_set_format(struct v4l2_subdev *sd,
 }
 
 static int isx031_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct isx031 *isx031 = to_isx031(sd);
 
 	mutex_lock(&isx031->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		fmt->format = *v4l2_subdev_get_try_format(&isx031->sd, cfg,
+							  fmt->pad);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&isx031->sd, sd_state,
 							  fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(sd_state,
+							  fmt->pad);
+#endif
 	else
 		isx031_update_pad_format(isx031->cur_mode, &fmt->format);
 
@@ -511,8 +537,16 @@ static int isx031_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct isx031 *isx031 = to_isx031(sd);
 
 	mutex_lock(&isx031->mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	isx031_update_pad_format(&supported_modes[0],
+				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 	isx031_update_pad_format(&supported_modes[0],
 				 v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+	isx031_update_pad_format(&supported_modes[0],
+				 v4l2_subdev_state_get_format(fh->state, 0));
+#endif
 	mutex_unlock(&isx031->mutex);
 
 	return 0;
@@ -540,7 +574,11 @@ static const struct v4l2_subdev_internal_ops isx031_internal_ops = {
 	.open = isx031_open,
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int isx031_remove(struct i2c_client *client)
+#else
 static void isx031_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct isx031 *isx031 = to_isx031(sd);
@@ -550,6 +588,9 @@ static void isx031_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&isx031->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	return 0;
+#endif
 }
 
 static int isx031_probe(struct i2c_client *client)
@@ -609,7 +650,11 @@ static int isx031_probe(struct i2c_client *client)
 		goto probe_error_media_entity_cleanup;
 	}
 	isx031->cur_mode = isx031->pre_mode;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
+	ret = v4l2_async_register_subdev_sensor_common(&isx031->sd);
+#else
 	ret = v4l2_async_register_subdev_sensor(&isx031->sd);
+#endif
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);
@@ -649,7 +694,11 @@ static struct i2c_driver isx031_i2c_driver = {
 		.name = "isx031",
 		.pm = &isx031_pm_ops,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = isx031_probe,
+#else
+	.probe = isx031_probe,
+#endif
 	.remove = isx031_remove,
 	.id_table = isx031_id_table,
 };

@@ -10,7 +10,7 @@ endif
 ccflags-y += -DIPU_OTF_SUPPORT
 intel-ipu6-psys-objs			+= ipu-psys.o \
 					   ipu-fw-psys.o \
-                                           ipu-fw-resources.o \
+					   ipu-fw-resources.o \
 					   ipu-resources.o \
 					   ipu6-psys.o \
 					   ipu6-ppg.o \

@@ -430,7 +430,11 @@ static struct ti960_pdata ti960_pdata = {
 	.subdev_info = ti960_subdevs,
 	.subdev_num = ARRAY_SIZE(ti960_subdevs),
 	.reset_gpio = 0,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 12)
 	.FPD_gpio = 175,
+#else
+	.FPD_gpio = 258,
+#endif
 	.suffix = 'a',
 };
 

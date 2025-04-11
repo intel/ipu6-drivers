@@ -153,9 +153,6 @@ struct ipu_isys {
 	struct mutex short_packet_tracing_mutex;	/* For tracing count */
 	u64 tsc_timer_base;
 	u64 tunit_timer_base;
-	spinlock_t listlock;	/* Protect framebuflist */
-	struct list_head framebuflist;
-	struct list_head framebuflist_fw;
 #if !IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 	struct v4l2_async_notifier notifier;
 #endif
@@ -179,9 +176,9 @@ struct isys_fw_msgs {
 #define to_stream_cfg_msg_buf(a) (&(a)->fw_msg.stream)
 #define to_dma_addr(a) ((a)->dma_addr)
 
-struct isys_fw_msgs *ipu_get_fw_msg_buf(struct ipu_isys_pipeline *ip);
-void ipu_put_fw_mgs_buf(struct ipu_isys *isys, u64 data);
-void ipu_cleanup_fw_msg_bufs(struct ipu_isys *isys);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+int ipu_pipeline_pm_use(struct media_entity *entity, int use);
+#endif
 
 extern const struct v4l2_ioctl_ops ipu_isys_ioctl_ops;
 

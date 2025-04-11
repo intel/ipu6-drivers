@@ -7,7 +7,11 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+#include <media/videobuf2-core.h>
+#else
 #include <media/videobuf2-v4l2.h>
+#endif
 
 #include "ipu-isys-media.h"
 
@@ -24,7 +28,11 @@ enum ipu_isys_buffer_type {
 struct ipu_isys_queue {
 	struct list_head node;	/* struct ipu_isys_pipeline.queues */
 	struct vb2_queue vbq;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+	struct vb2_alloc_ctx *ctx;
+#else
 	struct device *dev;
+#endif
 	/*
 	 * @lock: serialise access to queued and pre_streamon_queued
 	 */
@@ -53,7 +61,11 @@ struct ipu_isys_buffer {
 };
 
 struct ipu_isys_video_buffer {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+	struct vb2_buffer vb;
+#else
 	struct vb2_v4l2_buffer vb_v4l2;
+#endif
 	struct ipu_isys_buffer ib;
 };
 
@@ -81,12 +93,20 @@ struct ipu_isys_buffer_list {
 #define ipu_isys_to_isys_video_buffer(__ib) \
 	container_of(__ib, struct ipu_isys_video_buffer, ib)
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
+#define vb2_buffer_to_ipu_isys_video_buffer(__vb) \
+	container_of(__vb, struct ipu_isys_video_buffer, vb)
+
+#define ipu_isys_buffer_to_vb2_buffer(__ib) \
+	(&ipu_isys_to_isys_video_buffer(__ib)->vb)
+#else
 #define vb2_buffer_to_ipu_isys_video_buffer(__vb) \
 	container_of(to_vb2_v4l2_buffer(__vb), \
 	struct ipu_isys_video_buffer, vb_v4l2)
 
 #define ipu_isys_buffer_to_vb2_buffer(__ib) \
 	(&ipu_isys_to_isys_video_buffer(__ib)->vb_v4l2.vb2_buf)
+#endif
 
 #define vb2_buffer_to_ipu_isys_buffer(__vb) \
 	(&vb2_buffer_to_ipu_isys_video_buffer(__vb)->ib)

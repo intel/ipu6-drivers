@@ -8,7 +8,11 @@
 #include <linux/pm_runtime.h>
 #include <linux/gpio.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <asm/unaligned.h>
+#else
+#include <linux/unaligned.h>
+#endif
 #include <linux/interrupt.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
@@ -1878,7 +1882,12 @@ static int ar0234_set_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int ar0234_g_frame_interval(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 		struct v4l2_subdev_frame_interval *fival)
+#else
+		struct v4l2_subdev_state *sd_state,
+		struct v4l2_subdev_frame_interval *fival)
+#endif
 {
 	struct ar0234 *ar0234 = to_ar0234(sd);
 
@@ -1928,7 +1937,11 @@ static int __maybe_unused ar0234_resume(struct device *dev)
 }
 
 static int ar0234_set_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct ar0234 *ar0234 = to_ar0234(sd);
@@ -1958,7 +1971,13 @@ static int ar0234_set_format(struct v4l2_subdev *sd,
 	mutex_lock(&ar0234->mutex);
 	ar0234_update_pad_format(mode, &fmt->format);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+#else
+		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
+#endif
 	} else {
 		ar0234->cur_mode = mode;
 		__v4l2_ctrl_s_ctrl(ar0234->link_freq, mode->link_freq_index);
@@ -1994,15 +2013,27 @@ static int ar0234_set_format(struct v4l2_subdev *sd,
 }
 
 static int ar0234_get_format(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+			     struct v4l2_subdev_pad_config *cfg,
+#else
 			     struct v4l2_subdev_state *sd_state,
+#endif
 			     struct v4l2_subdev_format *fmt)
 {
 	struct ar0234 *ar0234 = to_ar0234(sd);
 
 	mutex_lock(&ar0234->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		fmt->format = *v4l2_subdev_get_try_format(&ar0234->sd, cfg,
+							  fmt->pad);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&ar0234->sd,
 							  sd_state, fmt->pad);
+#else
+		fmt->format = *v4l2_subdev_state_get_format(
+							  sd_state, fmt->pad);
+#endif
 	else
 		ar0234_update_pad_format(ar0234->cur_mode, &fmt->format);
 
@@ -2012,7 +2043,11 @@ static int ar0234_get_format(struct v4l2_subdev *sd,
 }
 
 static int ar0234_enum_mbus_code(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				 struct v4l2_subdev_pad_config *cfg,
+#else
 				 struct v4l2_subdev_state *sd_state,
+#endif
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(supported_formats))
@@ -2024,7 +2059,11 @@ static int ar0234_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ar0234_enum_frame_size(struct v4l2_subdev *sd,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				  struct v4l2_subdev_pad_config *cfg,
+#else
 				  struct v4l2_subdev_state *sd_state,
+#endif
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -2041,7 +2080,11 @@ static int ar0234_enum_frame_size(struct v4l2_subdev *sd,
 static int ar0234_frame_rate[] = { 40, 20 };
 
 static int ar0234_enum_frame_interval(struct v4l2_subdev *subdev,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+		struct v4l2_subdev_pad_config *cfg,
+#else
 		struct v4l2_subdev_state *sd_state,
+#endif
 		struct v4l2_subdev_frame_interval_enum *fie)
 {
 	int mode_size = ARRAY_SIZE(supported_modes);
@@ -2071,7 +2114,13 @@ static int ar0234_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	mutex_lock(&ar0234->mutex);
 	ar0234_update_pad_format(&supported_modes[0],
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 				 v4l2_subdev_get_try_format(sd, fh->state, 0));
+#else
+				 v4l2_subdev_state_get_format(fh->state, 0));
+#endif
 	mutex_unlock(&ar0234->mutex);
 
 	return 0;
@@ -2079,7 +2128,9 @@ static int ar0234_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 static const struct v4l2_subdev_video_ops ar0234_video_ops = {
 	.s_stream = ar0234_set_stream,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
 	.g_frame_interval = ar0234_g_frame_interval,
+#endif
 };
 
 static const struct v4l2_subdev_pad_ops ar0234_pad_ops = {
@@ -2088,6 +2139,9 @@ static const struct v4l2_subdev_pad_ops ar0234_pad_ops = {
 	.enum_mbus_code = ar0234_enum_mbus_code,
 	.enum_frame_size = ar0234_enum_frame_size,
 	.enum_frame_interval = ar0234_enum_frame_interval,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	.get_frame_interval = ar0234_g_frame_interval,
+#endif
 };
 
 static const struct v4l2_subdev_ops ar0234_subdev_ops = {
@@ -2123,7 +2177,11 @@ static int ar0234_identify_module(struct ar0234 *ar0234)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static int ar0234_remove(struct i2c_client *client)
+#else
 static void ar0234_remove(struct i2c_client *client)
+#endif
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ar0234 *ar0234 = to_ar0234(sd);
@@ -2134,6 +2192,9 @@ static void ar0234_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ar0234->mutex);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	return 0;
+#endif
 }
 
 static irqreturn_t ar0234_threaded_irq_fn(int irq, void *dev_id)
@@ -2233,7 +2294,11 @@ static int ar0234_probe(struct i2c_client *client)
 		}
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+	ret = v4l2_async_register_subdev_sensor_common(&ar0234->sd);
+#else
 	ret = v4l2_async_register_subdev_sensor(&ar0234->sd);
+#endif
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);
@@ -2277,7 +2342,11 @@ static struct i2c_driver ar0234_i2c_driver = {
 		.name = "ar0234",
 		.pm = &ar0234_pm_ops,
 	},
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = ar0234_probe,
+#else
+	.probe = ar0234_probe,
+#endif
 	.remove = ar0234_remove,
 	.id_table = ar0234_id_table,
 };

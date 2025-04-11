@@ -15,10 +15,10 @@
 #define TI960_I2C_ADDRESS	0x32
 #define TI960_I2C_ADDRESS_2	0x3d
 
-#define PIXEL_ORDER_GRBG	0
-#define PIXEL_ORDER_RGGB	1
-#define PIXEL_ORDER_BGGR	2
-#define PIXEL_ORDER_GBRG	3
+#define GRBG	0
+#define RGGB	1
+#define BGGR	2
+#define GBRG	3
 
 #define NR_OF_TI960_DEVS	4
 #define NR_OF_TI960_CTRLS	4

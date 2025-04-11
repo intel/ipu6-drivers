@@ -263,8 +263,12 @@ void *ipu_fw_com_prepare(struct ipu_fw_com_cfg *cfg,
 
 	ctx->dma_buffer = dma_alloc_attrs(&ctx->adev->dev, sizeall,
 					  &ctx->dma_addr, GFP_KERNEL,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 					  attrs);
 	ctx->attrs = attrs;
+#else
+					  NULL);
+#endif
 	if (!ctx->dma_buffer) {
 		dev_err(&ctx->adev->dev, "failed to allocate dma memory\n");
 		kfree(ctx);
@@ -396,7 +400,11 @@ int ipu_fw_com_release(struct ipu_fw_com_context *ctx, unsigned int force)
 
 	dma_free_attrs(&ctx->adev->dev, ctx->dma_size,
 		       ctx->dma_buffer, ctx->dma_addr,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 		       ctx->attrs);
+#else
+		       NULL);
+#endif
 	kfree(ctx);
 	return 0;
 }
