@@ -1,0 +1,26 @@
+From 74080b0b825c7ca9f8188f3393d8713b1425f676 Mon Sep 17 00:00:00 2001
+From: Jimmy Su <jimmy.su@intel.com>
+Date: Fri, 11 Apr 2025 15:04:42 +0800
+Subject: [PATCH 2/2] media: ipu-bridge: Support imx471 sensor
+
+Signed-off-by: Jimmy Su <jimmy.su@intel.com>
+---
+ drivers/media/pci/intel/ipu-bridge.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index 1cb745855600..df528e03b433 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -84,6 +84,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("OVTI2680", 1, 331200000),
+ 	/* Omnivision OV8856 */
+ 	IPU_SENSOR_CONFIG("OVTI8856", 3, 180000000, 360000000, 720000000),
++	/* Sony IMX471 */
++	IPU_SENSOR_CONFIG("SONY471A", 1, 200000000),
+ };
+ 
+ static const struct ipu_property_names prop_names = {
+-- 
+2.34.1
+
