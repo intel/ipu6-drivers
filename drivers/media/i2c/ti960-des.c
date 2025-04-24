@@ -369,11 +369,20 @@ static int ti960_unmap_i2c_slave(struct ti960 *va, struct ti960_subdev *sd,
 	slaves[index].addr = 0;
 	slaves[index].alias = 0;
 
+	rval = ti960_reg_write(va, TI960_RX_PORT_SEL,
+		(sd->rx_port << 4) + (1 << sd->rx_port));
+	if (rval)
+		return rval;
+
 	rval = ti960_reg_write(va, TI960_SLAVE_ID0 + index, 0);
 	if (rval)
 		return rval;
 
 	rval = ti960_reg_write(va, TI960_SLAVE_ALIAS_ID0 + index, 0);
+	if (rval)
+		return rval;
+
+	rval = ti960_reg_write(va, TI960_BCC_CONFIG, 0x1e); /* bit[6] = 0 disable I2C_PASS_THROUGH */
 	if (rval)
 		return rval;
 
@@ -400,7 +409,6 @@ static int ti960_fsin_gpio_init(struct ti960 *va, struct ti960_subdev *subdev)
 	int rval;
 	int reg_val;
 	unsigned short rx_port = subdev->rx_port;
-	unsigned short ser_alias = subdev->ser_i2c_addr;
 	unsigned short fsin_gpio = subdev->fsin_gpio;
 	struct i2c_client *serializer = subdev->serializer;
 
@@ -643,7 +651,7 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 			    struct v4l2_subdev_format *fmt)
 {
 	struct ti960 *va = to_ti960(subdev);
-	struct ti960_csi_data_format *csi_format;
+	struct ti960_csi_data_format csi_format;
 	struct v4l2_mbus_framefmt *ffmt;
 	int fmt_idx;
 	u8 port = va->pdata->suffix - SUFFIX_BASE;
@@ -655,7 +663,7 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 			fmt->format.code);
 		return -EINVAL;
 	}
-	csi_format = &va_csi_data_formats[fmt_idx];
+	csi_format = va_csi_data_formats[fmt_idx];
 
 	mutex_lock(&va->mutex);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
@@ -673,7 +681,7 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 		ffmt->width = fmt->format.width;
 		ffmt->height = fmt->format.height;
-		ffmt->code = csi_format->code;
+		ffmt->code = csi_format.code;
 	}
 	fmt->format = *ffmt;
 
@@ -681,12 +689,12 @@ static int ti960_set_format(struct v4l2_subdev *subdev,
 		set_sub_stream_fmt(port, fmt->pad, ffmt->code);
 		set_sub_stream_h(port, fmt->pad, ffmt->height);
 		set_sub_stream_w(port, fmt->pad, ffmt->width);
-		set_sub_stream_dt(port, fmt->pad, csi_format->mipi_dt_code);
+		set_sub_stream_dt(port, fmt->pad, csi_format.mipi_dt_code);
 		set_sub_stream_vc_id(port, fmt->pad, fmt->pad);
 		dev_dbg(subdev->dev,
 			"framefmt: width: %d, height: %d, code: 0x%x, "
 			"dt: 0x%x.\n", ffmt->width, ffmt->height,
-			ffmt->code, csi_format->mipi_dt_code);
+			ffmt->code, csi_format.mipi_dt_code);
 	}
 
 	mutex_unlock(&va->mutex);
@@ -718,6 +726,33 @@ static int ti960_open(struct v4l2_subdev *subdev,
 	};
 
 	*try_fmt = fmt.format;
+
+	return 0;
+}
+
+static int ti960_map_subdevs_addr_per_rx_port(struct ti960 *va, unsigned short rx_port)
+{
+	unsigned short phy_i2c_addr, alias_i2c_addr;
+	int i, rval;
+
+	dev_dbg(va->sd.dev, "map_subdevs_addr_per_rx_port: rx_port: %d.\n", rx_port);
+
+	for (i = 0; i < NR_OF_TI960_SINK_PADS; i++) {
+		if (rx_port !=  va->sub_devs[i].rx_port) {
+			continue;
+		}
+
+		phy_i2c_addr = va->sub_devs[i].phy_i2c_addr;
+		alias_i2c_addr = va->sub_devs[i].alias_i2c_addr;
+
+		if (!phy_i2c_addr || !alias_i2c_addr)
+			continue;
+
+		rval = ti960_map_i2c_slave(va, &va->sub_devs[i],
+				phy_i2c_addr, alias_i2c_addr);
+		if (rval)
+			return rval;
+	}
 
 	return 0;
 }
@@ -759,7 +794,7 @@ static int ti960_unmap_subdevs_addr(struct ti960 *va)
 		rval = ti960_unmap_i2c_slave(va, &va->sub_devs[i],
 				phy_i2c_addr);
 		if (rval) {
-			dev_err(va->sd.dev, "%s  failed to unmap subdev: %s on port %d\n",
+			dev_err(va->sd.dev, "failed to unmap subdev: %s on port %d\n",
 					va->sub_devs->sd_name, rx_port);
 			return rval;
 		}
@@ -907,7 +942,7 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 	 */
 	while (timeout--) {
 		rval = ti953_reg_read(subdev->serializer, TI953_DEVICE_ID, &val);
-		if ((val == 0x30) || (val == 0x32))
+		if (!rval && ((val == 0x30) || (val == 0x32)))
 			break;
 
 		usleep_range(100, 110);
@@ -918,16 +953,11 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 		dev_info(va->sd.dev, "ti953 pull down succeed, loop time %d.\n", (50 - timeout));
 	}
 
-	if (pdata->module_flags & TI960_FL_INIT_SER) {
-		rval = ti953_init(subdev->serializer);
-		if (rval)
-			return rval;
-	}
-
-	if (pdata->module_flags & TI960_FL_INIT_SER_CLK) {
-		rval = ti953_init_clk(subdev->serializer);
-		if (rval)
-			return rval;
+	rval = ti953_init(subdev->serializer, pdata->module_flags,
+			  va->pdata->ser_nlanes);
+	if (rval) {
+		dev_err(va->sd.dev, "ti953 init failed\n");
+		return rval;
 	}
 
 	if (pdata->module_flags & TI960_FL_POWERUP) {
@@ -943,28 +973,6 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 					pdata->gpio_powerup_seq[i]);
 		}
 	}
-
-	/* Configure ti953 CSI lane */
-	val = TI953_I2C_STRAP_MODE;
-	val |= TI953_CRC_TX_GEN_ENABLE;
-	val |= TI953_CONTS_CLK;
-	if (va->pdata->ser_nlanes == 1)
-		val |= TI953_CSI_1LANE;
-	else if (va->pdata->ser_nlanes == 2)
-		val |= TI953_CSI_2LANE;
-	else if (va->pdata->ser_nlanes == 4)
-		val |= TI953_CSI_4LANE;
-	else
-		dev_err(va->sd.dev, "not expected csi lane\n");
-	rval = ti953_reg_write(subdev->serializer,
-			       TI953_GENERAL_CFG, val);
-	if (rval != 0) {
-		dev_err(va->sd.dev, "ti953 write failed(%d)\n", rval);
-		return rval;
-	}
-	rval = ti953_reg_read(subdev->serializer,
-			      TI953_GENERAL_CFG, &val);
-	dev_dbg(va->sd.dev, "ti953 read general CFG (%x)\n", val);
 
 	ti953_bus_speed(subdev->serializer,
 			TI953_I2C_SPEED_FAST_PLUS);
@@ -984,6 +992,11 @@ static int ti960_config_ser(struct ti960 *va, struct i2c_client *client, int k,
 	}
 	if (speed_detect_fail)
 		dev_err(va->sd.dev, "i2c bus speed standard failed!");
+
+	rval = ti960_map_subdevs_addr_per_rx_port(va, rx_port);
+	if (rval < 0)
+		return rval;
+
 	return 0;
 }
 
@@ -1137,15 +1150,25 @@ static int ti960_set_power(struct v4l2_subdev *subdev, int on)
 			    link_freq);
 	if (ret)
 		return ret;
-	val = TI960_CSI_ENABLE;
 
 	/* Configure ti960 CSI lane */
-	if (va->pdata->deser_nlanes == 2)
-		val |= TI960_CSI_2LANE;
-	else if (va->pdata->deser_nlanes == 4)
-		val |= TI960_CSI_4LANE;
-	else
+	switch (va->pdata->deser_nlanes) {
+	case 1:
+		val = TI960_CSI_1LANE;
+		break;
+	case 2:
+		val = TI960_CSI_2LANE;
+		break;
+	case 3:
+		val = TI960_CSI_3LANE;
+		break;
+	case 4:
+		val = TI960_CSI_4LANE;
+		break;
+	default:
 		dev_err(va->sd.dev, "not expected csi lane\n");
+		return -1;
+	}
 
 	/* Enable skew calculation when 1.6Gbps output is enabled. */
 	if (link_freq == TI960_MIPI_1600MBPS)
@@ -1348,7 +1371,8 @@ static int ti960_set_stream(struct v4l2_subdev *subdev, int enable)
 		if (broadcast && sd_idx == -1) {
 			sd_idx = j;
 		} else if (broadcast) {
-			rval = ti960_map_i2c_slave(va, rx_port, 0,
+			rval = ti960_map_i2c_slave(va,
+				(struct ti960_subdev *)(uintptr_t)rx_port, 0,
 				va->sub_devs[sd_idx].alias_i2c_addr);
 			if (rval < 0)
 				return rval;
@@ -1626,6 +1650,7 @@ static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 		ti960_reg_read(va, TI960_CSI_CTL, &val);
 		if (state) {
 			if (ti960_get_nubmer_of_streaming(va, port) == 0) {
+				val |= TI960_CSI_ENABLE;
 				val |= TI960_CSI_CONTS_CLOCK;
 				ti960_reg_write(va, TI960_RESET, TI960_POWER_ON);
 				ti960_reg_write(va, TI960_CSI_CTL, val);
@@ -1637,6 +1662,7 @@ static int ti960_s_ctrl(struct v4l2_ctrl *ctrl)
 			ti960_set_sub_stream[port][vc_id] = state;
 			if (ti960_get_nubmer_of_streaming(va, port) == 0) {
 				val &= ~TI960_CSI_CONTS_CLOCK;
+				val &= ~TI960_CSI_ENABLE;
 				ti960_reg_write(va, TI960_CSI_CTL, val);
 			}
 		}
@@ -1791,7 +1817,7 @@ static int _ti960_set_stream(struct v4l2_subdev *subdev,
 {
 	struct ti960 *va = to_ti960(subdev);
 	struct v4l2_subdev *sd;
-	int j, rval;
+	int j;
 	unsigned short rx_port;
 	unsigned short ser_alias;
 	int i = 0;
@@ -2024,10 +2050,6 @@ static int ti960_init(struct ti960 *va)
 			return rval;
 		}
 	}
-
-	rval = ti960_map_subdevs_addr(va);
-	if (rval)
-		return rval;
 
 	rval = ti960_set_frame_sync(va, 1);
 	if (rval)

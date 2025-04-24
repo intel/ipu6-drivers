@@ -43,7 +43,6 @@ int ti953_reg_write(struct i2c_client *client, unsigned char reg, unsigned char 
 int ti953_reg_read(struct i2c_client *client, unsigned char reg, unsigned char *val)
 {
 	int ret, retry, timeout = 10;
-	unsigned short addr_backup;
 
 	for (retry = 0; retry < timeout; retry++) {
 		ret = i2c_smbus_read_byte_data(client, reg);
@@ -88,20 +87,80 @@ bool ti953_detect(struct i2c_client *client)
 	return ret;
 }
 
-int ti953_init(struct i2c_client *client)
+int ti953_init(struct i2c_client *client, unsigned int flag, int lanes)
 {
-	int i, rval;
+	int rval;
+	unsigned char val;
+	unsigned int mode_flag = flag & 0x7;
 
-	for (i = 0; i < ARRAY_SIZE(ti953_init_settings); i++) {
-		rval = ti953_reg_write(client, ti953_init_settings[i].reg,
-				       ti953_init_settings[i].val);
-		if (rval) {
-			dev_err(&client->dev, "ti953 write timeout %d\n", rval);
-			break;
-		}
+	val = TI953_MODE_REG_OVERRIDE;
+	switch (mode_flag) {
+	case TI960_FL_INIT_SER:
+		val |= TI953_MODE_SYNC;
+		break;
+	case TI960_FL_INIT_SER_NONSYNC_EXT:
+		val |= TI953_MODE_NONSYNC_EXT;
+		break;
+	case TI960_FL_INIT_SER_NONSYNC_INT:
+		val |= TI953_MODE_NONSYNC_INT;
+		break;
+	case TI960_FL_INIT_SER_DVP:
+		val |= TI953_MODE_DVP;
+		break;
+	default:
+		dev_err(&client->dev, "ti953 init mode is not supported\n");
+		return -EINVAL;
 	}
 
-	ti953_init_clk(client);
+	rval = ti953_reg_write(client, TI953_MODE_SEL, val);
+	if (rval) {
+		dev_err(&client->dev, "ti953 write MODE_SEL failed\n");
+		return rval;
+	}
+	rval = ti953_reg_read(client, TI953_MODE_SEL, &val);
+	if (rval != 0) {
+		dev_err(&client->dev, "ti953 read Mode value failed\n");
+		return -EINVAL;
+	} else if (!(val & TI953_MODE_SEL_DONE)) {
+		dev_err(&client->dev, "ti953 Mode value not stabilized\n");
+		return -EINVAL;
+	} else
+		dev_dbg(&client->dev, "ti953 read MODE_SEL (0x%x)\n", val);
+
+	if (flag & TI960_FL_INIT_SER_CLK) {
+		rval = ti953_init_clk(client);
+		if (rval)
+			return rval;
+	}
+
+	/* Configure ti953 CSI lane */
+	val = TI953_I2C_STRAP_MODE;
+	val |= TI953_CRC_TX_GEN_ENABLE;
+	val |= TI953_CONTS_CLK;
+	switch (lanes) {
+	case 1:
+		val |= TI953_CSI_1LANE;
+		break;
+	case 2:
+		val |= TI953_CSI_2LANE;
+		break;
+	case 4:
+		val |= TI953_CSI_4LANE;
+		break;
+	default:
+		dev_err(&client->dev, "not expected csi lane\n");
+		return -EINVAL;
+	}
+
+	rval = ti953_reg_write(client, TI953_GENERAL_CFG, val);
+	if (rval) {
+		dev_err(&client->dev, "ti953 write GENERAL_CFG failed\n");
+		return rval;
+	}
+
+	rval = ti953_reg_read(client, TI953_GENERAL_CFG, &val);
+	if (rval == 0)
+		dev_dbg(&client->dev, "ti953 read general CFG (0x%x)\n", val);
 
 	return 0;
 }
@@ -110,12 +169,12 @@ int ti953_init_clk(struct i2c_client *client)
 {
 	int i, rval;
 
-	for (i = 0; i < ARRAY_SIZE(ti953_init_settings_clk); i++) {
-		rval = ti953_reg_write(client, ti953_init_settings_clk[i].reg,
-				       ti953_init_settings_clk[i].val);
+	for (i = 0; i < ARRAY_SIZE(ti953_sync_mode_clk_settings); i++) {
+		rval = ti953_reg_write(client, ti953_sync_mode_clk_settings[i].reg,
+					ti953_sync_mode_clk_settings[i].val);
 		if (rval) {
-			dev_err(&client->dev, "ti953 write timeout %d\n", rval);
-			break;
+			dev_err(&client->dev, "ti953 write CLK failed\n");
+			return rval;
 		}
 	}
 

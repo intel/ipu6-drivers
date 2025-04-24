@@ -103,6 +103,7 @@ static const struct ti960_register_write ti960_init_settings[] = {
 #define TI960_FS_CTL		0x18
 #define TI960_FWD_CTL1		0x20
 #define TI960_RX_PORT_SEL	0x4c
+#define TI960_BCC_CONFIG	0x58
 #define TI960_SER_ALIAS_ID	0x5c
 #define TI960_SLAVE_ID0		0x5d
 #define TI960_SLAVE_ALIAS_ID0	0x65
@@ -147,7 +148,9 @@ static const struct ti960_register_write ti960_init_settings[] = {
 #define TI960_CSI_CONTS_CLOCK	0x2
 #define TI960_CSI_SKEWCAL	0x40
 #define TI960_FSIN_ENABLE	0x1
+#define TI960_CSI_1LANE		0x30
 #define TI960_CSI_2LANE		0x20
+#define TI960_CSI_3LANE		0x10
 #define TI960_CSI_4LANE		0x00
 
 #endif

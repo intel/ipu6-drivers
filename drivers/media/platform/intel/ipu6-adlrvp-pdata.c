@@ -19,6 +19,9 @@
 #if IS_ENABLED(CONFIG_VIDEO_ISX031)
 #include <media/isx031.h>
 #endif
+#if IS_ENABLED(CONFIG_VIDEO_OV2311)
+#include <media/ov2311.h>
+#endif
 #if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
 #include <media/lt6911uxc.h>
 #endif
@@ -145,7 +148,9 @@ static struct ipu_isys_subdev_info ar0234_sd_2 = {
 static struct ti960_subdev_pdata imx390_d3rcm_pdata_stub = {
 	.lanes = 4,
 	.gpio_powerup_seq = {0, 0xa, -1, -1},
-	.module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK,
+	.module_flags = TI960_FL_POWERUP | \
+			TI960_FL_INIT_SER | \
+			TI960_FL_INIT_SER_CLK,
 	.module_name = "imx390",
 	.fsin = 0, /* gpio 0 used for FSIN */
 };
@@ -153,7 +158,9 @@ static struct ti960_subdev_pdata imx390_d3rcm_pdata_stub = {
 static struct ti960_subdev_pdata imx390_d3cm_pdata_stub = {
 	.lanes = 4,
 	.gpio_powerup_seq = {0, 0x9, -1, -1},
-	.module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER_CLK,
+	.module_flags = TI960_FL_POWERUP | \
+			TI960_FL_INIT_SER | \
+			TI960_FL_INIT_SER_CLK,
 	.module_name = "imx390",
 	.fsin = 3, /* gpio 3 used for FSIN */
 };
@@ -175,8 +182,29 @@ static struct ti960_subdev_pdata isx031_pdata_stub = {
   .lanes = 4,
   .fsin = 2,
   .gpio_powerup_seq = {0x00, 0x08, 0x08, -1},
-  .module_flags = TI960_FL_POWERUP,
+  .module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER,
   .module_name = "isx031",
+};
+#endif
+
+#if IS_ENABLED(CONFIG_VIDEO_OV2311)
+
+#define OV2311A_ADDRESS		0x44
+#define OV2311B_ADDRESS		0x45
+#define OV2311C_ADDRESS		0x46
+#define OV2311D_ADDRESS		0x47
+
+#define OV2311A_SER_ADDRESS	0x40
+#define OV2311B_SER_ADDRESS	0x41
+#define OV2311C_SER_ADDRESS	0x42
+#define OV2311D_SER_ADDRESS	0x43
+
+static struct ti960_subdev_pdata ov2311_pdata_stub = {
+  .lanes = 2,
+  .fsin = 2,
+  .gpio_powerup_seq = {0x09, 0x09, -1, -1},
+  .module_flags = TI960_FL_POWERUP | TI960_FL_INIT_SER,
+  .module_name = "ov2311",
 };
 #endif
 
@@ -329,6 +357,52 @@ static struct ti960_subdev_info ti960_subdevs_1[] = {
 		.suffix = 'd',
 	},
 #endif
+#if IS_ENABLED(CONFIG_VIDEO_OV2311)
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311A_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 0,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311A_SER_ADDRESS,
+		.suffix = 'a',
+	},
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311B_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 1,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311B_SER_ADDRESS,
+		.suffix = 'b',
+	},
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311C_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 2,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311C_SER_ADDRESS,
+		.suffix = 'c',
+	},
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311D_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 3,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311D_SER_ADDRESS,
+		.suffix = 'd',
+	},
+#endif
 };
 
 static struct ti960_subdev_info ti960_subdevs_2[] = {
@@ -375,6 +449,52 @@ static struct ti960_subdev_info ti960_subdevs_2[] = {
 		.rx_port = 3,
 		.phy_i2c_addr = ISX031_I2C_ADDRESS,
 		.ser_alias = ISX031D_SER_ADDRESS,
+		.suffix = 'h',
+	},
+#endif
+#if IS_ENABLED(CONFIG_VIDEO_OV2311)
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311A_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 0,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311A_SER_ADDRESS,
+		.suffix = 'e',
+	},
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311B_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 1,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311B_SER_ADDRESS,
+		.suffix = 'f',
+	},
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311C_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 2,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311C_SER_ADDRESS,
+		.suffix = 'g',
+	},
+	{
+		.board_info = {
+			.type = "ov2311",
+			.addr = OV2311D_ADDRESS,
+			.platform_data = &ov2311_pdata_stub,
+		},
+		.rx_port = 3,
+		.phy_i2c_addr = OV2311_I2C_ADDRESS_8BIT,
+		.ser_alias = OV2311D_SER_ADDRESS,
 		.suffix = 'h',
 	},
 #endif

@@ -48,7 +48,7 @@ static int read_acpi_block(struct device *dev, char *id, void *data, u32 size)
 
 	status = acpi_evaluate_object(dev_handle, id, NULL, &buffer);
 	if (!ACPI_SUCCESS(status)) {
-		pr_err("IPU6 ACPI: Could not find ACPI block");
+		pr_err("IPU6 ACPI: Could not find ACPI block with err %d", status);
 		return -ENODEV;
 	}
 
@@ -160,6 +160,76 @@ static int ipu_acpi_get_gpio_data(struct device *dev, struct ipu_gpio_info *gpio
 	return rval;
 }
 
+// Callback to parse I2C resources from _CRS
+static acpi_status parse_i2c_resource(struct acpi_resource *res, void *data)
+{
+	char **controller_path = data;
+	struct acpi_resource_i2c_serialbus *i2c;
+
+	if (res->type != ACPI_RESOURCE_TYPE_SERIAL_BUS)
+		return AE_OK;
+
+	i2c = &res->data.i2c_serial_bus;
+	if (i2c->type != ACPI_RESOURCE_SERIAL_TYPE_I2C)
+		return AE_OK;
+
+	*controller_path = kstrdup(i2c->resource_source.string_ptr, GFP_KERNEL);
+	return AE_CTRL_TERMINATE;
+}
+
+// Get I2C bdf via _CRS
+static int ipu_get_i2c_bdf_crs(struct device *dev, struct ipu_i2c_info *info)
+{
+	acpi_handle handle = ACPI_HANDLE(dev);
+	acpi_status status;
+	struct acpi_device *controller_adev;
+	struct pci_dev *pci_dev;
+	char *controller_path = NULL;
+
+	if (!handle) {
+		dev_err(dev, "No ACPI handle\n");
+		return -EINVAL;
+	}
+
+	// Parse _CRS for I2C resource
+	status = acpi_walk_resources(handle, "_CRS", parse_i2c_resource, &controller_path);
+	if (ACPI_FAILURE(status) || !controller_path) {
+		dev_err(dev, "Failed to parse _CRS: %s\n", acpi_format_exception(status));
+		return -EIO;
+	}
+
+	// Get the I2C controller's ACPI device
+	status = acpi_get_handle(NULL, controller_path, &handle);
+	if (ACPI_FAILURE(status)) {
+		dev_err(dev, "Invalid controller path: %s\n", controller_path);
+		kfree(controller_path);
+		controller_path = NULL;
+		return -ENODEV;
+	}
+
+	controller_adev = acpi_fetch_acpi_dev(handle);
+	if (!controller_adev) {
+		dev_err(dev, "No ACPI device for controller: %s\n", controller_path);
+		kfree(controller_path);
+		return -ENODEV;
+	}
+
+	// Map to PCI device
+	pci_dev = acpi_get_pci_dev(handle);
+	if (!pci_dev) {
+		dev_err(dev, "No PCI device for controller: %s\n", controller_path);
+		kfree(controller_path);
+		return -ENODEV;
+	}
+
+	snprintf(info->bdf, sizeof(info->bdf), "%04x:%02x:%02x.%x",
+		pci_domain_nr(pci_dev->bus), pci_dev->bus->number,
+		PCI_SLOT(pci_dev->devfn), PCI_FUNC(pci_dev->devfn));
+	pci_dev_put(pci_dev);
+
+	return 0;
+}
+
 static int ipu_acpi_get_i2c_info(struct device *dev, struct ipu_i2c_info *i2c, int size, u64 *num)
 {
 	const u8 dsdt_cam_i2c[] = {
@@ -176,7 +246,6 @@ static int ipu_acpi_get_i2c_info(struct device *dev, struct ipu_i2c_info *i2c, i
 		pr_err("IPU6 ACPI: Failed to get number of I2C\n");
 		return -ENODEV;
 	}
-
 	for (i = 0; i < num_i2c && i < size; i++) {
 		u64 data;
 
@@ -190,9 +259,13 @@ static int ipu_acpi_get_i2c_info(struct device *dev, struct ipu_i2c_info *i2c, i
 
 		i2c[i].bus = ((data >> 24) & 0xff);
 		i2c[i].addr = (data >> 8) & 0xff;
-
-		pr_info("IPU6 ACPI: DSM: i2c bus %d addr %x",
-			i2c[i].bus, i2c[i].addr);
+		rval = ipu_get_i2c_bdf_crs(dev, i2c + i);
+		if (rval < 0) {
+			pr_err("IPU6 ACPI: Failed to get i2c bdf\n");
+			return -ENODEV;
+		}
+		pr_info("IPU6 ACPI: DSM: i2c bus %d addr %x bdf: %s\n",
+			i2c[i].bus, i2c[i].addr, i2c[i].bdf);
 	}
 
 	*num = num_i2c;
@@ -343,7 +416,7 @@ int ipu_acpi_get_cam_data(struct device *dev,
 				  sizeof(sensor_data));
 
 	if (ret < 0) {
-		pr_err("IPU6 ACPI: Fail to read from SSDB");
+		pr_err("IPU6 ACPI: Fail to read from SSDB with err %d", ret);
 		return ret;
 	}
 
