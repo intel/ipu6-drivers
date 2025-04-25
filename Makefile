@@ -27,6 +27,7 @@ KV_OV01A10 := 6.8.0
 KV_OV05C10 := 6.8.0
 KV_HI556 := 6.10.0
 KV_IPU6_ISYS := 6.10.0
+KV_IMX471 := 6.10.0
 
 KERNEL_SRC ?= /lib/modules/$(KERNELRELEASE)/build
 MODSRC := $(shell pwd)
@@ -102,6 +103,10 @@ endif
 # Note OV05C10 check is reversed, it is not build on too old kernels
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_OV05C10)),false)
 export CONFIG_ICAMERA_OV05C10 = m
+endif
+
+ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_IMX471)),false)
+export CONFIG_ICAMERA_IMX471 = m
 endif
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_HI556)),true)
