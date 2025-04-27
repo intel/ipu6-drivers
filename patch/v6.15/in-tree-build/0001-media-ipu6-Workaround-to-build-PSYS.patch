@@ -1,0 +1,22 @@
+From c4ee21f1250163fb118bf6ff7ff980bddef6e9e6 Mon Sep 17 00:00:00 2001
+From: Dongcheng Yan <dongcheng.yan@intel.com>
+Date: Fri, 13 Sep 2024 18:02:37 +0800
+Subject: [PATCH 01/10] media: ipu6: Workaround to build PSYS
+
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+---
+ drivers/media/pci/intel/ipu6/Makefile | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/media/pci/intel/ipu6/Makefile b/drivers/media/pci/intel/ipu6/Makefile
+index a821b0a1567f..8a4f4cd7610d 100644
+--- a/drivers/media/pci/intel/ipu6/Makefile
++++ b/drivers/media/pci/intel/ipu6/Makefile
+@@ -21,3 +21,4 @@ intel-ipu6-isys-y		:= ipu6-isys.o \
+ 				ipu6-isys-dwc-phy.o
+ 
+ obj-$(CONFIG_VIDEO_INTEL_IPU6)	+= intel-ipu6-isys.o
++obj-$(CONFIG_VIDEO_INTEL_IPU6)  += psys/
+-- 
+2.43.0
+

@@ -1,0 +1,137 @@
+From 690a1e8f47e069952b7cfc4c8db3468aaeb98545 Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Mon, 25 Mar 2024 14:40:09 +0800
+Subject: [PATCH 02/10] media: i2c: Add sensors config
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/i2c/Kconfig  | 71 ++++++++++++++++++++++++++++++++++++++
+ drivers/media/i2c/Makefile |  8 +++++
+ 2 files changed, 79 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index e576b213084d..e88820204637 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -127,6 +127,33 @@ config VIDEO_HI847
+           To compile this driver as a module, choose M here: the
+           module will be called hi847.
+ 
++config VIDEO_HM11B1
++	tristate "Himax HM11B1 sensor support"
++	help
++	  This is a Video4Linux2 sensor driver for the Himax
++	  HM11B1 camera.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called hm11b1.
++
++config VIDEO_HM2170
++	tristate "Himax HM2170 sensor support"
++	help
++	  This is a Video4Linux2 sensor driver for the Himax
++	  HM2170 camera.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called hm2170.
++
++config VIDEO_HM2172
++	tristate "Himax HM2172 sensor support"
++	help
++	  This is a Video4Linux2 sensor driver for the Himax
++	  HM2172 camera.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called hm2172.
++
+ config VIDEO_IMX208
+ 	tristate "Sony IMX208 sensor support"
+ 	help
+@@ -347,6 +374,15 @@ config VIDEO_OV01A10
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called ov01a10.
+ 
++config VIDEO_OV01A1S
++	tristate "OmniVision OV01A1S sensor support"
++	help
++	  This is a Video4Linux2 sensor driver for the OmniVision
++	  OV01A1S camera.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called ov01a1s.
++
+ config VIDEO_OV02A10
+ 	tristate "OmniVision OV02A10 sensor support"
+ 	help
+@@ -356,6 +392,41 @@ config VIDEO_OV02A10
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called ov02a10.
+ 
++config VIDEO_OV02C10
++	tristate "OmniVision OV02C10 sensor support"
++	help
++	  This is a Video4Linux2 sensor driver for the OmniVision
++	  OV02C10 camera.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called ov02c10.
++
++config VIDEO_OV02E10
++	tristate "OmniVision OV02E10 sensor support"
++	help
++	  This is a Video4Linux2 sensor driver for the OmniVision
++	  ov02e10 camera.
++
++config VIDEO_OV05C10
++        tristate "OmniVision OV05C10 sensor support"
++        depends on ACPI || COMPILE_TEST
++	select V4L2_CCI_I2C
++	help
++          This is a Video4Linux2 sensor driver for the OmniVision
++          OV05C10 camera.
++
++          To compile this driver as a module, choose M here: the
++          module will be called ov05c10.
++
++config VIDEO_OV08A10
++	tristate "OmniVision OV08A10 sensor support"
++	help
++	  This is a Video4Linux2 sensor driver for the OmniVision
++	  OV08A10 camera sensor.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called ov08a10.
++
+ config VIDEO_OV08D10
+         tristate "OmniVision OV08D10 sensor support"
+         help
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 6c23a4463527..9c8170033ee6 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -44,6 +44,9 @@ obj-$(CONFIG_VIDEO_GC2145) += gc2145.o
+ obj-$(CONFIG_VIDEO_HI556) += hi556.o
+ obj-$(CONFIG_VIDEO_HI846) += hi846.o
+ obj-$(CONFIG_VIDEO_HI847) += hi847.o
++obj-$(CONFIG_VIDEO_HM11B1) += hm11b1.o
++obj-$(CONFIG_VIDEO_HM2170) += hm2170.o
++obj-$(CONFIG_VIDEO_HM2172) += hm2172.o
+ obj-$(CONFIG_VIDEO_I2C) += video-i2c.o
+ obj-$(CONFIG_VIDEO_IMX208) += imx208.o
+ obj-$(CONFIG_VIDEO_IMX214) += imx214.o
+@@ -82,7 +85,12 @@ obj-$(CONFIG_VIDEO_MT9V032) += mt9v032.o
+ obj-$(CONFIG_VIDEO_MT9V111) += mt9v111.o
+ obj-$(CONFIG_VIDEO_OG01A1B) += og01a1b.o
+ obj-$(CONFIG_VIDEO_OV01A10) += ov01a10.o
++obj-$(CONFIG_VIDEO_OV01A1S) += ov01a1s.o
+ obj-$(CONFIG_VIDEO_OV02A10) += ov02a10.o
++obj-$(CONFIG_VIDEO_OV02C10) += ov02c10.o
++obj-$(CONFIG_VIDEO_OV02E10) += ov02e10.o
++obj-$(CONFIG_VIDEO_OV05C10) += ov05c10.o
++obj-$(CONFIG_VIDEO_OV08A10) += ov08a10.o
+ obj-$(CONFIG_VIDEO_OV08D10) += ov08d10.o
+ obj-$(CONFIG_VIDEO_OV08X40) += ov08x40.o
+ obj-$(CONFIG_VIDEO_OV13858) += ov13858.o
+-- 
+2.43.0
+

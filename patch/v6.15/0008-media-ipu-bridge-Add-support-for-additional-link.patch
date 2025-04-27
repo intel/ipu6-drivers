@@ -1,0 +1,29 @@
+From 953d99928a5ec7bd5d68df3b1b3879bb0fa81637 Mon Sep 17 00:00:00 2001
+From: Jason Chen <jason.z.chen@intel.com>
+Date: Fri, 18 Oct 2024 20:34:50 +0800
+Subject: [PATCH 08/10] media: ipu-bridge: Add support for additional link
+
+Two additional frequencies can be supported with 2 lanes for
+the ov08x40 sensor
+
+Signed-off-by: Jason Chen <jason.z.chen@intel.com>
+---
+ drivers/media/pci/intel/ipu-bridge.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index d0bbeb4f5fae..07a15159085b 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -78,7 +78,7 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	/* Omnivision OV08A10 */
+ 	IPU_SENSOR_CONFIG("OVTI08A1", 1, 500000000),
+ 	/* Omnivision OV08x40 */
+-	IPU_SENSOR_CONFIG("OVTI08F4", 1, 400000000),
++	IPU_SENSOR_CONFIG("OVTI08F4", 3, 400000000, 749000000, 800000000),
+ 	/* Omnivision OV13B10 */
+ 	IPU_SENSOR_CONFIG("OVTI13B1", 1, 560000000),
+ 	IPU_SENSOR_CONFIG("OVTIDB10", 1, 560000000),
+-- 
+2.43.0
+
