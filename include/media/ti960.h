@@ -74,14 +74,20 @@ struct ti960_pdata {
 
 #define TI960_MAX_GPIO_POWERUP_SEQ        4
 
-/* set this flag if this module needs serializer initialization */
-#define TI960_FL_INIT_SER	BIT(0)
+/* set this flag if this module needs serializer init in synchronous mode */
+#define TI960_FL_INIT_SER		0x0
+/* set this flag if this module needs serializer init in nonsync external mode */
+#define TI960_FL_INIT_SER_NONSYNC_EXT	BIT(1)
+/* set this flag if this module needs serializer init in nonsync internal mode */
+#define TI960_FL_INIT_SER_NONSYNC_INT	(BIT(0)+BIT(1))
+/* set this flag if this module needs serializer init in dvp mode */
+#define TI960_FL_INIT_SER_DVP		(BIT(0)+BIT(2))
+/* set this flag if it need to init serial clk in synchronous mode */
+#define TI960_FL_INIT_SER_CLK		BIT(3)
 /* set this flag if this module has extra powerup sequence */
-#define TI960_FL_POWERUP	BIT(1)
+#define TI960_FL_POWERUP		BIT(4)
 /* set this flag if this module needs reset signal */
-#define TI960_FL_RESET	BIT(2)
-/* set this flag if it need to init serial clk only */
-#define TI960_FL_INIT_SER_CLK	BIT(4)
+#define TI960_FL_RESET			BIT(5)
 
 struct ti960_subdev_pdata {
 	unsigned short i2c_addr;

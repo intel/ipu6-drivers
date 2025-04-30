@@ -41,6 +41,7 @@
 #include <media/lt6911uxc.h>
 #include <media/imx390.h>
 #include <media/isx031.h>
+#include <media/ov2311.h>
 #include <media/ti960.h>
 #include <media/d4xx_pdata.h>
 
@@ -68,16 +69,17 @@ static const struct ipu_acpi_devices supported_devices[] = {
 	{ "INTC10C1", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// IMX390 HID
 	{ "INTC10CM", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// new D3 IMX390 HID
 	{ "INTC1031", ISX031_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// ISX031 HID
+	{ "INTC102R", OV2311_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// OV2311 HID
 	{ "INTC10C5", LT6911UXE_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },   // LT6911UXE HID
 	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, D457_NAME },// D457 HID
 };
 
-static int get_table_index(struct device *device, const __u8 *acpi_name)
+static int get_table_index(const char *acpi_name)
 {
 	unsigned int i;
-
 	for (i = 0; i < ARRAY_SIZE(supported_devices); i++) {
-		if (!strcmp(acpi_name, supported_devices[i].hid_name))
+		if (!strncmp(supported_devices[i].hid_name, acpi_name,
+			     strlen(supported_devices[i].hid_name)))
 			return i;
 	}
 
@@ -95,16 +97,16 @@ static const struct acpi_device_id ipu_acpi_match[] = {
 	{ "INTC10C1", 0 },	// IMX390 HID
 	{ "INTC10CM", 0 },	// D3CMC68N-106-085 IMX390 HID
 	{ "INTC1031", 0 },	// ISX031 HID
+	{ "INTC102R", 0 },	// OV2311 HID
 	{ "INTC10C5", 0 },	// LT6911UXE HID
 	{ "INTC10CD", 0 },	// D457 HID
 	{},
 };
-static int ipu_acpi_get_pdata(struct i2c_client *client,
-				 const struct acpi_device_id *acpi_id,
-				 struct ipu_i2c_helper *helper)
+
+static int ipu_acpi_get_pdata(struct device *dev, int index)
 {
 	struct ipu_camera_module_data *camdata;
-	int index = get_table_index(&client->dev, acpi_id->id);
+	int rval;
 
 	if (index < 0) {
 		pr_err("Device is not in supported devices list\n");
@@ -115,59 +117,64 @@ static int ipu_acpi_get_pdata(struct i2c_client *client,
 	if (!camdata)
 		return -ENOMEM;
 
-	strscpy(client->name, supported_devices[index].real_driver,
-		sizeof(client->name));
+	pr_info("IPU6 ACPI: Getting BIOS data for %s (%s)",
+		supported_devices[index].real_driver, dev_name(dev));
 
-	pr_info("IPU6 ACPI: Getting BIOS data for %s (%s)", client->name, dev_name(&client->dev));
-
-	supported_devices[index].get_platform_data(
-		client, camdata, helper,
+	rval = supported_devices[index].get_platform_data(
+		dev, camdata,
 		supported_devices[index].priv_data,
 		supported_devices[index].priv_size,
 		supported_devices[index].connect,
+		supported_devices[index].real_driver,
 		supported_devices[index].serdes_name,
 		supported_devices[index].hid_name);
+
+	if (rval)
+		return -EPROBE_DEFER;
 
 	return 0;
 }
 
-static int ipu_i2c_test(struct device *dev, void *priv)
+static int ipu_acpi_test(struct device *dev, void *priv)
 {
-	struct i2c_client *client = i2c_verify_client(dev);
-	const struct acpi_device_id *acpi_id;
+	struct acpi_device *adev;
+	int rval;
+	int acpi_idx = get_table_index(dev_name(dev));
 
-	/*
-	 * Check that we are handling only I2C devices which really has
-	 * ACPI data and are one of the devices which we want to handle
-	 */
-
-	if (!ACPI_COMPANION(dev) || !client)
+	if (acpi_idx < 0)
 		return 0;
+	else
+		dev_info(dev, "IPU6 ACPI: ACPI device %s\n", dev_name(dev));
 
-	acpi_id = acpi_match_device(ipu_acpi_match, dev);
-	if (!acpi_id) {
-		dev_err(dev, "IPU6 ACPI: ACPI device %s NOT supported\n",
+	const char *target_hid = supported_devices[acpi_idx].hid_name;
+
+	if (!ACPI_COMPANION(dev)) {
+		adev = acpi_dev_get_first_match_dev(target_hid, NULL, -1);
+		if (!adev) {
+			dev_dbg(dev, "No ACPI device found for %s\n", target_hid);
+			return 0;
+		}
+	}
+
+	set_primary_fwnode(dev, &adev->fwnode);
+	dev_dbg(dev, "Assigned fwnode to %s\n", dev_name(dev));
+
+	if (ACPI_COMPANION(dev) != adev) {
+		dev_err(dev, "Failed to set ACPI companion for %s\n",
 			dev_name(dev));
+		acpi_dev_put(adev);
 		return 0;
 	}
 
-	/*
-	 * Skip if platform data has already been added.
-	 * Probably ACPI data overruled by kernel platform data
-	 */
-	if (client->dev.platform_data)
-		return 0;
+	acpi_dev_put(adev);
 
-	/* Looks that we got what we are looking for */
-	if (ipu_acpi_get_pdata(client, acpi_id, priv))
+	rval = ipu_acpi_get_pdata(dev, acpi_idx);
+	if (rval) {
 		pr_err("IPU6 ACPI: Failed to process ACPI data");
+		return rval;
+	}
 
-	/* Don't return error since we want to process remaining devices */
-
-	/* Unregister matching client */
-	i2c_unregister_device(client);
-
-	return 0;
+	return 0; /* Continue iteration */
 }
 
 /* Scan all i2c devices and pick ones which we can handle */
@@ -186,10 +193,6 @@ int ipu_get_acpi_devices(void *driver_data,
 				 struct ipu_isys_csi2_config *csi2,
 				 bool reprobe))
 {
-	struct ipu_i2c_helper helper = {
-		.fn = fn,
-		.driver_data = driver_data,
-	};
 	int rval;
 
 	if (!built_in_pdata)
@@ -202,7 +205,7 @@ int ipu_get_acpi_devices(void *driver_data,
 	if ((!fn) || (!driver_data))
 		return -ENODEV;
 
-	rval = i2c_for_each_dev(&helper, ipu_i2c_test);
+	rval = acpi_bus_for_each_dev(ipu_acpi_test, NULL);
 	if (rval < 0)
 		return rval;
 

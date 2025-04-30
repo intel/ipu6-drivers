@@ -8,6 +8,7 @@
 #include <media/ti960.h>
 #include <media/imx390.h>
 #include <media/isx031.h>
+#include <media/ov2311.h>
 #include <media/d4xx_pdata.h>
 
 #define CL_EMPTY 0
@@ -17,11 +18,11 @@
 #define SERDES_MAX_GPIO_POWERUP_SEQ 4
 #define LOOP_SIZE 10
 
-int get_sensor_pdata(struct i2c_client *client,
+int get_sensor_pdata(struct device *dev,
 			struct ipu_camera_module_data *data,
-			struct ipu_i2c_helper *helper,
 			void *priv, size_t size,
 			enum connection_type connect,
+			const char *sensor_name,
 			const char *serdes_name,
 			const char *hid_name);
 

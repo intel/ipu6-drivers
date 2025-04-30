@@ -18,10 +18,14 @@ struct ti953_register_devid {
 #define TI953_DEVICE_ID		0x0U
 #define TI953_RESET_CTL		0x1
 #define TI953_GENERAL_CFG	0x2
+#define TI953_MODE_SEL		0x3
+#define TI953_PLLCLK_CTRL	0x5
 #define TI953_LOCAL_GPIO_DATA	0xd
 #define TI953_GPIO_INPUT_CTRL	0xe
-#define TI953_SCL_HIGH_TIME		0xbU
-#define TI953_SCL_LOW_TIME		0xcU
+#define TI953_SCL_HIGH_TIME	0xbU
+#define TI953_SCL_LOW_TIME	0xcU
+#define TI953_MODE_SEL_DONE	BIT(3)
+#define TI953_MODE_OV		BIT(4)
 
 /* register value definition */
 #define TI953_DIGITAL_RESET_1	0x2
@@ -41,21 +45,12 @@ struct ti953_register_devid {
 #define TI953_I2C_SPEED_HIGH		0x3U
 #define TI953_I2C_SPEED_FAST_PLUS	0x4U
 
-/*
- * TI953_GENERAL_CFG:
- * bit 0: I2C Strap Mode: I2C Voltage level
- * bit 1: CRC_TX_GEN_ENABLE: Transmitter CRC Generator
- * bit 4 - 5:
- * CSI-2 Data lane configuration.
- * 00: 1-lane configuration
- * 01: 2-lane configuration
- * 11: 4-lane configuration
- * bit 6:
- * CONTS_CLK:
- * CSI-2 Clock Lane Configuration.
- * 0 : Non Continuous Clock
- * 1 : Continuous Clock
- */
+#define TI953_MODE_SYNC			0x00U
+#define TI953_MODE_NONSYNC_EXT		0x02U
+#define TI953_MODE_NONSYNC_INT		0x03U
+#define TI953_MODE_DVP			0x05U
+#define TI953_MODE_REG_OVERRIDE		0x10U
+
 #define TI953_CONTS_CLK		0x40
 #define TI953_CSI_1LANE		0x00
 #define TI953_CSI_2LANE		0x10
@@ -64,29 +59,15 @@ struct ti953_register_devid {
 #define TI953_CRC_TX_GEN_ENABLE	0x2
 #define TI953_I2C_STRAP_MODE	0x1
 
-static const struct ti953_register_write ti953_init_settings[] = {
-	/* bit 5:4 - CSI-2 Data lane configuration, need to align with sensor*/
-	/* bit 6 - 1:continuous clock 0:non-continuous clock*/
-	{0x02, 0x73},
-	/* bit 4: 1: Register Mode overrides strapped value*/
-	/* bit 2:0 */
-	/**
-	 * Mode of operation:
-	 * 000: CSI-2 Synchronous Mode
-	 * 001: Reserved
-	 * 010: CSI-2 Non-synchronous external clock Mode (Requires a local
-	 * clock source)
-	 * 011: CSI-2 Non-synchronous Internal AON Clock
-	 * 101: DVP External Clock Backward-Compatible Mode (Requires
-	 * local clock source)
+static const struct ti953_register_write ti953_sync_mode_clk_settings[] = {
+	/** ti960 actual REFCLK = 23Mhz
+	 * to generate 27Mhz in synchronous mode
+	 * CLK_OUT=f × 160 / HS_CLK_DIV × (M/N)
+	 * reg 0x06 M: bit(4:0) = 1 HS_CLK_DIV: bit(7:5) = 4
+	 * reg 0x07 N: bit(7:0) = 36
 	 */
-	{0x03, 0x10},
-};
-
-static const struct ti953_register_write ti953_init_settings_clk[] = {
 	{0x06, 0x41},
-	/* WA: set N to 0x25 for 30 fps */
-	{0x07, 0x25},
+	{0x07, 0x24},
 };
 
 static const struct ti953_register_devid ti953_FPD3_RX_ID[] = {
@@ -102,7 +83,7 @@ int ti953_reg_write(struct i2c_client *client, unsigned char reg, unsigned char 
 int ti953_reg_read(struct i2c_client *client, unsigned char reg, unsigned char *val);
 
 bool ti953_detect(struct i2c_client *client);
-int ti953_init(struct i2c_client *client);
+int ti953_init(struct i2c_client *client,  unsigned int flag, int lanes);
 int ti953_init_clk(struct i2c_client *client);
 int32_t ti953_bus_speed(struct i2c_client *client, uint8_t i2c_speed);
 

@@ -408,8 +408,8 @@ static int isys_register_ext_subdev(struct ipu_isys *isys,
 	client = isys_find_i2c_subdev(adapter, sd_info);
 	if (client) {
 		dev_dbg(&isys->adev->dev, "Device exists\n");
-		rval = 0;
-		goto skip_put_adapter;
+		i2c_unregister_device(client);
+		dev_dbg(&isys->adev->dev, "Unregister device");
 	}
 
 	sd = v4l2_i2c_new_subdev_board(&isys->v4l2_dev, adapter,

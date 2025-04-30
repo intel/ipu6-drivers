@@ -75,6 +75,7 @@ struct sensor_bios_data_packed {
 struct ipu_i2c_info {
 	unsigned short bus;
 	unsigned short addr;
+	char bdf[32];
 };
 
 /* Fields needed by ipu driver */
@@ -189,12 +190,12 @@ struct ipu_camera_module_data {
 struct ipu_acpi_devices {
 	const char *hid_name;
 	const char *real_driver;
-	int (*get_platform_data)(struct i2c_client *client,
+	int (*get_platform_data)(struct device *dev,
 				 struct ipu_camera_module_data *data,
-				 struct ipu_i2c_helper *helper,
 				 void *priv,
 				 size_t size,
 				 enum connection_type type,
+				 const char *sensor_name,
 				 const char *serdes_name,
 				 const char *hid_name);
 	void *priv_data;

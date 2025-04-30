@@ -25,8 +25,12 @@
 #define ISX031_MODE_STANDBY		0x00
 #define ISX031_MODE_STREAMING		0x80
 
-#define ISX031_REG_CHIP_ID		0x6005
-#define ISX031_CHIP_ID			0x05
+#define ISX031_REG_SENSOR_STATE		0x6005
+#define ISX031_STATE_STREAMING		0x05
+#define ISX031_STATE_STARTUP		0x02
+
+#define ISX031_REG_MODE_SET_F_LOCK	0xBEF0
+#define ISX031_MODE_UNLOCK		0x53
 
 struct isx031_reg {
 	enum {
@@ -87,11 +91,8 @@ struct isx031 {
 
 static const struct isx031_reg isx031_init_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0xFFFF, 0x00}, // select mode
-	{ISX031_REG_LEN_DELAY, 0x0000, 0x32}, // delay 50 ms
 	{ISX031_REG_LEN_08BIT, 0x0171, 0x00}, // close F_EBD
 	{ISX031_REG_LEN_08BIT, 0x0172, 0x00}, // close R_EBD
-	{ISX031_REG_LEN_08BIT, 0x8A01, 0x00}, // mode transition to start-up state
-	{ISX031_REG_LEN_DELAY, 0x0000, 0x64}, // delay 100 ms
 	/* External sync */
 	{ISX031_REG_LEN_08BIT, 0xBF14, 0x01}, /* SG_MODE_APL */
 	{ISX031_REG_LEN_08BIT, 0x8AFF, 0x0c}, /*  Hi-Z (input setting or output disabled) */
@@ -99,7 +100,6 @@ static const struct isx031_reg isx031_init_reg[] = {
 	{ISX031_REG_LEN_08BIT, 0x8AF0, 0x01}, /* external pulse-based sync */
 	{ISX031_REG_LEN_08BIT, 0x0144, 0x00},
 	{ISX031_REG_LEN_08BIT, 0x8AF1, 0x00},
-
 };
 
 static const struct isx031_reg isx031_1920_1536_30fps_reg[] = {
@@ -254,8 +254,10 @@ static int isx031_write_reg(struct isx031 *isx031, u16 reg, u16 len, u32 val)
 	dev_dbg(&client->dev, "%s, reg %x len %x, val %x\n", __func__, reg, len, val);
 	put_unaligned_be16(reg, buf);
 	put_unaligned_be32(val << 8 * (4 - len), buf + 2);
-	if (i2c_master_send(client, buf, len + 2) != len + 2)
+	if (i2c_master_send(client, buf, len + 2) != len + 2) {
+		dev_err(&client->dev, "%s:failed: reg=%2x\n", __func__, reg);
 		return -EIO;
+	}
 
 	return 0;
 }
@@ -286,6 +288,56 @@ static int isx031_write_reg_list(struct isx031 *isx031,
 	return 0;
 }
 
+static int isx031_mode_transit(struct isx031 *isx031, int state)
+{
+	struct i2c_client *client = isx031->client;
+	int ret;
+	int cur_mode, mode;
+	u32 val;
+	int retry = 50;
+
+	if (state == ISX031_STATE_STARTUP)
+		mode = ISX031_MODE_STANDBY;
+	else if (state == ISX031_STATE_STREAMING)
+		mode = ISX031_MODE_STREAMING;
+
+	retry = 50;
+	while (retry--) {
+		ret = isx031_read_reg(isx031, ISX031_REG_SENSOR_STATE,
+			      ISX031_REG_LEN_08BIT, &val);
+		if (ret == 0)
+			break;
+		usleep_range(10000, 10500);
+	}
+	cur_mode = val;
+
+	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SET_F_LOCK, 1,
+				ISX031_MODE_UNLOCK);
+	if (ret) {
+		dev_err(&client->dev, "failed to unlock mode");
+		return ret;
+	}
+	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SELECT, 1,
+			mode);
+	if (ret) {
+		dev_err(&client->dev, "failed to transit mode from 0x%x to 0x%x",
+			cur_mode, mode);
+		return ret;
+	}
+
+	/*streaming transit to standby need 1 frame+5ms*/
+	retry = 50;
+	while (retry--) {
+		ret = isx031_read_reg(isx031, ISX031_REG_SENSOR_STATE,
+			      ISX031_REG_LEN_08BIT, &val);
+		if (ret == 0 && val == state)
+			break;
+		usleep_range(10000, 10500);
+	}
+
+	return 0;
+}
+
 static int isx031_identify_module(struct isx031 *isx031)
 {
 	struct i2c_client *client = isx031->client;
@@ -294,7 +346,7 @@ static int isx031_identify_module(struct isx031 *isx031)
 	u32 val;
 
 	while (retry--) {
-		ret = isx031_read_reg(isx031, ISX031_REG_CHIP_ID,
+		ret = isx031_read_reg(isx031, ISX031_REG_SENSOR_STATE,
 			      ISX031_REG_LEN_08BIT, &val);
 		if (ret == 0)
 			break;
@@ -304,11 +356,12 @@ static int isx031_identify_module(struct isx031 *isx031)
 	if (ret)
 		return ret;
 
-	/* chip id not known yet */
-	if (val != ISX031_CHIP_ID) {
-		dev_err(&client->dev, "read chip id: %x != %x",
-			val, ISX031_CHIP_ID);
-		return -ENXIO;
+	dev_dbg(&client->dev, "sensor in mode 0x%x", val);
+
+	/* if sensor alreay in ISX031_STATE_STARTUP, can access i2c write directly*/
+	if (val == ISX031_STATE_STREAMING) {
+		if (isx031_mode_transit(isx031, ISX031_STATE_STARTUP))
+			return ret;
 	}
 
 	return isx031_write_reg_list(isx031, &isx031_init_reg_list);
@@ -325,7 +378,7 @@ static void isx031_update_pad_format(const struct isx031_mode *mode,
 
 static int isx031_start_streaming(struct isx031 *isx031)
 {
-	int retries, ret;
+	int ret;
 	struct i2c_client *client = isx031->client;
 	const struct isx031_reg_list *reg_list;
 
@@ -341,11 +394,9 @@ static int isx031_start_streaming(struct isx031 *isx031)
 		dev_dbg(&client->dev, "same mode, skip write reg list");
 	}
 
-	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SELECT, 1,
-			       ISX031_MODE_STREAMING);
-
+	ret = isx031_mode_transit(isx031, ISX031_STATE_STREAMING);
 	if (ret) {
-		dev_err(&client->dev, "failed to start stream");
+		dev_err(&client->dev, "failed to start streaming");
 		return ret;
 	}
 
@@ -355,11 +406,8 @@ static int isx031_start_streaming(struct isx031 *isx031)
 static void isx031_stop_streaming(struct isx031 *isx031)
 {
 	struct i2c_client *client = isx031->client;
-
-	if (isx031_write_reg(isx031, ISX031_REG_MODE_SELECT, 1,
-			     ISX031_MODE_STANDBY))
-		dev_err(&client->dev, "failed to stop stream");
-	msleep(50);
+	if (isx031_mode_transit(isx031, ISX031_STATE_STARTUP))
+		dev_err(&client->dev, "failed to stop streaming");
 }
 
 static int isx031_set_stream(struct v4l2_subdev *sd, int enable)
