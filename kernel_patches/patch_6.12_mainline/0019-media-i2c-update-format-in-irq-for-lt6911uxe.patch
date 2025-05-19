@@ -8,6 +8,7 @@ Subject: [PATCH] media: i2c: update format in irq for lt6911uxe
 - relpace lt6911uxe_get_fmt with v4l2_subdev_get_fmt
 - remove redundant log
 
+Signed-off-by: linya14x <linx.yang@intel.com>
 Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
 ---
  drivers/media/i2c/lt6911uxe.c | 21 +++++++++++++--------

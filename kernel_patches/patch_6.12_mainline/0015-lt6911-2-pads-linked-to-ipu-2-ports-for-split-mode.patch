@@ -263,7 +263,7 @@ index ee884a8221fb..665e0e1a133a 100644
 +		struct fwnode_endpoint fwnode_ep = { 0 };
 +		int ret_ep;
 +		ret_ep = fwnode_graph_parse_endpoint(match->fwnode, &fwnode_ep);
-+		if (ret_ep >=0) {
++		if (ret_ep >= 0) {
 +			match->src_pad = fwnode_ep.port;
 +		} else {
 +			match->src_pad = -1;
@@ -334,4 +334,3 @@ index f26c323e9c96..3d1573a7bfab 100644
  /**
 --
 2.34.1
-

@@ -5,6 +5,7 @@ Subject: [PATCH] media: i2c: add dv_timings api in lt6911uxe
 
 and removed default cur_mode
 
+Signed-off-by: linya14x <linx.yang@intel.com>
 Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
 Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
 ---

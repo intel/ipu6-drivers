@@ -1,0 +1,28 @@
+From 7c7be2c362335df7182aa15e992f2d764b27f9ca Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Mon, 12 May 2025 18:19:49 +0800
+Subject: [PATCH] media: i2c: fix power-on issue for on-board LT6911UXE
+
+For on board LT6911UXE, RESET GPIO should be output type.
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+---
+ drivers/media/i2c/lt6911uxe.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/lt6911uxe.c b/drivers/media/i2c/lt6911uxe.c
+index c5b40bb58a37..4e2109db0145 100644
+--- a/drivers/media/i2c/lt6911uxe.c
++++ b/drivers/media/i2c/lt6911uxe.c
+@@ -600,7 +600,7 @@ static int lt6911uxe_probe(struct i2c_client *client)
+
+ 	v4l2_i2c_subdev_init(&lt6911uxe->sd, client, &lt6911uxe_subdev_ops);
+
+-	lt6911uxe->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_IN);
++	lt6911uxe->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+ 	if (IS_ERR(lt6911uxe->reset_gpio))
+ 		return dev_err_probe(dev, PTR_ERR(lt6911uxe->reset_gpio),
+ 				     "failed to get reset gpio\n");
+--
+2.34.1
+
