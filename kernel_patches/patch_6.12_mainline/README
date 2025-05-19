@@ -36,6 +36,8 @@ build kernel driver with community kernel version 6.11 but not iot kernel
 
        git am 0002-media-pci-update-IPU6-PSYS-driver.patch
 
+       git am 0003-media-pci-intel-update-ipu6-psys-driver.patch
+
        echo "obj-\$(CONFIG_VIDEO_INTEL_IPU6)  += psys/" >> ./drivers/media/pci/intel/ipu6/Makefile
 
     c. for USB device need to apply below 2 patches, they are merged to kernel 6.13.
