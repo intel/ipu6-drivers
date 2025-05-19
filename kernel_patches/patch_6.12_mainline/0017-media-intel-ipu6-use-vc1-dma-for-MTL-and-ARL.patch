@@ -1,0 +1,42 @@
+From 68ca76a7fdd19de0ae142321958edf9c450b87c3 Mon Sep 17 00:00:00 2001
+From: Chen Meng J <meng.j.chen@intel.com>
+Date: Fri, 1 Nov 2024 16:41:42 +0800
+Subject: [PATCH] media: intel-ipu6: use vc1 dma for MTL and ARL
+
+Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-fw-isys.h    | 4 ++--
+ drivers/media/pci/intel/ipu6/ipu6-isys-video.c | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-fw-isys.h b/drivers/media/pci/intel/ipu6/ipu6-fw-isys.h
+index e6ee161bd058..545180c110cc 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-fw-isys.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-fw-isys.h
+@@ -54,8 +54,8 @@ struct ipu6_isys;
+ /* Max number of planes for frame formats supported by the FW */
+ #define IPU6_PIN_PLANES_MAX 4
+
+-#define IPU6_FW_ISYS_SENSOR_TYPE_START 14
+-#define IPU6_FW_ISYS_SENSOR_TYPE_END 19
++#define IPU6_FW_ISYS_SENSOR_TYPE_START 1
++#define IPU6_FW_ISYS_SENSOR_TYPE_END 10
+ #define IPU6SE_FW_ISYS_SENSOR_TYPE_START 6
+ #define IPU6SE_FW_ISYS_SENSOR_TYPE_END 11
+ /*
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
+index 9142280c299a..bde95c30c133 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
+@@ -529,7 +529,7 @@ static int ipu6_isys_fw_pin_cfg(struct ipu6_isys_video *av,
+ 	output_pin->csi_be_soc_pixel_remapping =
+ 		CSI_BE_SOC_PIXEL_REMAPPING_FLAG_NO_REMAPPING;
+
+-	output_pin->snoopable = true;
++	output_pin->snoopable = false;
+ 	output_pin->error_handling_enable = false;
+ 	output_pin->sensor_type = isys->sensor_type++;
+ 	if (isys->sensor_type > isys->pdata->ipdata->sensor_type_end)
+--
+2.34.1
+

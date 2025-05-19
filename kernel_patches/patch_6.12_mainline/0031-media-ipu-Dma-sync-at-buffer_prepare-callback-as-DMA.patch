@@ -1,0 +1,41 @@
+From 01aa764775a0519dc13e4288556ffd737c3635d7 Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Wed, 23 Apr 2025 11:30:56 +0800
+Subject: [PATCH] media: ipu: Dma sync at buffer_prepare callback as DMA is
+ non-coherent
+
+Test Platform:
+MTL ARL LT6911UXE
+
+Signed-off-by: linya14x <linx.yang@intel.com>
+Signed-off-by: Bingbu Cao <bingbu.cao@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys-queue.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
+index 95e63a750b06..89b2b749fe59 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
+@@ -84,7 +84,9 @@ static int ipu6_isys_queue_setup(struct vb2_queue *q, unsigned int *num_buffers,
+ static int ipu6_isys_buf_prepare(struct vb2_buffer *vb)
+ {
+ 	struct ipu6_isys_queue *aq = vb2_queue_to_isys_queue(vb->vb2_queue);
++	struct ipu6_isys *isys = vb2_get_drv_priv(vb->vb2_queue);
+ 	struct ipu6_isys_video *av = ipu6_isys_queue_to_video(aq);
++	struct sg_table *sg = vb2_dma_sg_plane_desc(vb, 0);
+ 	struct device *dev = &av->isys->adev->auxdev.dev;
+ 	u32 bytesperline = ipu6_isys_get_bytes_per_line(av);
+ 	u32 height = ipu6_isys_get_frame_height(av);
+@@ -98,6 +100,9 @@ static int ipu6_isys_buf_prepare(struct vb2_buffer *vb)
+
+ 	vb2_set_plane_payload(vb, 0, bytesperline * height);
+
++	/* assume IPU is not DMA coherent */
++	ipu6_dma_sync_sgtable(isys->adev, sg);
++
+ 	return 0;
+ }
+
+--
+2.43.0
