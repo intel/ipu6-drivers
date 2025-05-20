@@ -1,0 +1,40 @@
+From c9fc6e46ac157ebe66262ead74c56e5cd85f5f33 Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Wed, 12 Mar 2025 09:32:02 +0800
+Subject: [PATCH 06/10] media: i2c: ov13b10: Improve code redability
+
+Use mode instead of ov13b->cur_mode in set_pad_format.
+
+Signed-off-by: Bingbu Cao <bingbu.cao@intel.com>
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/i2c/ov13b10.c | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/media/i2c/ov13b10.c b/drivers/media/i2c/ov13b10.c
+index 79c0280e42f3..2e83fc23f321 100644
+--- a/drivers/media/i2c/ov13b10.c
++++ b/drivers/media/i2c/ov13b10.c
+@@ -1069,15 +1069,11 @@ ov13b10_set_pad_format(struct v4l2_subdev *sd,
+ 		__v4l2_ctrl_s_ctrl_int64(ov13b->pixel_rate, pixel_rate);
+ 
+ 		/* Update limits and set FPS to default */
+-		vblank_def = ov13b->cur_mode->vts_def -
+-			     ov13b->cur_mode->height;
+-		vblank_min = ov13b->cur_mode->vts_min -
+-			     ov13b->cur_mode->height;
++		vblank_def = mode->vts_def - mode->height;
++		vblank_min = mode->vts_min - mode->height;
+ 		__v4l2_ctrl_modify_range(ov13b->vblank, vblank_min,
+-					 OV13B10_VTS_MAX
+-					 - ov13b->cur_mode->height,
+-					 1,
+-					 vblank_def);
++					 OV13B10_VTS_MAX - mode->height,
++					 1, vblank_def);
+ 		__v4l2_ctrl_s_ctrl(ov13b->vblank, vblank_def);
+ 		h_blank = mode->ppl - mode->width;
+ 		__v4l2_ctrl_modify_range(ov13b->hblank, h_blank,
+-- 
+2.43.0
+

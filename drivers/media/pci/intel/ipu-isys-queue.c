@@ -464,10 +464,6 @@ static int ipu_isys_stream_start(struct ipu_isys_pipeline *ip,
 	struct ipu_isys_buffer_list __bl;
 	int rval;
 
-	mutex_lock(&pipe_av->isys->stream_mutex);
-
-	mutex_unlock(&pipe_av->isys->stream_mutex);
-
 	bl = &__bl;
 
 	do {

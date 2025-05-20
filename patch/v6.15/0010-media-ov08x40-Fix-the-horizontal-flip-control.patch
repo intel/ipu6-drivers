@@ -1,0 +1,29 @@
+From 64fdd8172854f6a7942c1d7ccaa9186b831c8d0b Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Mon, 23 Dec 2024 12:05:23 +0800
+Subject: [PATCH 10/10] media: ov08x40: Fix the horizontal flip control
+
+The datasheet of ov08x40 was wrong. 0x3821[2] == 1 should be the
+original state and 0 the horizontal flip enabled.
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/i2c/ov08x40.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 7fa7f5163441..2912363a6421 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -3414,7 +3414,7 @@ static int ov08x40_set_ctrl_hflip(struct ov08x40 *ov08x, u32 ctrl_val)
+ 
+ 	return ov08x40_write_reg(ov08x, OV08X40_REG_MIRROR,
+ 				 OV08X40_REG_VALUE_08BIT,
+-				 ctrl_val ? val | BIT(2) : val & ~BIT(2));
++				 ctrl_val ? val & ~BIT(2) : val | BIT(2));
+ }
+ 
+ static int ov08x40_set_ctrl_vflip(struct ov08x40 *ov08x, u32 ctrl_val)
+-- 
+2.43.0
+

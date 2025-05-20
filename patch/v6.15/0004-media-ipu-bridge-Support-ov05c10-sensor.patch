@@ -1,0 +1,26 @@
+From 43e0c5d0cdd47137ffef636344142e96208c86c7 Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Thu, 10 Oct 2024 15:13:52 +0800
+Subject: [PATCH 04/10] media: ipu-bridge: Support ov05c10 sensor
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/pci/intel/ipu-bridge.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index 1cb745855600..d0bbeb4f5fae 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -73,6 +73,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("OVTI02C1", 1, 400000000),
+ 	/* Omnivision OV02E10 */
+ 	IPU_SENSOR_CONFIG("OVTI02E1", 1, 360000000),
++	/* Omnivision ov05c10 */
++	IPU_SENSOR_CONFIG("OVTI05C1", 1, 480000000),
+ 	/* Omnivision OV08A10 */
+ 	IPU_SENSOR_CONFIG("OVTI08A1", 1, 500000000),
+ 	/* Omnivision OV08x40 */
+-- 
+2.43.0
+

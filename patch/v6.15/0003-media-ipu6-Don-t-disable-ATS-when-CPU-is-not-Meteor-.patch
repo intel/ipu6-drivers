@@ -1,0 +1,43 @@
+From d269570f5efd4c77d7cc66558935c125a3557c0c Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Wed, 18 Sep 2024 14:47:40 +0800
+Subject: [PATCH 03/10] media: ipu6: Don't disable ATS when CPU is not Meteor
+ Lake
+
+IPU6 on Arrow Lake shares the same PCI ID with Meteor Lake, so we
+can't use PCI ID to distinguish whether the hardware is Meteor Lake.
+Use boot_cpu_data.x86_vfm instead.
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
+index 277af7cda8ee..9b8f7e6b972e 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6.c
++++ b/drivers/media/pci/intel/ipu6/ipu6.c
+@@ -3,6 +3,8 @@
+  * Copyright (C) 2013--2024 Intel Corporation
+  */
+ 
++#include <asm/cpu_device_id.h>
++
+ #include <linux/bitfield.h>
+ #include <linux/bits.h>
+ #include <linux/dma-mapping.h>
+@@ -465,8 +467,9 @@ static int ipu6_pci_config_setup(struct pci_dev *dev, u8 hw_ver)
+ 	int ret;
+ 
+ 	/* disable IPU6 PCI ATS on mtl ES2 */
+-	if (is_ipu6ep_mtl(hw_ver) && boot_cpu_data.x86_stepping == 0x2 &&
+-	    pci_ats_supported(dev))
++	if ((boot_cpu_data.x86_vfm == INTEL_METEORLAKE ||
++	     boot_cpu_data.x86_vfm == INTEL_METEORLAKE_L) &&
++	    boot_cpu_data.x86_stepping == 0x2 && pci_ats_supported(dev))
+ 		pci_disable_ats(dev);
+ 
+ 	/* No PCI msi capability for IPU6EP */
+-- 
+2.43.0
+

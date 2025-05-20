@@ -170,6 +170,152 @@ const struct ipu_isys_pixelformat ipu_isys_pfmts_packed[] = {
 	{}
 };
 
+static void free_fw_msg_bufs(struct ipu_isys_pipeline *ip)
+{
+	struct ipu_isys_video *av = container_of(ip, struct ipu_isys_video, ip);
+	struct isys_fw_msgs *fwmsg, *safe;
+
+	list_for_each_entry_safe(fwmsg, safe, &ip->framebuflist, head) {
+		dma_free_attrs(&av->isys->adev->dev,
+			       sizeof(struct isys_fw_msgs),
+			       fwmsg, fwmsg->dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL);
+#else
+			       0);
+#endif
+	}
+
+	list_for_each_entry_safe(fwmsg, safe, &ip->framebuflist_fw, head) {
+		dma_free_attrs(&av->isys->adev->dev,
+			       sizeof(struct isys_fw_msgs),
+			       fwmsg, fwmsg->dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL);
+#else
+			       0);
+#endif
+	}
+}
+
+static int alloc_fw_msg_bufs(struct ipu_isys_pipeline *ip, int amount)
+{
+	struct ipu_isys_video *pipe_av =
+		container_of(ip, struct ipu_isys_video, ip);
+	struct ipu_isys *isys;
+	dma_addr_t dma_addr;
+	struct isys_fw_msgs *addr;
+	unsigned int i;
+	unsigned long flags;
+
+	isys = pipe_av->isys;
+
+	for (i = 0; i < amount; i++) {
+		addr = dma_alloc_attrs(&isys->adev->dev,
+				       sizeof(struct isys_fw_msgs),
+				       &dma_addr, GFP_KERNEL,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+				       NULL);
+#else
+				       0);
+#endif
+		if (!addr)
+			break;
+		addr->dma_addr = dma_addr;
+
+		spin_lock_irqsave(&ip->listlock, flags);
+		list_add(&addr->head, &ip->framebuflist);
+		spin_unlock_irqrestore(&ip->listlock, flags);
+	}
+	if (i == amount)
+		return 0;
+	spin_lock_irqsave(&ip->listlock, flags);
+	while (!list_empty(&ip->framebuflist)) {
+		addr = list_first_entry(&ip->framebuflist,
+					struct isys_fw_msgs, head);
+		list_del(&addr->head);
+		spin_unlock_irqrestore(&ip->listlock, flags);
+		dma_free_attrs(&isys->adev->dev,
+			       sizeof(struct isys_fw_msgs),
+			       addr, addr->dma_addr,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+			       NULL);
+#else
+			       0);
+#endif
+		spin_lock_irqsave(&ip->listlock, flags);
+	}
+	spin_unlock_irqrestore(&ip->listlock, flags);
+	return -ENOMEM;
+}
+
+struct isys_fw_msgs *ipu_get_fw_msg_buf(struct ipu_isys_pipeline *ip)
+{
+	struct ipu_isys_video *pipe_av =
+	    container_of(ip, struct ipu_isys_video, ip);
+	struct ipu_isys *isys;
+	struct isys_fw_msgs *msg;
+	unsigned long flags;
+
+	isys = pipe_av->isys;
+
+	spin_lock_irqsave(&ip->listlock, flags);
+	if (list_empty(&ip->framebuflist)) {
+		spin_unlock_irqrestore(&ip->listlock, flags);
+		dev_dbg(&isys->adev->dev, "Frame list empty - Allocate more");
+
+		alloc_fw_msg_bufs(ip, 5);
+
+		spin_lock_irqsave(&ip->listlock, flags);
+		if (list_empty(&ip->framebuflist)) {
+			spin_unlock_irqrestore(&ip->listlock, flags);
+			dev_err(&isys->adev->dev, "Frame list empty");
+			return NULL;
+		}
+	}
+	msg = list_last_entry(&ip->framebuflist, struct isys_fw_msgs, head);
+	list_move(&msg->head, &ip->framebuflist_fw);
+	spin_unlock_irqrestore(&ip->listlock, flags);
+	memset(&msg->fw_msg, 0, sizeof(msg->fw_msg));
+
+	return msg;
+}
+
+void ipu_put_fw_msg_buf(struct ipu_isys_pipeline *ip, u64 data)
+{
+	struct isys_fw_msgs *msg;
+	unsigned long flags;
+	u64 *ptr = (u64 *)(unsigned long)data;
+
+	if (!ptr)
+		return;
+
+	spin_lock_irqsave(&ip->listlock, flags);
+	msg = container_of(ptr, struct isys_fw_msgs, fw_msg.dummy);
+	list_move(&msg->head, &ip->framebuflist);
+	spin_unlock_irqrestore(&ip->listlock, flags);
+}
+
+static void ipu_cleanup_fw_msg_bufs(struct ipu_isys *isys)
+{
+	struct isys_fw_msgs *fwmsg, *fwmsg0;
+	unsigned long flags;
+	int i;
+
+	for (i = 0; i < IPU_ISYS_MAX_STREAMS; i++) {
+		struct ipu_isys_pipeline *pipe = isys->pipes[i];
+
+		if (!pipe)
+			continue;
+
+		spin_lock_irqsave(&pipe->listlock, flags);
+		list_for_each_entry_safe(fwmsg, fwmsg0,
+					 &pipe->framebuflist_fw, head)
+			list_move(&fwmsg->head, &pipe->framebuflist);
+		spin_unlock_irqrestore(&pipe->listlock, flags);
+	}
+}
+
 static int video_open(struct file *file)
 {
 	struct ipu_isys_video *av = video_drvdata(file);
@@ -1203,7 +1349,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 				       IPU_FW_ISYS_SEND_TYPE_STREAM_OPEN);
 	if (rval < 0) {
 		dev_err(dev, "can't open stream (%d)\n", rval);
-		ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
+		ipu_put_fw_msg_buf(ip, (uintptr_t)stream_cfg);
 		goto out_put_stream_handle;
 	}
 
@@ -1212,7 +1358,7 @@ static int start_stream_firmware(struct ipu_isys_video *av,
 	tout = wait_for_completion_timeout(&ip->stream_open_completion,
 					   IPU_LIB_CALL_TIMEOUT_JIFFIES);
 
-	ipu_put_fw_mgs_buf(av->isys, (uintptr_t)stream_cfg);
+	ipu_put_fw_msg_buf(ip, (uintptr_t)stream_cfg);
 
 	if (!tout) {
 		dev_err(dev, "stream open time out for entity %s\n",
@@ -1866,8 +2012,13 @@ int ipu_isys_video_init(struct ipu_isys_video *av,
 	init_completion(&av->ip.stream_start_completion);
 	init_completion(&av->ip.stream_stop_completion);
 	INIT_LIST_HEAD(&av->ip.queues);
+	spin_lock_init(&av->ip.listlock);
+	INIT_LIST_HEAD(&av->ip.framebuflist);
+	INIT_LIST_HEAD(&av->ip.framebuflist_fw);
 	spin_lock_init(&av->ip.short_packet_queue_lock);
 	av->ip.isys = av->isys;
+
+	alloc_fw_msg_bufs(&av->ip, 8);
 
 	if (!av->watermark) {
 		av->watermark = kzalloc(sizeof(*av->watermark), GFP_KERNEL);
@@ -1952,6 +2103,7 @@ out_ipu_isys_queue_cleanup:
 
 out_mutex_destroy:
 	kfree(av->watermark);
+	free_fw_msg_bufs(&av->ip);
 	mutex_destroy(&av->mutex);
 
 	return rval;
@@ -1963,6 +2115,7 @@ void ipu_isys_video_cleanup(struct ipu_isys_video *av)
 		return;
 
 	kfree(av->watermark);
+	free_fw_msg_bufs(&av->ip);
 	video_unregister_device(&av->vdev);
 	media_entity_cleanup(&av->vdev.entity);
 	mutex_destroy(&av->mutex);

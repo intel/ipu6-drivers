@@ -1165,34 +1165,12 @@ static void isys_remove(struct ipu_bus_device *adev)
 {
 	struct ipu_isys *isys = ipu_bus_get_drvdata(adev);
 	struct ipu_device *isp = adev->isp;
-	struct isys_fw_msgs *fwmsg, *safe;
 
 	dev_info(&adev->dev, "removed\n");
 #ifdef CONFIG_DEBUG_FS
 	if (isp->ipu_dir)
 		debugfs_remove_recursive(isys->debugfsdir);
 #endif
-
-	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist, head) {
-		dma_free_attrs(&adev->dev, sizeof(struct isys_fw_msgs),
-			       fwmsg, fwmsg->dma_addr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-			       NULL);
-#else
-			       0);
-#endif
-	}
-
-	list_for_each_entry_safe(fwmsg, safe, &isys->framebuflist_fw, head) {
-		dma_free_attrs(&adev->dev, sizeof(struct isys_fw_msgs),
-			       fwmsg, fwmsg->dma_addr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-			       NULL
-#else
-			       0
-#endif
-		    );
-	}
 
 	isys_iwake_watermark_cleanup(isys);
 
@@ -1339,110 +1317,6 @@ err:
 }
 #endif
 
-static int alloc_fw_msg_bufs(struct ipu_isys *isys, int amount)
-{
-	dma_addr_t dma_addr;
-	struct isys_fw_msgs *addr;
-	unsigned int i;
-	unsigned long flags;
-
-	for (i = 0; i < amount; i++) {
-		addr = dma_alloc_attrs(&isys->adev->dev,
-				       sizeof(struct isys_fw_msgs),
-				       &dma_addr, GFP_KERNEL,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-				       NULL);
-#else
-				       0);
-#endif
-		if (!addr)
-			break;
-		addr->dma_addr = dma_addr;
-
-		spin_lock_irqsave(&isys->listlock, flags);
-		list_add(&addr->head, &isys->framebuflist);
-		spin_unlock_irqrestore(&isys->listlock, flags);
-	}
-	if (i == amount)
-		return 0;
-	spin_lock_irqsave(&isys->listlock, flags);
-	while (!list_empty(&isys->framebuflist)) {
-		addr = list_first_entry(&isys->framebuflist,
-					struct isys_fw_msgs, head);
-		list_del(&addr->head);
-		spin_unlock_irqrestore(&isys->listlock, flags);
-		dma_free_attrs(&isys->adev->dev,
-			       sizeof(struct isys_fw_msgs),
-			       addr, addr->dma_addr,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
-			       NULL);
-#else
-			       0);
-#endif
-		spin_lock_irqsave(&isys->listlock, flags);
-	}
-	spin_unlock_irqrestore(&isys->listlock, flags);
-	return -ENOMEM;
-}
-
-struct isys_fw_msgs *ipu_get_fw_msg_buf(struct ipu_isys_pipeline *ip)
-{
-	struct ipu_isys_video *pipe_av =
-	    container_of(ip, struct ipu_isys_video, ip);
-	struct ipu_isys *isys;
-	struct isys_fw_msgs *msg;
-	unsigned long flags;
-
-	isys = pipe_av->isys;
-
-	spin_lock_irqsave(&isys->listlock, flags);
-	if (list_empty(&isys->framebuflist)) {
-		spin_unlock_irqrestore(&isys->listlock, flags);
-		dev_dbg(&isys->adev->dev, "Frame list empty - Allocate more");
-
-		alloc_fw_msg_bufs(isys, 5);
-
-		spin_lock_irqsave(&isys->listlock, flags);
-		if (list_empty(&isys->framebuflist)) {
-			spin_unlock_irqrestore(&isys->listlock, flags);
-			dev_err(&isys->adev->dev, "Frame list empty");
-			return NULL;
-		}
-	}
-	msg = list_last_entry(&isys->framebuflist, struct isys_fw_msgs, head);
-	list_move(&msg->head, &isys->framebuflist_fw);
-	spin_unlock_irqrestore(&isys->listlock, flags);
-	memset(&msg->fw_msg, 0, sizeof(msg->fw_msg));
-
-	return msg;
-}
-
-void ipu_cleanup_fw_msg_bufs(struct ipu_isys *isys)
-{
-	struct isys_fw_msgs *fwmsg, *fwmsg0;
-	unsigned long flags;
-
-	spin_lock_irqsave(&isys->listlock, flags);
-	list_for_each_entry_safe(fwmsg, fwmsg0, &isys->framebuflist_fw, head)
-		list_move(&fwmsg->head, &isys->framebuflist);
-	spin_unlock_irqrestore(&isys->listlock, flags);
-}
-
-void ipu_put_fw_mgs_buf(struct ipu_isys *isys, u64 data)
-{
-	struct isys_fw_msgs *msg;
-	unsigned long flags;
-	u64 *ptr = (u64 *)(unsigned long)data;
-
-	if (!ptr)
-		return;
-
-	spin_lock_irqsave(&isys->listlock, flags);
-	msg = container_of(ptr, struct isys_fw_msgs, fw_msg.dummy);
-	list_move(&msg->head, &isys->framebuflist);
-	spin_unlock_irqrestore(&isys->listlock, flags);
-}
-
 static int isys_probe(struct ipu_bus_device *adev)
 {
 	struct ipu_isys *isys;
@@ -1522,10 +1396,6 @@ static int isys_probe(struct ipu_bus_device *adev)
 	mutex_init(&isys->stream_mutex);
 	mutex_init(&isys->lib_mutex);
 
-	spin_lock_init(&isys->listlock);
-	INIT_LIST_HEAD(&isys->framebuflist);
-	INIT_LIST_HEAD(&isys->framebuflist_fw);
-
 	dev_dbg(&adev->dev, "isys probe %p %p\n", adev, &adev->dev);
 	ipu_bus_set_drvdata(adev, isys);
 
@@ -1563,7 +1433,6 @@ static int isys_probe(struct ipu_bus_device *adev)
 	pm_qos_add_request(&isys->pm_qos, PM_QOS_CPU_DMA_LATENCY,
 			   PM_QOS_DEFAULT_VALUE);
 #endif
-	alloc_fw_msg_bufs(isys, 20);
 
 	rval = isys_register_devices(isys);
 	if (rval)
@@ -1725,7 +1594,7 @@ int isys_isr_one(struct ipu_bus_device *adev)
 		 * firmware only release the capture msg until software
 		 * get pin_data_ready event
 		 */
-		ipu_put_fw_mgs_buf(ipu_bus_get_drvdata(adev), resp->buf_id);
+		ipu_put_fw_msg_buf(pipe, resp->buf_id);
 		if (resp->pin_id < IPU_ISYS_OUTPUT_PINS &&
 		    pipe->output_pins[resp->pin_id].pin_ready)
 			pipe->output_pins[resp->pin_id].pin_ready(pipe, resp);
