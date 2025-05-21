@@ -1,0 +1,26 @@
+From 0fd640b00c0cbaf0511ca6e284d7d6d08a3a6a81 Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Wed, 21 May 2025 10:26:12 +0800
+Subject: [PATCH] media: i2c: fix power-on issue for on board LT6911UXC
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+---
+ drivers/media/i2c/lt6911uxc.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/lt6911uxc.c b/drivers/media/i2c/lt6911uxc.c
+index eb8ff5747100..c84de5a3c139 100644
+--- a/drivers/media/i2c/lt6911uxc.c
++++ b/drivers/media/i2c/lt6911uxc.c
+@@ -553,7 +553,7 @@ static int lt6911uxc_identify_module(struct lt6911uxc *lt6911uxc,
+
+ static int lt6911uxc_parse_gpio(struct lt6911uxc *lt6911uxc, struct device *dev)
+ {
+-	lt6911uxc->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_IN);
++	lt6911uxc->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+ 	if (IS_ERR(lt6911uxc->reset_gpio)) {
+ 		lt6911uxc->auxiliary_port = true;
+ 		return dev_err_probe(dev, PTR_ERR(lt6911uxc->reset_gpio),
+--
+2.34.1
+
