@@ -29,6 +29,7 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0032-Support-IPU6-ISYS-FW-trace-dump-for-upstream-driver.patch
        git am 0033-Support-IPU6-PSYS-FW-trace-dump-for-upstream-driver.patch
        git am 0034-media-pci-The-order-of-return-buffers-should-be-FIFO.patch
+       git am 0035-media-i2c-fix-power-on-issue-for-on-board-LT6911UXC.patch
        git am 0036-media-i2c-fix-power-on-issue-for-on-board-LT6911UXE.patch
 
     b. for PSYS driver (the patch be integrated in NEX kernel 6.12):
