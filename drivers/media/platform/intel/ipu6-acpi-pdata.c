@@ -35,7 +35,7 @@ static struct ipu_isys_clk_mapping clk_mapping[] = {
 };
 
 struct ipu_isys_subdev_pdata acpi_subdev_pdata = {
-	.subdevs = (struct ipu_isys_subdev_info *[]) {
+	.subdevs = (struct ipu_isys_subdev_info *[MAX_ACPI_SENSOR_NUM + 1]) {
 		NULL,
 	},
 	.clk_map = clk_mapping,
@@ -158,7 +158,7 @@ static void add_local_subdevs(struct ipu_isys_subdev_info *new_subdev_info)
 	struct ipu_isys_subdev_pdata *ptr_acpi_subdev_pdata = &acpi_subdev_pdata;
 	int i = 0;
 
-	while (i <= MAX_ACPI_SENSOR_NUM) {
+	while (i < MAX_ACPI_SENSOR_NUM) {
 		if (!ptr_acpi_subdev_pdata->subdevs[i]) {
 			ptr_acpi_subdev_pdata->subdevs[i] = new_subdev_info;
 			ptr_acpi_subdev_pdata->subdevs[i+1] = NULL;
