@@ -565,6 +565,7 @@ int ipu_isys_csi2_init(struct ipu_isys_csi2 *csi2,
 	csi2->asd.ctrl_init = csi_ctrl_init;
 	csi2->asd.isys = isys;
 	init_completion(&csi2->eof_completion);
+	mutex_init(&csi2->stream_mutex);
 	mutex_lock(&csi2->stream_mutex);
 	csi2->stream_count = 0;
 	mutex_unlock(&csi2->stream_mutex);
