@@ -33,17 +33,23 @@
 #include <linux/clkdev.h>
 #include <linux/kernel.h>
 #include <linux/pci.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #include <media/ipu-isys.h>
 #include "ipu.h"
-#include <media/ipu-acpi-pdata.h>
-#include <media/ipu-acpi.h>
 #include <media/ar0234.h>
 #include <media/lt6911uxc.h>
-#include <media/imx390.h>
 #include <media/isx031.h>
 #include <media/ov2311.h>
-#include <media/ti960.h>
 #include <media/d4xx_pdata.h>
+#else
+#include "ipu6-isys.h"
+#include "ipu6.h"
+#endif
+#include <media/ipu-acpi-pdata.h>
+#include <media/ipu-acpi.h>
+#include <media/imx390.h>
+#include <media/ti960.h>
 
 static LIST_HEAD(devices);
 
@@ -64,14 +70,16 @@ static const struct ipu_acpi_devices supported_devices[] = {
 /*
  *	{ "ACPI ID", sensor_name, get_sensor_pdata, NULL, 0, TYPE, serdes_name },	// Custom HID
  */
+	{ "INTC10C1", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// IMX390 HID
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	{ "INTC10CM", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// new D3 IMX390 HID
 	{ "INTC10C0", AR0234_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// AR0234 HID
 	{ "INTC10B1", LT6911UXC_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },	// LT6911UXC HID
-	{ "INTC10C1", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// IMX390 HID
-	{ "INTC10CM", IMX390_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// new D3 IMX390 HID
 	{ "INTC1031", ISX031_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// ISX031 HID
 	{ "INTC102R", OV2311_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, TI960_NAME },// OV2311 HID
 	{ "INTC10C5", LT6911UXE_NAME, get_sensor_pdata, NULL, 0, TYPE_DIRECT, NULL },   // LT6911UXE HID
 	{ "INTC10CD", D457_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, D457_NAME },// D457 HID
+#endif
 };
 
 static int get_table_index(const char *acpi_name)
@@ -135,9 +143,13 @@ static int ipu_acpi_get_pdata(struct device *dev, int index)
 	return 0;
 }
 
+/*
+ * different acpi devices may have same HID, so acpi_dev_get_first_match_dev
+ * will always match device to simple fwnode.
+ */
 static int ipu_acpi_test(struct device *dev, void *priv)
 {
-	struct acpi_device *adev;
+	struct acpi_device *adev = NULL;
 	int rval;
 	int acpi_idx = get_table_index(dev_name(dev));
 
@@ -149,15 +161,23 @@ static int ipu_acpi_test(struct device *dev, void *priv)
 	const char *target_hid = supported_devices[acpi_idx].hid_name;
 
 	if (!ACPI_COMPANION(dev)) {
-		adev = acpi_dev_get_first_match_dev(target_hid, NULL, -1);
+		while ((adev = acpi_dev_get_next_match_dev(adev, target_hid,
+							   NULL, -1))) {
+			if (adev->flags.reserved == 0) {
+				adev->flags.reserved = 1;
+				break;
+			}
+			acpi_dev_put(adev);
+		}
+
 		if (!adev) {
 			dev_dbg(dev, "No ACPI device found for %s\n", target_hid);
 			return 0;
+		} else {
+			set_primary_fwnode(dev, &adev->fwnode);
+			dev_dbg(dev, "Assigned fwnode to %s\n", dev_name(dev));
 		}
 	}
-
-	set_primary_fwnode(dev, &adev->fwnode);
-	dev_dbg(dev, "Assigned fwnode to %s\n", dev_name(dev));
 
 	if (ACPI_COMPANION(dev) != adev) {
 		dev_err(dev, "Failed to set ACPI companion for %s\n",
@@ -190,7 +210,11 @@ int ipu_get_acpi_devices(void *driver_data,
 				struct ipu_isys_subdev_pdata **built_in_pdata,
 				int (*fn)
 				(struct device *, void *,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 				 struct ipu_isys_csi2_config *csi2,
+#else
+				 struct ipu6_isys_csi2_config *csi2,
+#endif
 				 bool reprobe))
 {
 	int rval;

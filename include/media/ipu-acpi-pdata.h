@@ -2,14 +2,16 @@
 /* Copyright (C) 2023 Intel Corporation */
 #include <linux/interrupt.h>
 #include <media/ipu-acpi.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #include <media/ar0234.h>
-#include <media/lt6911uxc.h>
 #include <media/lt6911uxe.h>
-#include <media/ti960.h>
-#include <media/imx390.h>
 #include <media/isx031.h>
 #include <media/ov2311.h>
 #include <media/d4xx_pdata.h>
+#include <media/lt6911uxc.h>
+#endif
+#include <media/ti960.h>
+#include <media/imx390.h>
 
 #define CL_EMPTY 0
 #define CL_DISCRETE 1

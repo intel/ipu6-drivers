@@ -1803,8 +1803,11 @@ static void ti960_set_csi_conts_clock(struct ti960 *va, int state)
 	ti960_reg_write(va, TI960_CSI_PORT_SEL, 0x01);
 	ti960_reg_read(va, TI960_CSI_CTL, &val);
 	if (state) {
+		val |= TI960_CSI_ENABLE;
 		val |= TI960_CSI_CONTS_CLOCK;
+		ti960_reg_write(va, TI960_RESET, TI960_POWER_ON);
 	} else {
+		val &= ~TI960_CSI_ENABLE;
 		val &= ~TI960_CSI_CONTS_CLOCK;
 	}
 
