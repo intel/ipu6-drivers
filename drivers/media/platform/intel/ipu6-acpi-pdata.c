@@ -13,6 +13,10 @@
  *
  */
 
+ #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+#include "ipu6-isys.h"
+#endif
 #include <media/ipu-acpi.h>
 #include <media/ipu-acpi-pdata.h>
 
@@ -486,6 +490,7 @@ static void set_ti960_gpio(struct control_logic_data *ctl_data, struct serdes_pl
 	}
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static void set_lt_gpio(struct control_logic_data *ctl_data, struct sensor_platform_data **pdata,
 			bool is_dummy)
 {
@@ -524,6 +529,7 @@ static void set_lt_gpio(struct control_logic_data *ctl_data, struct sensor_platf
 		}
 	}
 }
+#endif
 
 static void set_common_gpio(struct control_logic_data *ctl_data,
 		     struct sensor_platform_data **pdata)
@@ -553,7 +559,11 @@ static int set_csi2(struct ipu_isys_subdev_info **sensor_sd,
 		unsigned int lanes,
 		unsigned int port)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	struct ipu_isys_csi2_config *csi2_config;
+#else
+	struct ipu6_isys_csi2_config *csi2_config;
+#endif
 
 	csi2_config = kzalloc(sizeof(*csi2_config), GFP_KERNEL);
 	if (!csi2_config)
@@ -599,6 +609,7 @@ static void set_serdes_sd_pdata(struct serdes_module_pdata **module_pdata,
 		(*module_pdata)->fsin = 3;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	/* TI960 and IMX390 specific */
 	if (!strcmp(sensor_name, IMX390_NAME) && !strcmp(hid_name, "INTC10CM")) {
 		(*module_pdata)->gpio_powerup_seq[0] = 0;
@@ -632,6 +643,7 @@ static void set_serdes_sd_pdata(struct serdes_module_pdata **module_pdata,
 						TI960_FL_INIT_SER;
 		(*module_pdata)->fsin = 2;
 	}
+#endif
 }
 
 #define PORT_NR 8
@@ -665,12 +677,14 @@ static int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 
 		/* board info */
 		strscpy(serdes_sdinfo[i].board_info.type, sensor_name, I2C_NAME_SIZE);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		if (!strcmp(sensor_name, D457_NAME)) {
 			if (i == 0)
 				serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr;
 			else
 				serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr_2;
 		} else
+#endif
 			serdes_sdinfo[i].board_info.addr = serdes_info.sensor_map_addr +
 			serdes_info.sensor_num + i;
 
@@ -678,12 +692,14 @@ static int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 
 		/* serdes_subdev_info */
 		serdes_sdinfo[i].rx_port = i;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		if (!strcmp(sensor_name, D457_NAME)) {
 			if (i == 0)
 				serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr;
 			else
 				serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr_2;
 		} else
+#endif
 			serdes_sdinfo[i].ser_alias = serdes_info.ser_map_addr +
 			serdes_info.sensor_num + i;
 
@@ -733,9 +749,11 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		pdata->i2c_slave_address = addr;
 
 		/* gpio */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		if (!strcmp(sensor_name, LT6911UXC_NAME) || !strcmp(sensor_name, LT6911UXE_NAME))
 			set_lt_gpio(ctl_data, &pdata, is_dummy);
 		else
+#endif
 			set_common_gpio(ctl_data, &pdata);
 
 		(*sensor_sd)->i2c.board_info.platform_data = pdata;
@@ -749,17 +767,22 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		pr_debug("IPU6 ACPI: %s - Serdes connection", __func__);
 
 		/* use ascii */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		if (!strcmp(sensor_name, D457_NAME) && port >= 0) {
 			pdata->suffix = serdes_info.deser_num + SUFFIX_BASE + 1;
 			pr_info("IPU6 ACPI: create %s %c, on deserializer port %d",
 				sensor_name, pdata->suffix, serdes_info.deser_num);
 		} else if (port >= 0) {
+#else
+		if (port >= 0) {
+#endif
 			pdata->suffix = SUFFIX_BASE + suffix_offset++;
 			pr_info("IPU6 ACPI: create %s %c, on mipi port %d",
 				sensor_name, pdata->suffix, port);
 		} else
 			pr_err("IPU6 ACPI: Invalid MIPI Port : %d", port);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		if (!strcmp(sensor_name, IMX390_NAME) || !strcmp(sensor_name, ISX031_NAME)
 			|| !strcmp(sensor_name, OV2311_NAME))
 			set_ti960_gpio(ctl_data, &pdata);
@@ -768,6 +791,12 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		} else if (!strcmp(sensor_name, IMX390_NAME) || !strcmp(sensor_name, OV2311_NAME)) {
 			pdata->link_freq_mbps = 1200;
 		}
+#else
+		if (!strcmp(sensor_name, IMX390_NAME)) {
+			set_ti960_gpio(ctl_data, &pdata);
+			pdata->link_freq_mbps = 1200;
+		}
+#endif
 		pdata->deser_nlanes = deser_lanes;
 		pdata->ser_nlanes = lanes;
 		set_serdes_subdev(sensor_sd, dev, &pdata, sensor_name, hid_name, lanes, addr, rx_port);
@@ -796,11 +825,13 @@ static void set_serdes_info(struct device *dev, const char *sensor_name,
 	serdes_info.ser_map_addr = cam_data->i2c[i++].addr;
 	/* sensor mapped addr */
 	serdes_info.sensor_map_addr = cam_data->i2c[i++].addr;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	if (!strcmp(sensor_name, D457_NAME) && serdes_info.i2c_num == SENSOR_2X_I2C) {
 		/* 2nd group of mapped addr */
 		serdes_info.ser_map_addr_2 = cam_data->i2c[i++].addr;
 		serdes_info.sensor_map_addr_2 = cam_data->i2c[i++].addr;
 	}
+#endif
 
 	/* TI960 specific */
 	if (!strcmp(serdes_name, TI960_NAME))
@@ -810,14 +841,17 @@ static void set_serdes_info(struct device *dev, const char *sensor_name,
 
 	if (!strcmp(sensor_name, IMX390_NAME))
 		serdes_info.phy_i2c_addr = IMX390_D3CM_I2C_ADDRESS;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	else if (!strcmp(sensor_name, ISX031_NAME))
 		serdes_info.phy_i2c_addr = ISX031_I2C_ADDRESS;
 	else if (!strcmp(sensor_name, OV2311_NAME))
 		serdes_info.phy_i2c_addr = OV2311_I2C_ADDRESS;
+#endif
 	else
 		serdes_info.phy_i2c_addr = 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 static int populate_dummy(struct device *dev,
 			const char *sensor_name,
 			const char *hid_name,
@@ -854,6 +888,7 @@ static int populate_dummy(struct device *dev,
 
 	return 0;
 }
+#endif
 
 static int populate_sensor_pdata(struct device *dev,
 			struct ipu_isys_subdev_info **sensor_sd,
@@ -882,6 +917,7 @@ static int populate_sensor_pdata(struct device *dev,
 				cam_data->i2c_num);
 			return -1;
 		}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 		/* LT use LT Control Logic type */
 		if (!strcmp(sensor_name, LT6911UXC_NAME) ||
 		    !strcmp(sensor_name, LT6911UXE_NAME)) {
@@ -893,6 +929,9 @@ static int populate_sensor_pdata(struct device *dev,
 			}
 		/* Others use DISCRETE Control Logic */
 		} else if (ctl_data->type != CL_DISCRETE) {
+#else
+		if (ctl_data->type != CL_DISCRETE) {
+#endif
 			dev_err(dev, "IPU6 ACPI: Control Logic Type\n");
 			dev_err(dev, "for %s: %d is Incorrect\n",
 				sensor_name, ctl_data->type);
@@ -937,6 +976,7 @@ static int populate_sensor_pdata(struct device *dev,
 	update_pdata(dev, *sensor_sd, connect);
 
 	/* Lontium specific */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	if (!strcmp(sensor_name, LT6911UXC_NAME) || !strcmp(sensor_name, LT6911UXE_NAME)) {
 		if (cam_data->pprval != cam_data->link) {
 			ret = populate_dummy(dev, sensor_name, hid_name, cam_data, ctl_data, connect);
@@ -944,6 +984,7 @@ static int populate_sensor_pdata(struct device *dev,
 				return ret;
 		}
 	}
+#endif
 
 	return 0;
 }

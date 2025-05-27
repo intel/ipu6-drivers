@@ -36,6 +36,7 @@
 
 /* vertical-timings from sensor */
 #define IMX390_REG_VTS			0x2008
+#define IMX390_VTS_DEF			1330U
 #define IMX390_VTS_MAX			0xffff
 
 #define IMX390_CLK_FREQ			(1485000)
@@ -1039,9 +1040,9 @@ static const struct imx390_mode supported_modes[] = {
 		.width = 1280,
 		.height = 960,
 		.hdr_en = false,
-		.hts = 3300,
-		.vts_def = 1250,
-		.vts_min = 1250,
+		.hts = 4400,
+		.vts_def = 1125,
+		.vts_min = 1125,
 		.code = MEDIA_BUS_FMT_SGRBG12_1X12,
 		.lanes = 4,
 		.fps = 30,
@@ -1056,9 +1057,9 @@ static const struct imx390_mode supported_modes[] = {
 		.width = 1920,
 		.height = 1216,
 		.hdr_en = true,
-		.hts = 3300,
-		.vts_def = 1250,
-		.vts_min = 1250,
+		.hts = 3200,
+		.vts_def = IMX390_VTS_DEF,
+		.vts_min = IMX390_VTS_DEF,
 		.code = MEDIA_BUS_FMT_SGRBG12_1X12,
 		.lanes = 4,
 		.fps = 30,
@@ -1311,8 +1312,7 @@ static int imx390_exposure_set(struct imx390 *self, s64 val)
 	 * lines.
 	 */
 	/* FRAME_LENGTH is VMAX */
-	/* VMAX=1125 */
-	reg =  1125 - coarse_time;
+	reg =  IMX390_VTS_DEF - coarse_time;
 	/* The data sheet says values of 0 and 1 are prohibited...and
 	 * also says that the default value is 1...
 	 */
