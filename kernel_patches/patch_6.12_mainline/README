@@ -1,8 +1,16 @@
 build kernel driver with community kernel version 6.11 but not iot kernel
 
 1. checkout community kernel 6.12
-2. copy patches to kernel source tree and apply them
-    a. for ar0234 & lt6911uxc & lt6911uxe:
+2. 
+    a. for PSYS driver (the patch be integrated in NEX kernel 6.12):
+       copy and replace psys folder to kernel or apply below patches
+       git am 0001-media-pci-intel-psys-driver.patch
+       git am 0002-media-pci-update-IPU6-PSYS-driver.patch
+       
+       echo "obj-\$(CONFIG_VIDEO_INTEL_IPU6)  += psys/" >> ./drivers/media/pci/intel/ipu6/Makefile
+
+    b. copy patches to kernel source tree and apply them
+       for ar0234 & lt6911uxc & lt6911uxe:
        git am 0001-media-i2c-Add-ar0234-camera-sensor-driver.patch
        git am 0002-media-i2c-add-support-for-lt6911uxe.patch
        git am 0003-INT3472-Support-LT6911UXE.patch
@@ -31,17 +39,6 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0034-media-pci-The-order-of-return-buffers-should-be-FIFO.patch
        git am 0035-media-i2c-fix-power-on-issue-for-on-board-LT6911UXC.patch
        git am 0036-media-i2c-fix-power-on-issue-for-on-board-LT6911UXE.patch
-
-    b. for PSYS driver (the patch be integrated in NEX kernel 6.12):
-       copy and replace psys folder to kernel or apply below patches
-
-       git am 0001-media-pci-intel-psys-driver.patch
-
-       git am 0002-media-pci-update-IPU6-PSYS-driver.patch
-
-       git am 0003-media-pci-intel-update-ipu6-psys-driver.patch
-
-       echo "obj-\$(CONFIG_VIDEO_INTEL_IPU6)  += psys/" >> ./drivers/media/pci/intel/ipu6/Makefile
 
     c. for USB device need to apply below 2 patches, they are merged to kernel 6.13.
        0001-media-intel-ipu6-do-not-handle-interrupts-when-devic.patch
