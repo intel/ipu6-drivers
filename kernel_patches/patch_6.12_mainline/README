@@ -33,6 +33,8 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0036-media-i2c-fix-power-on-issue-for-on-board-LT6911UXE.patch
 
     b. for PSYS driver (the patch be integrated in NEX kernel 6.12):
+       copy and replace psys folder to kernel or apply below patches
+
        git am 0001-media-pci-intel-psys-driver.patch
 
        git am 0002-media-pci-update-IPU6-PSYS-driver.patch
