@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2020 - 2024 Intel Corporation
+// Copyright (C) 2020 - 2025 Intel Corporation
 
 #include <linux/uaccess.h>
 #include <linux/device.h>
@@ -551,7 +551,7 @@ static void ipu_buttress_set_psys_ratio(struct ipu6_device *isp,
 
 	ctrl->ratio = psys_divisor;
 	ctrl->qos_floor = psys_qos_floor;
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
 	if (ctrl->started) {
 		/*
 		 * According to documentation driver initiates DVFS
@@ -562,7 +562,7 @@ static void ipu_buttress_set_psys_ratio(struct ipu6_device *isp,
 		       ctrl->qos_floor << BUTTRESS_FREQ_CTL_QOS_FLOOR_SHIFT |
 		       psys_divisor, isp->base + BUTTRESS_REG_PS_FREQ_CTL);
 	}
-
+#endif
 out_mutex_unlock:
 	mutex_unlock(&isp->buttress.power_mutex);
 }
