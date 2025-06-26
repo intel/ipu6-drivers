@@ -1,0 +1,30 @@
+From ae7f3e5d0e20965821a89c93d794b06dc6cf95ad Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Tue, 27 May 2025 13:31:55 +0800
+Subject: [PATCH] media: pci: align params for non MIPI split and split
+ cases
+
+fix build error
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+index 31e579b1ddfd..59f4fac49675 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+@@ -277,7 +277,8 @@ static int isys_register_ext_subdev(struct ipu6_isys *isys,
+ 	if (!sd_info->csi2)
+ 		return 0;
+
+-	return isys_complete_ext_device_registration(isys, sd, sd_info->csi2);
++	/* src_pad is useless for non MIPI split case. Set it to '-1'.*/
++	return isys_complete_ext_device_registration(isys, sd, -1, sd_info->csi2);
+
+ skip_put_adapter:
+ 	i2c_put_adapter(adapter);
+--
+2.43.0
+

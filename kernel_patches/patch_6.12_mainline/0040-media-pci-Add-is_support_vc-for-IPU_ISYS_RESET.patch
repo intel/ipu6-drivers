@@ -1,0 +1,148 @@
+From 8ec1e446e714024abcaae97c01224a9df4c45c1e Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Mon, 4 Nov 2024 18:10:02 +0800
+Subject: [PATCH] media: pci: Add is_support_vc for IPU_ISYS_RESET
+
+Signed-off-by: linya14x <linx.yang@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c |  7 ++++++
+ drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h |  3 +++
+ .../media/pci/intel/ipu6/ipu6-isys-queue.c    |  2 +-
+ .../media/pci/intel/ipu6/ipu6-isys-video.c    | 25 +++++++++++++++----
+ .../media/pci/intel/ipu6/ipu6-isys-video.h    |  3 +++
+ 5 files changed, 34 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
+index 051898ce53f4..16b90183fffe 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
+@@ -608,6 +608,9 @@ int ipu6_isys_csi2_get_remote_desc(u32 source_stream,
+ 	unsigned int i;
+ 	int ret;
+
++#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
++	csi2->is_multiple = false;
++#endif
+ 	source = media_entity_to_v4l2_subdev(source_entity);
+ 	if (!source)
+ 		return -EPIPE;
+@@ -645,5 +648,9 @@ int ipu6_isys_csi2_get_remote_desc(u32 source_stream,
+
+ 	*entry = *desc_entry;
+
++#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
++	csi2->is_multiple = true;
++	dev_dbg(dev, "set csi2->is_multiple is true.\n");
++#endif
+ 	return 0;
+ }
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h
+index bc8594c94f99..6b9e6c014c14 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h
+@@ -45,6 +45,9 @@ struct ipu6_isys_csi2 {
+ 	u32 receiver_errors;
+ 	unsigned int nlanes;
+ 	unsigned int port;
++#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
++	bool is_multiple;
++#endif
+ };
+
+ struct ipu6_isys_csi2_timing {
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
+index 14868b1ab441..67cf2530676c 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
+@@ -893,7 +893,7 @@ static void stop_streaming(struct vb2_queue *q)
+ 	mutex_unlock(&av->isys->reset_mutex);
+
+ 	if (av->isys->need_reset) {
+-		if (!stream->nr_streaming)
++		if (!stream->nr_streaming && !is_support_vc(av))
+ 			ipu_isys_reset(av, stream);
+ 		else
+ 			av->isys->need_reset = 0;
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
+index 8973f7b8ac3a..adbee0863b7e 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
+@@ -539,6 +539,21 @@ static int ipu6_isys_fw_pin_cfg(struct ipu6_isys_video *av,
+ 	return 0;
+ }
+
++#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
++bool is_support_vc(struct ipu6_isys_video *av)
++{
++	struct media_pad *remote_pad = media_pad_remote_pad_first(av->vdev.entity.pads);
++	struct v4l2_subdev *sd;
++	struct device *dev = &av->isys->adev->auxdev.dev;
++
++	sd = media_entity_to_v4l2_subdev(remote_pad->entity);
++	struct ipu6_isys_subdev *asd = to_ipu6_isys_subdev(sd);
++	struct ipu6_isys_csi2 *csi2 = to_ipu6_isys_csi2(asd);
++	dev_dbg(dev, "csi2->is_multiple = %d\n", csi2->is_multiple);
++	return csi2->is_multiple;
++}
++
++#endif
+ static int start_stream_firmware(struct ipu6_isys_video *av,
+ 				 struct ipu6_isys_buffer_list *bl)
+ {
+@@ -620,11 +635,10 @@ static int start_stream_firmware(struct ipu6_isys_video *av,
+
+ 	reinit_completion(&stream->stream_start_completion);
+ #ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+-	send_type = IPU6_FW_ISYS_SEND_TYPE_STREAM_START;
+-	ret = ipu6_fw_isys_simple_cmd(av->isys, stream->stream_handle,
+-					      send_type);
++	if(bl && is_support_vc(av)) {
+ #else
+ 	if (bl) {
++#endif
+ 		send_type = IPU6_FW_ISYS_SEND_TYPE_STREAM_START_AND_CAPTURE;
+ 		ipu6_fw_isys_dump_frame_buff_set(dev, buf,
+ 						 stream_cfg->nof_output_pins);
+@@ -636,7 +650,6 @@ static int start_stream_firmware(struct ipu6_isys_video *av,
+ 		ret = ipu6_fw_isys_simple_cmd(av->isys, stream->stream_handle,
+ 					      send_type);
+ 	}
+-#endif
+
+ 	if (ret < 0) {
+ 		dev_err(dev, "can't start streaming (%d)\n", ret);
+@@ -656,7 +669,7 @@ static int start_stream_firmware(struct ipu6_isys_video *av,
+ 		goto out_stream_close;
+ 	}
+ #ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+-	if (bl) {
++	if (bl && !is_support_vc(av)) {
+ 				dev_dbg(dev, "start stream: capture\n");
+ 				send_type = IPU6_FW_ISYS_SEND_TYPE_STREAM_CAPTURE;
+ 				ipu6_fw_isys_dump_frame_buff_set(dev, buf, stream_cfg->nof_output_pins);
+@@ -670,6 +683,8 @@ static int start_stream_firmware(struct ipu6_isys_video *av,
+ 						goto out_stream_close;
+ 				}
+ 	}
++	else
++		dev_dbg(dev, "start stream: complete\n");
+
+ #else
+ 	dev_dbg(dev, "start stream: complete\n");
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-video.h b/drivers/media/pci/intel/ipu6/ipu6-isys-video.h
+index 0dfa4774b802..5fa16439047c 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-video.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-video.h
+@@ -145,5 +145,8 @@ u32 ipu6_isys_get_data_size(struct ipu6_isys_video *av);
+ u32 ipu6_isys_get_bytes_per_line(struct ipu6_isys_video *av);
+ u32 ipu6_isys_get_frame_width(struct ipu6_isys_video *av);
+ u32 ipu6_isys_get_frame_height(struct ipu6_isys_video *av);
++#ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
++bool is_support_vc(struct ipu6_isys_video *av);
++#endif
+
+ #endif /* IPU6_ISYS_VIDEO_H */
+--
+2.43.0
+

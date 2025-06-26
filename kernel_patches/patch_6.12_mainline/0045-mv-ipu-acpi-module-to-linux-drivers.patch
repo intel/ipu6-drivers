@@ -1,0 +1,252 @@
+From e55ab64fae775608caa7155af5e961242846098f Mon Sep 17 00:00:00 2001
+From: Dongcheng Yan <dongcheng.yan@intel.com>
+Date: Mon, 28 Apr 2025 12:30:33 +0800
+Subject: [PATCH] mv ipu-acpi module to linux-drivers
+
+The ipu-acpi module is responsible for obtaining ACPI device platform
+data (pdata) and is universally applicable to both IPU6/7 and
+upstream/non-upstream. To better align with its purpose and usage, the
+ipu-acpi module is being moved out of the linux_kernel and into the
+linux-drivers[android/platform/main].
+
+Specific changes include:
+
+- Struct ipu_isys_subdev_pdata and its internal structs
+  ipu_isys_subdev_info/ipu_isys_clk_mapping:
+  solely related to ACPI pdata, not tied to any specific IPU.
+- IPU_SPDATA_NAME_LEN and related macros:
+  used exclusively for ACPI device definition and configuration.
+
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ .../media/pci/intel/ipu6/ipu6-isys-mcd-phy.c  |  4 +--
+ drivers/media/pci/intel/ipu6/ipu6-isys.c      | 26 +++++++++----------
+ drivers/media/pci/intel/ipu6/ipu6-isys.h      | 26 +++++++++----------
+ drivers/media/pci/intel/ipu6/ipu6.c           | 10 +++----
+ drivers/media/pci/intel/ipu6/ipu6.h           |  2 +-
+ 5 files changed, 34 insertions(+), 34 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+index ff291305ca3a..7ab02b72e1b0 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+@@ -651,8 +651,8 @@ static int ipu6_isys_mcd_phy_config(struct ipu6_isys *isys, struct ipu6_isys_csi
+ 	struct ipu6_device *isp = adev->isp;
+ 	void __iomem *isp_base = isp->base;
+ 	const struct phy_reg **phy_config_regs;
+-	struct ipu6_isys_subdev_pdata *spdata = isys->pdata->spdata;
+-	struct ipu6_isys_subdev_info **subdevs, *sd_info;
++	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
++	struct ipu_isys_subdev_info **subdevs, *sd_info;
+ 	int i;
+
+ 	if (!spdata) {
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+index be1031d50e88..f1c672de3dbc 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+@@ -141,7 +141,7 @@ static int isys_i2c_test(struct device *dev, void *priv)
+
+ static struct
+ i2c_client *isys_find_i2c_subdev(struct i2c_adapter *adapter,
+-				 struct ipu6_isys_subdev_info *sd_info)
++				 struct ipu_isys_subdev_info *sd_info)
+ {
+ 	struct i2c_board_info *info = &sd_info->i2c.board_info;
+ 	struct isys_i2c_test test = {
+@@ -212,7 +212,7 @@ unregister_subdev:
+
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ static int isys_register_ext_subdev(struct ipu6_isys *isys,
+-				    struct ipu6_isys_subdev_info *sd_info)
++				    struct ipu_isys_subdev_info *sd_info)
+ {
+ 	struct i2c_adapter *adapter;
+ 	struct v4l2_subdev *sd;
+@@ -286,7 +286,7 @@ skip_put_adapter:
+ }
+
+ static int isys_unregister_ext_subdev(struct ipu6_isys *isys,
+-				      struct ipu6_isys_subdev_info *sd_info)
++				      struct ipu_isys_subdev_info *sd_info)
+ {
+ 	struct i2c_adapter *adapter;
+ 	struct i2c_client *client;
+@@ -333,8 +333,8 @@ skip_put_adapter:
+
+ static void isys_register_ext_subdevs(struct ipu6_isys *isys)
+ {
+-	struct ipu6_isys_subdev_pdata *spdata = isys->pdata->spdata;
+-	struct ipu6_isys_subdev_info **sd_info;
++	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
++	struct ipu_isys_subdev_info **sd_info;
+
+ 	if (!spdata) {
+ 		dev_info(&isys->adev->auxdev.dev, "no subdevice info provided\n");
+@@ -346,8 +346,8 @@ static void isys_register_ext_subdevs(struct ipu6_isys *isys)
+
+ static void isys_unregister_ext_subdevs(struct ipu6_isys *isys)
+ {
+-	struct ipu6_isys_subdev_pdata *spdata = isys->pdata->spdata;
+-	struct ipu6_isys_subdev_info **sd_info;
++	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
++	struct ipu_isys_subdev_info **sd_info;
+
+ 	if (!spdata)
+ 		return;
+@@ -389,8 +389,8 @@ static int isys_csi2_register_subdevices(struct ipu6_isys *isys)
+ 	const struct ipu6_isys_internal_csi2_pdata *csi2_pdata =
+ 		&isys->pdata->ipdata->csi2;
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-	struct ipu6_isys_subdev_pdata *spdata = isys->pdata->spdata;
+-	struct ipu6_isys_subdev_info **sd_info;
++	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
++	struct ipu_isys_subdev_info **sd_info;
+ 	DECLARE_BITMAP(csi2_enable, 32);
+ #endif
+ 	unsigned int i;
+@@ -449,8 +449,8 @@ static int isys_csi2_create_media_links(struct ipu6_isys *isys)
+ 		&isys->pdata->ipdata->csi2;
+ 	struct device *dev = &isys->adev->auxdev.dev;
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-	struct ipu6_isys_subdev_pdata *spdata = isys->pdata->spdata;
+-	struct ipu6_isys_subdev_info **sd_info;
++	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
++	struct ipu_isys_subdev_info **sd_info;
+ 	DECLARE_BITMAP(csi2_enable, 32);
+ #endif
+ 	unsigned int i, j;
+@@ -520,8 +520,8 @@ static int isys_register_video_devices(struct ipu6_isys *isys)
+ 	const struct ipu6_isys_internal_csi2_pdata *csi2_pdata =
+ 		&isys->pdata->ipdata->csi2;
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-	struct ipu6_isys_subdev_pdata *spdata = isys->pdata->spdata;
+-	struct ipu6_isys_subdev_info **sd_info;
++	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
++	struct ipu_isys_subdev_info **sd_info;
+ 	DECLARE_BITMAP(csi2_enable, 32);
+ #endif
+ 	unsigned int i, j;
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.h b/drivers/media/pci/intel/ipu6/ipu6-isys.h
+index a956045b2882..a8976508c3cc 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.h
+@@ -66,10 +66,10 @@ struct ipu6_bus_device;
+ #if (IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+ 	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)) \
+ 	|| IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-#define IPU6_SPDATA_NAME_LEN	20
+-#define IPU6_SPDATA_BDF_LEN	32
+-#define IPU6_SPDATA_GPIO_NUM 	4
+-#define IPU6_SPDATA_IRQ_PIN_NAME_LEN 16
++#define IPU_SPDATA_NAME_LEN	20
++#define IPU_SPDATA_BDF_LEN	32
++#define IPU_SPDATA_GPIO_NUM 	4
++#define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
+ #endif
+
+ struct ltr_did {
+@@ -205,10 +205,10 @@ struct ipu6_isys_subdev_i2c_info {
+ #if (IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+ 	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)) \
+ 	|| IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-#define IPU6_SPDATA_NAME_LEN	20
+-#define IPU6_SPDATA_BDF_LEN	32
+-#define IPU6_SPDATA_GPIO_NUM 	4
+-#define IPU6_SPDATA_IRQ_PIN_NAME_LEN 16
++#define IPU_SPDATA_NAME_LEN	20
++#define IPU_SPDATA_BDF_LEN	32
++#define IPU_SPDATA_GPIO_NUM 	4
++#define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
+ #endif
+
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+@@ -247,7 +247,7 @@ struct ipu6_spdata_rep {
+ };
+ #endif
+
+-struct ipu6_isys_subdev_info {
++struct ipu_isys_subdev_info {
+ 	struct ipu6_isys_csi2_config *csi2;
+ 	struct ipu6_isys_subdev_i2c_info i2c;
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+@@ -259,14 +259,14 @@ struct ipu6_isys_subdev_info {
+ #endif
+ };
+
+-struct ipu6_isys_clk_mapping {
++struct ipu_isys_clk_mapping {
+ 	struct clk_lookup clkdev_data;
+ 	char *platform_clock_name;
+ };
+
+-struct ipu6_isys_subdev_pdata {
+-	struct ipu6_isys_subdev_info **subdevs;
+-	struct ipu6_isys_clk_mapping *clk_map;
++struct ipu_isys_subdev_pdata {
++	struct ipu_isys_subdev_info **subdevs;
++	struct ipu_isys_clk_mapping *clk_map;
+ };
+
+ struct isys_fw_msgs *ipu6_get_fw_msg_buf(struct ipu6_isys_stream *stream);
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
+index d13e14905003..5c9b36af2773 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6.c
++++ b/drivers/media/pci/intel/ipu6/ipu6.c
+@@ -391,7 +391,7 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
+ 	       struct ipu6_buttress_ctrl *ctrl, void __iomem *base,
+ 	       const struct ipu6_isys_internal_pdata *ipdata,
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-	       struct ipu6_isys_subdev_pdata *spdata
++	       struct ipu_isys_subdev_pdata *spdata
+ #endif
+ 			)
+ {
+@@ -399,7 +399,7 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
+ 	struct ipu6_bus_device *isys_adev;
+ 	struct ipu6_isys_pdata *pdata;
+ #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-	struct ipu6_isys_subdev_pdata *acpi_pdata;
++	struct ipu_isys_subdev_pdata *acpi_pdata;
+ #endif
+ 	int ret;
+
+@@ -593,7 +593,7 @@ static void ipu6_configure_vc_mechanism(struct ipu6_device *isp)
+
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
+-static inline int match_spdata(struct ipu6_isys_subdev_info *sd,
++static inline int match_spdata(struct ipu_isys_subdev_info *sd,
+ 			const struct ipu6_spdata_rep *rep)
+ {
+ 	if (strcmp(sd->i2c.board_info.type, rep->name))
+@@ -612,10 +612,10 @@ static inline int match_spdata(struct ipu6_isys_subdev_info *sd,
+ }
+
+ static void fixup_spdata(const void *spdata_rep,
+-			 struct ipu6_isys_subdev_pdata *spdata)
++			 struct ipu_isys_subdev_pdata *spdata)
+ {
+ 	const struct ipu6_spdata_rep *rep = spdata_rep;
+-	struct ipu6_isys_subdev_info **subdevs, *sd_info;
++	struct ipu_isys_subdev_info **subdevs, *sd_info;
+
+ 	if (!spdata)
+ 		return;
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.h b/drivers/media/pci/intel/ipu6/ipu6.h
+index 71d8cdf0fe49..786494df1cd7 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6.h
++++ b/drivers/media/pci/intel/ipu6/ipu6.h
+@@ -339,7 +339,7 @@ struct ipu6_isys_pdata {
+ 	void __iomem *base;
+ 	const struct ipu6_isys_internal_pdata *ipdata;
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-	struct ipu6_isys_subdev_pdata *spdata;
++	struct ipu_isys_subdev_pdata *spdata;
+ #endif
+ };
+
+--
+2.43.0
+

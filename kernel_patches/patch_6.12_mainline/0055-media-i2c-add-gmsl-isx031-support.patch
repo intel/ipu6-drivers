@@ -1,0 +1,52 @@
+From 2d4e10f88c1f1db772efb4243364c16a599949e8 Mon Sep 17 00:00:00 2001
+From: Dongcheng Yan <dongcheng.yan@intel.com>
+Date: Mon, 12 May 2025 18:05:08 +0800
+Subject: [PATCH] media: i2c: add gmsl & isx031 support
+
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+---
+ drivers/media/i2c/Kconfig  | 16 ++++++++++++++++
+ drivers/media/i2c/Makefile |  3 +++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 7c8ff44afd..921268ef3b 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -297,6 +297,22 @@ config VIDEO_IMX415
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called imx415.
+
++config VIDEO_ISX031
++	tristate "ISX031 sensor support"
++	depends on VIDEO_DEV && I2C
++	select VIDEO_V4L2_SUBDEV_API
++	depends on MEDIA_CAMERA_SUPPORT
++	help
++	  This is a Video4Linux2 sensor-level driver for ISX031 camera.
++
++config VIDEO_MAX9X
++	tristate "MAX9X serdes support"
++	depends on VIDEO_DEV && I2C
++	select VIDEO_V4L2_SUBDEV_API
++	depends on MEDIA_CAMERA_SUPPORT
++	help
++	  This is a Video4Linux2 sensor-level driver for MAX9X serdes.
++
+ config VIDEO_MAX9271_LIB
+ 	tristate
+
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index e78f0d8771..35d9b9b839 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -160,3 +160,6 @@ obj-$(CONFIG_VIDEO_VP27SMPX) += vp27smpx.o
+ obj-$(CONFIG_VIDEO_VPX3220) += vpx3220.o
+ obj-$(CONFIG_VIDEO_WM8739) += wm8739.o
+ obj-$(CONFIG_VIDEO_WM8775) += wm8775.o
++
++obj-$(CONFIG_VIDEO_MAX9X) += max9x/
++obj-$(CONFIG_VIDEO_ISX031) += isx031.o
+--
+2.34.1
+

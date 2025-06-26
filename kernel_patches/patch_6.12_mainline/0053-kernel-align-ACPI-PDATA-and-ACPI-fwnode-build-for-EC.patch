@@ -1,0 +1,382 @@
+From 42713606030af0d8303ede4c49a47817ceb2ba5d Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Thu, 5 Jun 2025 18:10:35 +0800
+Subject: [PATCH] kernel: align ACPI PDATA and ACPI fwnode build for ECG
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ .../media/pci/intel/ipu6/ipu6-isys-mcd-phy.c  | 170 ++++++++----------
+ drivers/media/pci/intel/ipu6/ipu6-isys.c      |  29 ++-
+ drivers/media/pci/intel/ipu6/ipu6-isys.h      |   4 -
+ drivers/media/pci/intel/ipu6/ipu6.c           |  14 +-
+ 4 files changed, 96 insertions(+), 121 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+index 1cf33b510861..3298fe187cfd 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+@@ -567,49 +567,46 @@ static int ipu6_isys_mcd_phy_ready(struct ipu6_isys *isys, u8 id)
+ 	return ret;
+ }
+
+-#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-static int ipu6_isys_mcd_phy_common_init(struct ipu6_isys *isys, struct ipu6_isys_csi2_config *cfg)
++static void ipu6_isys_write_mcd_phy_common_init_regs(struct ipu6_isys *isys,
++						     u32 port)
+ {
+-	unsigned int phy_id;
+-	void __iomem *phy_base;
+-	struct ipu6_bus_device *adev = to_ipu6_bus_device(&isys->adev->auxdev.dev);
++	struct ipu6_bus_device *adev = isys->adev;
+ 	struct ipu6_device *isp = adev->isp;
+ 	void __iomem *isp_base = isp->base;
++	void __iomem *phy_base;
+ 	unsigned int i;
++	u8 phy_id;
+
+-	phy_id = cfg->port / 4;
++	phy_id = port / 4;
+ 	phy_base = isp_base + IPU6_ISYS_MCD_PHY_BASE(phy_id);
+
+-	for (i = 0 ; i < ARRAY_SIZE(common_init_regs); i++) {
++	for (i = 0; i < ARRAY_SIZE(common_init_regs); i++)
+ 		writel(common_init_regs[i].val,
+-			phy_base + common_init_regs[i].reg);
+-	}
+-
+-	return 0;
++		       phy_base + common_init_regs[i].reg);
+ }
+-#else
+-static void ipu6_isys_mcd_phy_common_init(struct ipu6_isys *isys)
++
++static void ipu6_isys_mcd_phy_common_init(struct ipu6_isys *isys
++#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
++	,struct ipu6_isys_csi2_config *csi2_cfg
++#endif
++)
+ {
+-	struct ipu6_bus_device *adev = isys->adev;
+-	struct ipu6_device *isp = adev->isp;
+-	void __iomem *isp_base = isp->base;
+ 	struct sensor_async_sd *s_asd;
+ 	struct v4l2_async_connection *asc;
+-	void __iomem *phy_base;
+-	unsigned int i;
+-	u8 phy_id;
+
+-	list_for_each_entry(asc, &isys->notifier.done_list, asc_entry) {
+-		s_asd = container_of(asc, struct sensor_async_sd, asc);
+-		phy_id = s_asd->csi2.port / 4;
+-		phy_base = isp_base + IPU6_ISYS_MCD_PHY_BASE(phy_id);
+-
+-		for (i = 0; i < ARRAY_SIZE(common_init_regs); i++)
+-			writel(common_init_regs[i].val,
+-			       phy_base + common_init_regs[i].reg);
++#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
++	if (isys->pdata->spdata) {
++		ipu6_isys_write_mcd_phy_common_init_regs(isys, csi2_cfg->port);
++	} else {
++#endif
++		list_for_each_entry(asc, &isys->notifier.done_list, asc_entry) {
++			s_asd = container_of(asc, struct sensor_async_sd, asc);
++			ipu6_isys_write_mcd_phy_common_init_regs(isys, s_asd->csi2.port);
++		}
++#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ 	}
+-}
+ #endif
++}
+
+ static int ipu6_isys_driver_port_to_phy_port(struct ipu6_isys_csi2_config *cfg)
+ {
+@@ -641,96 +638,79 @@ static int ipu6_isys_driver_port_to_phy_port(struct ipu6_isys_csi2_config *cfg)
+ 	return ret;
+ }
+
+-#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-static int ipu6_isys_mcd_phy_config(struct ipu6_isys *isys, struct ipu6_isys_csi2_config *cfg)
++static int ipu6_isys_write_mcd_phy_config_regs(struct ipu6_isys *isys,
++				    struct ipu6_isys_csi2_config *cfg)
+ {
+-	unsigned int phy_id;
+-	int phy_port;
+-	void __iomem *phy_base;
+-	struct ipu6_bus_device *adev = to_ipu6_bus_device(&isys->adev->auxdev.dev);
++	struct device *dev = &isys->adev->auxdev.dev;
++	struct ipu6_bus_device *adev = isys->adev;
++	const struct phy_reg **phy_config_regs;
+ 	struct ipu6_device *isp = adev->isp;
+ 	void __iomem *isp_base = isp->base;
+-	const struct phy_reg **phy_config_regs;
+-	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
+-	struct ipu_isys_subdev_info **subdevs, *sd_info;
+-	int i;
++	void __iomem *phy_base;
++	int phy_port, phy_id;
++	unsigned int i;
+
+-	if (!spdata) {
+-		dev_err(&isys->adev->auxdev.dev, "no subdevice info provided\n");
+-		return -EINVAL;
++	phy_port = ipu6_isys_driver_port_to_phy_port(cfg);
++	if (phy_port < 0) {
++		dev_err(dev, "invalid port %d for lane %d", cfg->port,
++			cfg->nlanes);
++		return -ENXIO;
+ 	}
+
+ 	phy_id = cfg->port / 4;
+ 	phy_base = isp_base + IPU6_ISYS_MCD_PHY_BASE(phy_id);
+-	for (subdevs = spdata->subdevs; *subdevs; subdevs++) {
+-		sd_info = *subdevs;
+-		if (!sd_info->csi2)
+-			continue;
+-
+-		phy_port = ipu6_isys_driver_port_to_phy_port(sd_info->csi2);
+-		if (phy_port < 0) {
+-			dev_err(&isys->adev->auxdev.dev, "invalid port %d for lane %d",
+-					cfg->port, cfg->nlanes);
+-			return -ENXIO;
+-		}
+-
+-		if ((sd_info->csi2->port / 4) != phy_id)
+-			continue;
+-
+-		dev_dbg(&isys->adev->auxdev.dev, "port%d PHY%u lanes %u\n",
+-			phy_port, phy_id, cfg->nlanes);
++	dev_dbg(dev, "port%d PHY%u lanes %u\n", cfg->port, phy_id, cfg->nlanes);
+
+-		phy_config_regs = config_regs[sd_info->csi2->nlanes/2];
+-
+-		for (i = 0; phy_config_regs[phy_port][i].reg; i++) {
+-			writel(phy_config_regs[phy_port][i].val,
+-				phy_base + phy_config_regs[phy_port][i].reg);
+-		}
+-	}
++	phy_config_regs = config_regs[cfg->nlanes / 2];
++	for (i = 0; phy_config_regs[phy_port][i].reg; i++)
++		writel(phy_config_regs[phy_port][i].val,
++		       phy_base + phy_config_regs[phy_port][i].reg);
+
+ 	return 0;
+ }
+-#else
+-static int ipu6_isys_mcd_phy_config(struct ipu6_isys *isys)
++
++static int ipu6_isys_mcd_phy_config(struct ipu6_isys *isys
++#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
++	,struct ipu6_isys_csi2_config *csi2_cfg
++#endif
++)
+ {
+-	struct device *dev = &isys->adev->auxdev.dev;
+-	struct ipu6_bus_device *adev = isys->adev;
+-	const struct phy_reg **phy_config_regs;
+-	struct ipu6_device *isp = adev->isp;
+-	void __iomem *isp_base = isp->base;
+ 	struct sensor_async_sd *s_asd;
+ 	struct ipu6_isys_csi2_config cfg;
+ 	struct v4l2_async_connection *asc;
+-	int phy_port, phy_id;
+-	unsigned int i;
+-	void __iomem *phy_base;
++	int ret = 0;
+
+-	list_for_each_entry(asc, &isys->notifier.done_list, asc_entry) {
+-		s_asd = container_of(asc, struct sensor_async_sd, asc);
+-		cfg.port = s_asd->csi2.port;
+-		cfg.nlanes = s_asd->csi2.nlanes;
+-		phy_port = ipu6_isys_driver_port_to_phy_port(&cfg);
+-		if (phy_port < 0) {
+-			dev_err(dev, "invalid port %d for lane %d", cfg.port,
+-				cfg.nlanes);
+-			return -ENXIO;
+-		}
++#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
++	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
++	struct ipu_isys_subdev_info **subdevs, *sd_info;
+
+-		phy_id = cfg.port / 4;
+-		phy_base = isp_base + IPU6_ISYS_MCD_PHY_BASE(phy_id);
+-		dev_dbg(dev, "port%d PHY%u lanes %u\n", cfg.port, phy_id,
+-			cfg.nlanes);
++	if (spdata) {
++		for (subdevs = spdata->subdevs; *subdevs; subdevs++) {
++			sd_info = *subdevs;
++			if (!sd_info->csi2 ||
++			    (sd_info->csi2->port / 4) != (csi2_cfg->port / 4))
++				continue;
+
+-		phy_config_regs = config_regs[cfg.nlanes / 2];
+-		cfg.port = phy_port;
+-		for (i = 0; phy_config_regs[cfg.port][i].reg; i++)
+-			writel(phy_config_regs[cfg.port][i].val,
+-			       phy_base + phy_config_regs[cfg.port][i].reg);
++			ret = ipu6_isys_write_mcd_phy_config_regs(isys, sd_info->csi2);
++			if (ret)
++				return ret;
++		}
++	} else {
++#endif
++		list_for_each_entry(asc, &isys->notifier.done_list, asc_entry) {
++			s_asd = container_of(asc, struct sensor_async_sd, asc);
++			cfg.port = s_asd->csi2.port;
++			cfg.nlanes = s_asd->csi2.nlanes;
++			ret = ipu6_isys_write_mcd_phy_config_regs(isys, &cfg);
++			if (ret)
++				return ret;
++		}
++#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ 	}
++#endif
+
+ 	return 0;
+ }
+-#endif
+
+ #define CSI_MCD_PHY_NUM		2
+ static refcount_t phy_power_ref_count[CSI_MCD_PHY_NUM];
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+index fa156e5d0e09..cb6cdf73a22d 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+@@ -28,14 +28,12 @@
+ #include <media/ipu-bridge.h>
+ #include <media/media-device.h>
+ #include <media/media-entity.h>
+-#if !IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ #include <media/v4l2-fwnode.h>
+ #include <media/v4l2-ctrls.h>
+ #include <media/v4l2-device.h>
+ #include <media/v4l2-event.h>
+ #include <media/v4l2-ioctl.h>
+ #include <media/v4l2-async.h>
+-#endif
+
+ #include "ipu6-bus.h"
+ #include "ipu6-cpd.h"
+@@ -985,7 +983,6 @@ static void isys_iwake_watermark_cleanup(struct ipu6_isys *isys)
+ 	mutex_destroy(&iwake_watermark->mutex);
+ }
+
+-#if !IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ /* The .bound() notifier callback when a match is found */
+ static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
+ 			       struct v4l2_subdev *sd,
+@@ -1099,7 +1096,6 @@ static void isys_notifier_cleanup(struct ipu6_isys *isys)
+ 	v4l2_async_nf_unregister(&isys->notifier);
+ 	v4l2_async_nf_cleanup(&isys->notifier);
+ }
+-#endif
+
+ static int isys_register_devices(struct ipu6_isys *isys)
+ {
+@@ -1137,17 +1133,19 @@ static int isys_register_devices(struct ipu6_isys *isys)
+ 	if (ret)
+ 		goto out_isys_unregister_subdevices;
+
+-#if !IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-	ret = isys_notifier_init(isys);
+-	if (ret)
+-		goto out_isys_unregister_subdevices;
+-#else
+-	isys_register_ext_subdevs(isys);
++#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
++	if (!isys->pdata->spdata) {
+ #endif
++		ret = isys_notifier_init(isys);
++		if (ret)
++			goto out_isys_unregister_subdevices;
+ #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-	ret = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
+-	if (ret)
+-		goto out_isys_unregister_ext_subdevs;
++	} else {
++		isys_register_ext_subdevs(isys);
++		ret = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
++		if (ret)
++			goto out_isys_unregister_ext_subdevs;
++	}
+ #endif
+ 	return 0;
+ #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+@@ -1177,7 +1175,8 @@ static void isys_unregister_devices(struct ipu6_isys *isys)
+ 	isys_unregister_video_devices(isys);
+ 	isys_csi2_unregister_subdevices(isys);
+ #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+-	isys_unregister_ext_subdevs(isys);
++	if (isys->pdata->spdata)
++		isys_unregister_ext_subdevs(isys);
+ #endif
+ 	v4l2_device_unregister(&isys->v4l2_dev);
+ 	media_device_unregister(&isys->media_dev);
+@@ -1549,9 +1548,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
+ 	free_fw_msg_bufs(isys);
+
+ 	isys_unregister_devices(isys);
+-#if !IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ 	isys_notifier_cleanup(isys);
+-#endif
+
+ 	cpu_latency_qos_remove_request(&isys->pm_qos);
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.h b/drivers/media/pci/intel/ipu6/ipu6-isys.h
+index ae66a6e9a89b..1f65bccc636c 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.h
+@@ -172,9 +172,7 @@ struct ipu6_isys {
+ 	spinlock_t listlock;	/* Protect framebuflist */
+ 	struct list_head framebuflist;
+ 	struct list_head framebuflist_fw;
+-#if !IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ 	struct v4l2_async_notifier notifier;
+-#endif
+ 	struct isys_iwake_watermark iwake_watermark;
+ #ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+ 	struct mutex reset_mutex;
+@@ -198,8 +196,6 @@ struct ipu6_isys_subdev_i2c_info {
+ 	int i2c_adapter_id;
+ 	char i2c_adapter_bdf[32];
+ };
+-#endif
+-#if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ #define IPU_SPDATA_GPIO_NUM 	4
+ #define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
+ #endif
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
+index 83c09056fa01..702456cd2f50 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6.c
++++ b/drivers/media/pci/intel/ipu6/ipu6.c
+@@ -403,11 +403,11 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
+ #endif
+ 	int ret;
+
+-	// ret = ipu_bridge_init(dev, ipu_bridge_parse_ssdb);
+-	// if (ret) {
+-	// 	dev_err_probe(dev, ret, "IPU6 bridge init failed\n");
+-	// 	return ERR_PTR(ret);
+-	// }
++	ret = ipu_bridge_init(dev, ipu_bridge_parse_ssdb);
++	if (ret) {
++		dev_err_probe(dev, ret, "IPU6 bridge init failed\n");
++		return ERR_PTR(ret);
++	}
+
+ 	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
+ 	if (!pdata)
+@@ -439,7 +439,9 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
+ 		dev_dbg(&pdev->dev, "No subdevice info provided");
+ 		ret = ipu_get_acpi_devices(isys_adev, &isys_adev->auxdev.dev, &acpi_pdata, NULL,
+ 				     isys_init_acpi_add_device);
+-		pdata->spdata = acpi_pdata;
++		if (acpi_pdata && (*acpi_pdata->subdevs)) {
++			pdata->spdata = acpi_pdata;
++		}
+ 	} else {
+ 		dev_dbg(&pdev->dev, "Subdevice info found");
+ 		ret = ipu_get_acpi_devices(isys_adev, &isys_adev->auxdev.dev, &acpi_pdata, &spdata,
+--
+2.43.0
+
