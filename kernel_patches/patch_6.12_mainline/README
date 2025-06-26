@@ -40,6 +40,37 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0035-media-i2c-fix-power-on-issue-for-on-board-LT6911UXC.patch
        git am 0036-media-i2c-fix-power-on-issue-for-on-board-LT6911UXE.patch
 
+       /* add support for isx031 + max9296 with intel acpi pdata */
+       /* copy intel acpi pdata driver, */
+       /* and copy isx031 and max9x drivers to kernel source tree */
+       /* $(src) is source code on github, $(dst) is user kernel source tree */
+       cp -rv ${src}/include/media/ipu-acpi.h ${dst}/./include/media/
+       cp -rv ${src}/include/media/ipu-acpi-pdata.h ${dst}/./include/media/
+       cp -rv ${src}/drivers/media/platform/intel/ipu6-acpi-common.c ${dst}/drivers/media/platform/intel/
+       cp -rv ${src}/drivers/media/platform/intel/ipu6-acpi.c ${dst}/drivers/media/platform/intel/
+       cp -rv ${src}/drivers/media/platform/intel/ipu6-acpi-pdata.c ${dst}/drivers/media/platform/intel/
+
+       cp -rv ${src}/drivers/media/i2c/max9x ${dst}/drivers/media/i2c/
+       cp -rv ${src}/drivers/media/i2c/isx031.c ${dst}/drivers/media/i2c/
+       cp -rv ${src}/include/media/isx031.h ${dst}/./include/media/
+
+       git am 0040-media-pci-Add-is_support_vc-for-IPU_ISYS_RESET.patch
+       git am 0041-media-Modify-enble-disable-stream-in-CSI2.patch
+       git am 0042-media-Set-the-correct-SOF-for-different-strea.patch
+       git am 0043-media-support-serdes-for-upstream-kernel.patch
+       git am 0044-i2c-media-fix-cov-issue.patch
+       git am 0045-mv-ipu-acpi-module-to-linux-drivers.patch
+       git am 0046-kernel-enable-VC-support-in-v4l2.patch
+       git am 0047-media-pci-intel-support-PDATA-in-Kconfig-Makefile.patch
+       git am 0048-media-pci-unregister-i2c-device-to-complete-ext_subd.patch
+       git am 0049-media-pci-align-params-for-non-MIPI-split-and-split-.patch
+       git am 0050-media-pci-add-missing-if-for-PDATA.patch
+       git am 0051-media-platform-fix-allyesconfig-build-error.patch
+       git am 0052-media-pci-refine-PDATA-related-config.patch
+       git am 0053-kernel-align-ACPI-PDATA-and-ACPI-fwnode-build-for-EC.patch
+       git am 0055-media-i2c-add-gmsl-isx031-support.patch
+       /*  end   */
+
     c. for USB device need to apply below 2 patches, they are merged to kernel 6.13.
        0001-media-intel-ipu6-do-not-handle-interrupts-when-devic.patch
        0002-media-intel-ipu6-remove-buttress-ish-structure.patch

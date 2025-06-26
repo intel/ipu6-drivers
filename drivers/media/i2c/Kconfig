@@ -1,0 +1,42 @@
+config VIDEO_ISX031
+	tristate "ISX031 sensor support"
+	depends on VIDEO_DEV && I2C
+	select VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	  This is a Video4Linux2 sensor-level driver for
+          Sony ISX031 camera with a MIPI CSI-2 interface.
+
+          To compile this driver as a module, choose M here: the
+          module will be called isx031.
+
+config VIDEO_MAX9X
+	tristate "MAX9X serdes support"
+	depends on VIDEO_DEV && I2C
+	select VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	  This is a Video4Linux2 sensor-level driver for MAX9X serdes.
+
+config VIDEO_AR0234
+	tristate "ON Semiconductor AR0234 sensor support"
+	depends on VIDEO_DEV && I2C
+	select VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	  This is a Video4Linux2 sensor driver for the ON Semiconductor
+	  AR0234 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ar0234.
+
+config VIDEO_LT6911UXC
+	tristate "Lontium LT6911UXC decoder"
+	depends on VIDEO_DEV && I2C
+	select VIDEO_V4L2_SUBDEV_API
+	help
+	  This is a Video4Linux2 sensor-level driver for the Lontium
+	  LT6911UXC HDMI to MIPI CSI-2 bridge.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called lt6911uxc.

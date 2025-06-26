@@ -1,0 +1,56 @@
+From 32f981443f308a26d0dbfc2c3c198c982fe17368 Mon Sep 17 00:00:00 2001
+From: Dongcheng Yan <dongcheng.yan@intel.com>
+Date: Wed, 7 May 2025 11:24:02 +0800
+Subject: [PATCH] media: pci: unregister i2c device to complete
+ ext_subdev_register
+
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys.c | 4 ++--
+ drivers/media/pci/intel/ipu6/ipu6.c      | 7 ++++---
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+index f1c672de3dbc..31e579b1ddfd 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+@@ -262,8 +262,8 @@ static int isys_register_ext_subdev(struct ipu6_isys *isys,
+ 	client = isys_find_i2c_subdev(adapter, sd_info);
+ 	if (client) {
+ 		dev_dbg(&isys->adev->auxdev.dev, "Device exists\n");
+-		rval = 0;
+-		goto skip_put_adapter;
++		i2c_unregister_device(client);
++		dev_dbg(&isys->adev->auxdev.dev, "Unregister device");
+ 	}
+
+ 	sd = v4l2_i2c_new_subdev_board(&isys->v4l2_dev, adapter,
+diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
+index 5c9b36af2773..92060856c11e 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6.c
++++ b/drivers/media/pci/intel/ipu6/ipu6.c
+@@ -437,16 +437,17 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
+ #if IS_ENABLED(CONFIG_INTEL_IPU6_ACPI)
+ 	if (!spdata) {
+ 		dev_dbg(&pdev->dev, "No subdevice info provided");
+-		ipu_get_acpi_devices(isys_adev, &isys_adev->auxdev.dev, &acpi_pdata, NULL,
++		ret = ipu_get_acpi_devices(isys_adev, &isys_adev->auxdev.dev, &acpi_pdata, NULL,
+ 				     isys_init_acpi_add_device);
+ 		pdata->spdata = acpi_pdata;
+ 	} else {
+ 		dev_dbg(&pdev->dev, "Subdevice info found");
+-		ipu_get_acpi_devices(isys_adev, &isys_adev->auxdev.dev, &acpi_pdata, &spdata,
++		ret = ipu_get_acpi_devices(isys_adev, &isys_adev->auxdev.dev, &acpi_pdata, &spdata,
+ 				     isys_init_acpi_add_device);
+ 	}
++	if (ret)
++		return ERR_PTR(ret);
+ #endif
+-
+ 	isys_adev->mmu = ipu6_mmu_init(dev, base, ISYS_MMID,
+ 				       &ipdata->hw_variant);
+ 	if (IS_ERR(isys_adev->mmu)) {
+--
+2.43.0
+

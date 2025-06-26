@@ -1,0 +1,9 @@
+config INTEL_IPU6_ACPI
+	tristate "Enable IPU ACPI driver"
+	depends on I2C
+	depends on ACPI
+	depends on INTEL_SKL_INT3472
+	help
+	Driver to read ACPI data from BIOS
+
+	This driver is used to read ACPI data from BIOS

@@ -1,0 +1,31 @@
+From 63ec08a38fc3df098f7f6e8c5a6ae89c500d391a Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Mon, 11 Nov 2024 16:39:16 +0800
+Subject: [PATCH] i2c: media: fix cov issue
+
+check return value of v4l2_ctrl_handler_init;
+change the type of phy_port to int;
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+index f18e6fa9a8e2..ff291305ca3a 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+@@ -644,7 +644,8 @@ static int ipu6_isys_driver_port_to_phy_port(struct ipu6_isys_csi2_config *cfg)
+ #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ static int ipu6_isys_mcd_phy_config(struct ipu6_isys *isys, struct ipu6_isys_csi2_config *cfg)
+ {
+-	unsigned int phy_port, phy_id;
++	unsigned int phy_id;
++	int phy_port;
+ 	void __iomem *phy_base;
+ 	struct ipu6_bus_device *adev = to_ipu6_bus_device(&isys->adev->auxdev.dev);
+ 	struct ipu6_device *isp = adev->isp;
+--
+2.43.0
+

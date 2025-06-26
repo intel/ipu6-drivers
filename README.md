@@ -41,16 +41,17 @@ There are 4 repositories:
                         CONFIG_VIDEO_INTEL_IPU6=m
                         CONFIG_IPU_BRIDGE=m
                         CONFIG_INTEL_SKL_INT3472=m
+                        CONFIG_INTEL_IPU6_ACPI=m
 
                 For all kernel version:
 		Enabled by needed:
                         CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET=y
                         CONFIG_VIDEO_AR0234=m 
                         CONFIG_VIDEO_LT6911UXC=m
-                        CONFIG_VIDEO_LT6911UXE=m 
-                        CONFIG_VIDEO_D4XX=m
-                        CONFIG_VIDEO_TI960=m
-                        CONFIG_VIDEO_IMX390=m
+                        CONFIG_VIDEO_LT6911UXE=m
+                        CONFIG_VIDEO_ISX031=m
+                        CONFIG_VIDEO_MAX9X=m
+
 
         d.	Follow GSG to build kernel driver.
 

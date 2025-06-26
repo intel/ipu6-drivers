@@ -1,0 +1,46 @@
+From b9f03524068c6ad98b644ec557128349e6cf86e5 Mon Sep 17 00:00:00 2001
+From: zouxiaoh <xiaohong.zou@intel.com>
+Date: Wed, 28 May 2025 16:32:07 +0800
+Subject: [PATCH] media: platform: fix allyesconfig build error
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+---
+ drivers/media/platform/intel/Kconfig  | 9 ---------
+ drivers/media/platform/intel/Makefile | 1 -
+ 2 files changed, 10 deletions(-)
+
+diff --git a/drivers/media/platform/intel/Kconfig b/drivers/media/platform/intel/Kconfig
+index eab8308d863d..e9e6196cb0fc 100644
+--- a/drivers/media/platform/intel/Kconfig
++++ b/drivers/media/platform/intel/Kconfig
+@@ -13,15 +13,6 @@ config VIDEO_PXA27x
+ 	help
+ 	  This is a v4l2 driver for the PXA27x Quick Capture Interface
+
+-config INTEL_IPU6_ADLRVP_PDATA
+-        bool "Enable built in platform data for ADL RVP"
+-        depends on MEDIA_CAMERA_SUPPORT
+-        help
+-         Pre-ACPI system platform data is compiled inside kernel
+-
+-         This platform data is useful for software development before
+-         the SOC system not ready.
+-
+ config INTEL_IPU6_ACPI
+         tristate "Enable IPU ACPI driver"
+         depends on I2C
+diff --git a/drivers/media/platform/intel/Makefile b/drivers/media/platform/intel/Makefile
+index 21a0cf592507..5913d8b492af 100644
+--- a/drivers/media/platform/intel/Makefile
++++ b/drivers/media/platform/intel/Makefile
+@@ -2,7 +2,6 @@
+ obj-$(CONFIG_VIDEO_PXA27x) += pxa_camera.o
+
+ ccflags-y += -I$(src)/../../pci/intel/ipu6/
+-obj-$(CONFIG_INTEL_IPU6_ADLRVP_PDATA) += ipu6-adlrvp-pdata.o
+ obj-$(CONFIG_INTEL_IPU6_ACPI)         += ipu6-acpi.o \
+                                          ipu6-acpi-pdata.o \
+                                          ipu6-acpi-common.o
+--
+2.43.0
+
