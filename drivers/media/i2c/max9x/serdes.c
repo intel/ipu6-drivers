@@ -69,6 +69,9 @@ static int max9x_enable(struct max9x_common *common);
 static int max9x_disable(struct max9x_common *common);
 //static int max9x_verify_devid(struct max9x_common *common);
 
+static int max9x_remap_serializers_resume(struct max9x_common *common, unsigned int link_id);
+static int max9x_create_adapters_resume(struct max9x_common *common);
+
 static int max9x_remap_serializers(struct max9x_common *common, unsigned int link_id);
 static int max9x_create_adapters(struct max9x_common *common);
 static int max9x_csi_link_to_pad(struct max9x_common *common, int csi_id);
@@ -297,7 +300,222 @@ static void *ipu6_pdata(struct device *dev)
 	return des_pdata;
 }
 
+// //TODO: remap not hardcode according to pdata
+static int max9x_remap_serializers_resume(struct max9x_common *common, unsigned int link_id)
+{
+	int ret;
+	struct max9x_serdes_serial_link *serial_link = &common->serial_link[link_id];
+	unsigned int phys_addr, virt_addr;
+	struct i2c_client *virt_client;
+	struct regmap *virt_map;
+	unsigned int val;
+	const struct regmap_config regmap_config = {
+		.reg_bits = 16,
+		.val_bits = 8,
+	};
+
+	if (!serial_link->remote.pdata)
+		return 0; // No device to remap
+
+	ret = max9x_select_i2c_chan(common->muxc, link_id);
+	if (ret)
+		return ret;
+
+	ret = max9x_des_isolate_serial_link(common, link_id);
+	if (ret)
+		return ret;
+
+	phys_addr = serial_link->remote.pdata->phys_addr;
+	virt_addr = serial_link->remote.pdata->board_info.addr;
+	if (phys_addr == virt_addr)
+		return 0; // Remap is not necessary
+
+	dev_info(common->dev, "Remap serializer from 0x%02x to 0x%02x", phys_addr, virt_addr);
+
+	virt_client = i2c_new_dummy_device(common->client->adapter, virt_addr);
+	if (IS_ERR_OR_NULL(virt_client))
+		goto err_regmap;
+
+	virt_map = regmap_init_i2c(virt_client, &regmap_config);
+	if (IS_ERR_OR_NULL(virt_map))
+		goto err_virt_client;
+
+	usleep_range(1000, 1050);
+
+	ret = regmap_read(virt_map, 0xD, &val);
+	if (ret)
+		dev_err(common->dev, "Device not present after remap to 0x%02x", virt_addr);
+	else
+		dev_dbg(common->dev, "DEV_ID after: 0x%02x", val);
+
+	regmap_exit(virt_map);
+
+err_virt_client:
+	i2c_unregister_device(virt_client);
+
+err_regmap:
+	max9x_deselect_i2c_chan(common->muxc, link_id);
+	max9x_des_deisolate_serial_link(common, link_id);
+
+	return ret;
+}
+
+static int max9x_create_adapters_resume(struct max9x_common *common)
+{
+	struct device *dev = common->dev;
+	unsigned int link_id;
+	const unsigned int RETRY_MS_MIN = 32;
+	const unsigned int RETRY_MS_MAX = 512;
+	unsigned int ms;
+	int err = 0;
+
+	for (link_id = 0; link_id < common->num_serial_links; link_id++) {
+		dev_info(dev, "Serial-link %d: %senabled",
+			 link_id, (common->serial_link[link_id].enabled ? "" : "not "));
+
+		if (!common->serial_link[link_id].enabled)
+			continue;
+
+		// This exponential retry works around a current problem in the locking code.
+		for (ms = RETRY_MS_MIN; ms <= RETRY_MS_MAX; ms <<= 1) {
+			err = max9x_enable_serial_link(common, link_id);
+			if (!err)
+				break;
+
+			dev_warn(dev,
+				"enable link %d failed, trying again (waiting %d ms)",
+				link_id, ms);
+			msleep(ms);
+		}
+		if (ms > RETRY_MS_MAX) {
+			dev_err(dev, "failed to enable link %d after multiple retries",
+				link_id);
+			max9x_disable_serial_link(common, link_id);
+			common->serial_link[link_id].enabled = false;
+		}
+
+		if (common->type == MAX9X_DESERIALIZER) {
+			err = max9x_remap_serializers_resume(common, link_id);
+			if (err) {
+				dev_err(dev, "failed to remap serializers on link %d", link_id);
+				max9x_disable_serial_link(common, link_id);
+				common->serial_link[link_id].enabled = false;
+			}
+		}
+	}
+
+	for (link_id = 0; link_id < common->num_serial_links; link_id++)
+		max9x_setup_translations(common);
+
+	return 0;
+}
+
 // Functions
+int max9x_common_resume(struct max9x_common *common)
+{
+	struct max9x_common *des_common = NULL;
+	struct device *dev = common->dev;
+	u32 des_link;
+	u32 phys_addr, virt_addr;
+	int ret;
+
+	const struct regmap_config regmap_config = {
+		.reg_bits = 16,
+		.val_bits = 8,
+	};
+
+	if (dev->platform_data) {
+		struct max9x_pdata *pdata = dev->platform_data;
+
+		virt_addr = common->client->addr;
+		phys_addr = pdata->phys_addr ? pdata->phys_addr : virt_addr;
+
+		if (common->type == MAX9X_SERIALIZER) {
+			WARN_ON(pdata->num_serial_links < 1);
+
+			des_common = max9x_client_to_common(pdata->serial_links[0].des_client);
+			if (des_common)
+				des_link = pdata->serial_links[0].des_link_id;
+		}
+	}
+
+	if (common->type == MAX9X_SERIALIZER && des_common) {
+		// Isolate this link until after reset and potential address remapping,
+		// avoiding a race condition with two serializers resetting at the same time
+		ret = max9x_des_isolate_serial_link(des_common, des_link);
+		if (ret)
+			goto enable_err;
+	}
+
+	dev_dbg(dev, "create phys dummy device");
+
+	if (phys_addr != virt_addr) {
+		common->phys_client = i2c_new_dummy_device(common->client->adapter, phys_addr);
+		if (IS_ERR_OR_NULL(common->phys_client)) {
+			dev_err(dev, "Failed to create dummy device for phys_addr");
+			ret = PTR_ERR(common->phys_client);
+			goto enable_err;
+		}
+
+		common->phys_map = regmap_init_i2c(common->phys_client, &regmap_config);
+		if (IS_ERR_OR_NULL(common->phys_map)) {
+			dev_err(dev, "Failed to create dummy device regmap for phys_addr");
+			ret = PTR_ERR(common->phys_client);
+			goto enable_err;
+		}
+	}
+
+	dev_dbg(dev, "Enable");
+
+	ret = max9x_enable(common);
+	if (ret)
+		dev_err(dev, "Failed to enable");
+
+enable_err:
+	if (common->phys_map) {
+		regmap_exit(common->phys_map);
+		common->phys_map = NULL;
+	}
+
+	if (common->phys_client) {
+		i2c_unregister_device(common->phys_client);
+		common->phys_client = NULL;
+	}
+
+	if (common->type == MAX9X_SERIALIZER && des_common) {
+		// Allow other serializers to continue
+		max9x_des_deisolate_serial_link(des_common, des_link);
+	}
+
+	ret = max9x_create_adapters_resume(common);
+	if (ret)
+		goto err_enable;
+
+	return 0;
+
+err_enable:
+	max9x_disable(common);
+
+	return ret;
+}
+EXPORT_SYMBOL(max9x_common_resume);
+
+int max9x_common_suspend(struct max9x_common *common)
+{
+	unsigned int link_id;
+
+	dev_dbg(common->dev, "try to suspend");
+
+	max9x_disable_translations(common);
+
+	for (link_id = 0; link_id < common->num_serial_links; link_id++)
+		max9x_disable_serial_link(common, link_id);
+
+	max9x_disable(common);
+
+	return 0;
+}
+EXPORT_SYMBOL(max9x_common_suspend);
 
 int max9x_common_init_i2c_client(struct max9x_common *common,
 	struct i2c_client *client,
@@ -495,7 +713,6 @@ void max9x_destroy(struct max9x_common *common)
 
 	for (link_id = 0; link_id < common->num_serial_links; link_id++) {
 		max9x_disable_serial_link(common, link_id);
-
 		max9x_sysfs_destroy_get_link(common, link_id);
 	}
 
@@ -838,8 +1055,7 @@ int max9x_create_adapters(struct max9x_common *common)
 		if (!common->serial_link[link_id].enabled)
 			continue;
 
-		// This exponential retry works around a current problem in the
-		// locking code, don't .
+		// This exponential retry works around a current problem in the locking code.
 		for (ms = RETRY_MS_MIN; ms <= RETRY_MS_MAX; ms <<= 1) {
 			err = max9x_enable_serial_link(common, link_id);
 			if (!err)
@@ -1416,6 +1632,9 @@ static int max9x_registered(struct v4l2_subdev *sd)
 					dev_err(dev, "Failed creating pad link to serializer");
 					return ret;
 				}
+				//for suspend/resume sequential
+				// ser_common->serial_link[0].near.client = common->client;
+				// common->serial_link[link_id].remote.client = ser_common->client;
 			}
 		} else {
 			struct max9x_pdata *pdata = dev->platform_data;

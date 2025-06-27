@@ -871,6 +871,32 @@ static struct max9x_csi_link_ops max9296_csi_link_ops = {
 	.disable = max9296_disable_csi_link,
 };
 
+static int max9296_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct max9x_common *common = max9x_client_to_common(client);
+
+	return max9x_common_resume(common);
+}
+
+static int max9296_suspend(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct max9x_common *common = max9x_client_to_common(client);
+
+	return max9x_common_suspend(common);
+}
+
+static int max9296_freeze(struct device *dev)
+{
+	return max9296_suspend(dev);
+}
+
+static int max9296_restore(struct device *dev)
+{
+	return max9296_resume(dev);
+}
+
 static int max9296_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
@@ -910,6 +936,13 @@ static void max9296_remove(struct i2c_client *client)
 	max9x_destroy(des);
 }
 
+static const struct dev_pm_ops max9296_pm_ops = {
+	.suspend = max9296_suspend,
+	.resume = max9296_resume,
+	.freeze = max9296_freeze,
+	.restore = max9296_restore,
+};
+
 static struct i2c_device_id max9296_idtable[] = {
 	{"max9296", 0},
 	{},
@@ -920,6 +953,7 @@ static struct i2c_driver max9296_driver = {
 	.driver = {
 		.name = "max9296",
 		.owner = THIS_MODULE,
+		.pm = &max9296_pm_ops,
 	},
 	.probe = max9296_probe,
 	.remove = max9296_remove,

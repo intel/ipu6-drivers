@@ -226,7 +226,6 @@ static const struct isx031_mode supported_modes[] = {
 
 static int isx031_reset(struct gpio_desc *reset_gpio)
 {
-
 	if (!IS_ERR_OR_NULL(reset_gpio)) {
 		gpiod_set_value_cansleep(reset_gpio, 0);
 		usleep_range(500, 1000);
@@ -520,6 +519,9 @@ static int __maybe_unused isx031_resume(struct device *dev)
 	struct isx031 *isx031 = to_isx031(sd);
 	const struct isx031_reg_list *reg_list;
 	int ret;
+
+	if (isx031->reset_gpio != NULL)
+		isx031_reset(isx031->reset_gpio);
 
 	ret = isx031_identify_module(isx031);
 	if (ret == 0) {
