@@ -213,7 +213,6 @@ struct max9x_serdes_serial_link {
 	bool detected;
 	struct regulator *poc_regulator; /* feeds the serializer, imager */
 	bool regulator_enabled;
-	struct device_node *of_node;
 	struct {
 		struct i2c_client *client;
 		struct max9x_subdev_pdata *pdata;
@@ -328,6 +327,8 @@ int max9x_common_init_i2c_client(struct max9x_common *common,
 	struct max9x_csi_link_ops *csi_link_ops,
 	struct max9x_line_fault_ops *lf_ops);
 void max9x_destroy(struct max9x_common *common);
+int max9x_common_resume(struct max9x_common *common);
+int max9x_common_suspend(struct max9x_common *common);
 
 /*
  * Both DES and SER have their own i2c_mux_core:

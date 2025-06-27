@@ -740,8 +740,39 @@ static int max9295_reset(struct max9x_common *common)
 
 	/* Reset entire chip by CTRL0_RST_ALL: 0x10[7]*/
 	TRY(ret, regmap_write(map, MAX9295_CTRL0, MAX9295_CTRL0_RST_ALL));
+	usleep_range(45000, 45050);
 
 	return 0;
+}
+
+static int max9295_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct max9x_common *common = max9x_client_to_common(client);
+
+	while (max9295_verify_devid(common) != 0) {
+		dev_dbg(dev, "resume not ready");
+		usleep_range(100000, 100050);
+	}
+	return max9x_common_resume(common);
+}
+
+static int max9295_suspend(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct max9x_common *common = max9x_client_to_common(client);
+
+	return max9x_common_suspend(common);
+}
+
+static int max9295_freeze(struct device *dev)
+{
+	return max9295_suspend(dev);
+}
+
+static int max9295_restore(struct device *dev)
+{
+	return max9295_resume(dev);
 }
 
 static int max9295_probe(struct i2c_client *client)
@@ -783,6 +814,13 @@ static void max9295_remove(struct i2c_client *client)
 	max9x_destroy(ser);
 }
 
+static const struct dev_pm_ops max9295_pm_ops = {
+	.suspend = max9295_suspend,
+	.resume = max9295_resume,
+	.freeze = max9295_freeze,
+	.restore = max9295_restore,
+};
+
 static struct i2c_device_id max9295_idtable[] = {
 	{"max9295", 0},
 	{},
@@ -793,6 +831,12 @@ static struct i2c_driver max9295_driver = {
 	.driver = {
 		.name = "max9295",
 		.owner = THIS_MODULE,
+		/*
+		 * TODO:
+		 * Since max9295 is powered externally,
+		 * there is no need to handle suspend/resume now, but will add later:
+		 * .pm = &max9295_pm_ops,
+		 */
 	},
 	.probe = max9295_probe,
 	.remove = max9295_remove,
