@@ -46,7 +46,7 @@
 #include <media/ipu-acpi.h>
 
 #if IS_ENABLED(CONFIG_VIDEO_ISX031)
-#include <media/isx031.h>
+#include <media/i2c/isx031.h>
 #endif
 
 static LIST_HEAD(devices);

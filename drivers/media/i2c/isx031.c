@@ -17,7 +17,7 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fwnode.h>
-#include <media/isx031.h>
+#include <media/i2c/isx031.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #include <media/mipi-csi2.h>
 #endif

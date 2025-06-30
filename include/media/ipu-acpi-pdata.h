@@ -3,29 +3,8 @@
 
 #include <linux/interrupt.h>
 #include <media/ipu-acpi.h>
-#if IS_ENABLED(CONFIG_VIDEO_AR0234)
-#include <media/ar0234.h>
-#endif
-#if IS_ENABLED(CONFIG_VIDEO_LT6911UXE)
-#include <media/lt6911uxe.h>
-#endif
-#if IS_ENABLED(CONFIG_VIDEO_OV2311)
-#include <media/ov2311.h>
-#endif
-#if IS_ENABLED(CONFIG_VIDEO_D4XX)
-#include <media/d4xx_pdata.h>
-#endif
-#if IS_ENABLED(CONFIG_VIDEO_LT6911UXC)
-#include <media/lt6911uxc.h>
-#endif
-#if IS_ENABLED(CONFIG_VIDEO_TI960)
-#include <media/ti960.h>
-#endif
-#if IS_ENABLED(CONFIG_VIDEO_IMX390)
-#include <media/imx390.h>
-#endif
 #if IS_ENABLED(CONFIG_VIDEO_ISX031)
-#include <media/isx031.h>
+#include <media/i2c/isx031.h>
 #endif
 
 #define CL_EMPTY 0
