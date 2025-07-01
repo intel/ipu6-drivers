@@ -66,11 +66,13 @@ static struct ipu_camera_module_data *add_device_to_list(
 
 static const struct ipu_acpi_devices supported_devices[] = {
 /*
- *	{ "ACPI ID", sensor_name, get_sensor_pdata, NULL, 0, TYPE, serdes_name },	// Custom HID
+ *	{ "ACPI ID", sensor_name, get_sensor_pdata, NULL, 0, TYPE, serdes_name, sensor_physical_addr, link_freq(mbps)},
+ *	// Custom HID
  */
 #if IS_ENABLED(CONFIG_VIDEO_MAX9X)
 #if IS_ENABLED(CONFIG_VIDEO_ISX031)
-	{ "INTC031M", ISX031_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, "max9296" },// D3 ISX031 HID
+	{ "INTC031M", ISX031_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, "max9296", ISX031_I2C_ADDRESS, 1600 },
+	// D3 ISX031 HID
 #endif
 #endif
 };
@@ -124,7 +126,9 @@ static int ipu_acpi_get_pdata(struct device *dev, int index)
 		supported_devices[index].connect,
 		supported_devices[index].real_driver,
 		supported_devices[index].serdes_name,
-		supported_devices[index].hid_name);
+		supported_devices[index].hid_name,
+		supported_devices[index].sensor_physical_addr,
+		supported_devices[index].link_freq);
 
 	if (rval)
 		return -EPROBE_DEFER;

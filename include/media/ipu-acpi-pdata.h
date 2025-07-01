@@ -20,7 +20,9 @@ int get_sensor_pdata(struct device *dev,
 			enum connection_type connect,
 			const char *sensor_name,
 			const char *serdes_name,
-			const char *hid_name);
+			const char *hid_name,
+			int sensor_physical_addr,
+			int link_freq);
 
 struct ipu_isys_subdev_pdata *get_acpi_subdev_pdata(void);
 
