@@ -892,6 +892,11 @@ static int max9296_freeze(struct device *dev)
 	return max9296_suspend(dev);
 }
 
+static int max9296_thaw(struct device *dev)
+{
+	return max9296_resume(dev);
+}
+
 static int max9296_restore(struct device *dev)
 {
 	return max9296_resume(dev);
@@ -941,6 +946,7 @@ static const struct dev_pm_ops max9296_pm_ops = {
 	.resume = max9296_resume,
 	.freeze = max9296_freeze,
 	.restore = max9296_restore,
+	.thaw = max9296_thaw,
 };
 
 static struct i2c_device_id max9296_idtable[] = {

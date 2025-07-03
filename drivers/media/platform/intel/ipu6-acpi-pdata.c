@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2016--2025 Intel Corporation.
+ * Copyright (c) 2016-2025 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -108,6 +108,10 @@ static void print_serdes_subdev(struct ipu_isys_subdev_info *sd)
 	pr_debug("\t\treset_gpio \t\t= %d", sd_pdata->reset_gpio);
 	pr_debug("\t\tFPD_gpio \t\t= %d", sd_pdata->FPD_gpio);
 	pr_debug("\t\tsuffix \t\t\t= %c", sd_pdata->suffix);
+
+	pr_debug("\t\tlink_freq_mbps \t\t= %d", sd_pdata->link_freq_mbps);
+	pr_debug("\t\tdeser_nlanes \t\t= %d", sd_pdata->deser_nlanes);
+	pr_debug("\t\tser_nlanes \t\t= %d", sd_pdata->ser_nlanes);
 
 	for (i = 0; i < serdes_info.rx_port; i++) {
 		sd_sdinfo = &sd_pdata->subdev_info[i];
@@ -592,7 +596,8 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		unsigned int subdev_num,
 		unsigned int deser_lanes,
 		bool is_dummy,
-		enum connection_type connect)
+		enum connection_type connect,
+		u32 link_freq)
 {
 	if (connect == TYPE_DIRECT) {
 		struct sensor_platform_data *pdata;
@@ -636,11 +641,7 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 		} else
 			pr_err("IPU6 ACPI: Invalid MIPI Port : %d", port);
 
-#if IS_ENABLED(CONFIG_VIDEO_ISX031)
-		if (!strcmp(sensor_name, ISX031_NAME))
-			pdata->link_freq_mbps = 1600;
-#endif
-
+		pdata->link_freq_mbps = link_freq;
 		pdata->deser_nlanes = deser_lanes;
 		pdata->ser_nlanes = lanes;
 		set_serdes_subdev(sensor_sd, dev, &pdata, sensor_name, hid_name, lanes, addr, subdev_num);
@@ -654,7 +655,8 @@ static int set_pdata(struct ipu_isys_subdev_info **sensor_sd,
 
 static void set_serdes_info(struct device *dev, const char *sensor_name,
 			    const char *serdes_name,
-			    struct sensor_bios_data *cam_data)
+			    struct sensor_bios_data *cam_data,
+			    int sensor_physical_addr)
 {
 	int i;
 
@@ -673,13 +675,7 @@ static void set_serdes_info(struct device *dev, const char *sensor_name,
 
 		serdes_info.gpio_powerup_seq = 0;
 
-	serdes_info.phy_i2c_addr = 0;
-
-#if IS_ENABLED(CONFIG_VIDEO_ISX031)
-	if (!strcmp(sensor_name, ISX031_NAME))
-		serdes_info.phy_i2c_addr = ISX031_I2C_ADDRESS;
-#endif
-
+	serdes_info.phy_i2c_addr = sensor_physical_addr;
 }
 
 static int populate_sensor_pdata(struct device *dev,
@@ -689,7 +685,9 @@ static int populate_sensor_pdata(struct device *dev,
 			enum connection_type connect,
 			const char *sensor_name,
 			const char *serdes_name,
-			const char *hid_name)
+			const char *hid_name,
+			int sensor_physical_addr,
+			int link_freq)
 {
 	int ret;
 
@@ -741,14 +739,13 @@ static int populate_sensor_pdata(struct device *dev,
 		}
 
 		/* local serdes info */
-		set_serdes_info(dev, sensor_name, serdes_name, cam_data);
+		set_serdes_info(dev, sensor_name, serdes_name, cam_data, sensor_physical_addr);
 	}
 
 	/* Use last I2C device */
 	ret = set_pdata(sensor_sd, dev, sensor_name, hid_name, ctl_data, cam_data->link,
 		cam_data->lanes, cam_data->i2c[cam_data->i2c_num - 1].addr,
-		cam_data->pprunit, cam_data->pprval, false, connect);
-
+		cam_data->pprunit, cam_data->pprval, false, connect, link_freq);
 	if (ret)
 		return ret;
 
@@ -763,7 +760,8 @@ int get_sensor_pdata(struct device *dev,
 			struct ipu_camera_module_data *data,
 			void *priv, size_t size,
 			enum connection_type connect, const char *sensor_name,
-			const char *serdes_name, const char *hid_name)
+			const char *serdes_name, const char *hid_name,
+			int sensor_physical_addr, int link_freq)
 {
 	struct sensor_bios_data *cam_data;
 	struct control_logic_data *ctl_data;
@@ -811,7 +809,8 @@ int get_sensor_pdata(struct device *dev,
 
 	/* populate pdata */
 	rval = populate_sensor_pdata(dev, &sensor_sd, cam_data, ctl_data,
-				     connect, sensor_name, serdes_name, hid_name);
+				     connect, sensor_name, serdes_name, hid_name,
+				     sensor_physical_addr, link_freq);
 	if (rval) {
 		kfree(sensor_sd);
 		kfree(cam_data);

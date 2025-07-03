@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2016--2022 Intel Corporation.
+ * Copyright (c) 2016-2025 Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
@@ -212,11 +212,15 @@ struct ipu_acpi_devices {
 				 enum connection_type type,
 				 const char *sensor_name,
 				 const char *serdes_name,
-				 const char *hid_name);
+				 const char *hid_name,
+				 int sensor_physical_addr,
+				 int link_freq);
 	void *priv_data;
 	size_t priv_size;
 	enum connection_type connect;
 	const char *serdes_name;
+	int sensor_physical_addr;
+	int link_freq; /* in mbps */
 };
 
 #endif
