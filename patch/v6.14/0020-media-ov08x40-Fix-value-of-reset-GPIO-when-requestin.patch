@@ -1,0 +1,48 @@
+From 1501b8389f2a3c52e9fe6c974a36f1fd3ac23cbf Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Sat, 1 Mar 2025 12:48:29 +0100
+Subject: [PATCH 20/22] media: ov08x40: Fix value of reset GPIO when requesting
+ it
+
+We should put/leave the sensor in reset when requesting the GPIO, after
+requesting it there are 2 possible scenarios and having the GPIO driven
+low is no good in either scenario:
+
+1. The sensor was in ACPI D0 before probe() runs, in this case
+   ov08x40_power_on() + ov08x40_identify_module() will run immediately
+   after requesting the GPIO and ov08x40_power_on() starts with driving
+   the GPIO high. So if the GPIO was already high it will very shortly
+   be driven low, more of a spike to low then actually properly be driven
+   low. Which may leave the sensor in a confused state.
+
+   If we request the GPIO to be high at request time then power_on() will
+   driver it high again (no-op) and then sleep for 1-2 ms, so no spike.
+
+2. The sensor was in ACPI D3 / off before probe(), in this case probe()
+   leaves the sensor alone. But when the sensor is off its reset line
+   should be driven high not low.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Reviewed-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 6dcb2658a747..bdaeff2e2903 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -2167,7 +2167,7 @@ static int ov08x40_check_hwcfg(struct ov08x40 *ov08x, struct device *dev)
+ 		return dev_err_probe(dev, ret, "parsing endpoint failed\n");
+ 
+ 	ov08x->reset_gpio = devm_gpiod_get_optional(dev, "reset",
+-						    GPIOD_OUT_LOW);
++						    GPIOD_OUT_HIGH);
+ 	if (IS_ERR(ov08x->reset_gpio)) {
+ 		ret = dev_err_probe(dev, PTR_ERR(ov08x->reset_gpio),
+ 				    "getting reset GPIO\n");
+-- 
+2.43.0
+

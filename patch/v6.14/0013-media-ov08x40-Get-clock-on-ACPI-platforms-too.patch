@@ -1,0 +1,47 @@
+From f0328bbf610ea079f5384a7962068ef488f528bd Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:24 +0100
+Subject: [PATCH 13/22] media: ov08x40: Get clock on ACPI platforms too
+
+ACPI platforms might also have a clk provider which needs to be controlled,
+always try to get a clk using clk_get_optional() and when that fails fall
+back to getting the xvclk frequency from the "clock-frequency" property.
+
+Tested-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 16 +++++++---------
+ 1 file changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 1c725d043e46..9d6113bfb315 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -2175,15 +2175,13 @@ static int ov08x40_check_hwcfg(struct ov08x40 *ov08x, struct device *dev)
+ 	if (ret)
+ 		goto out_err;
+ 
+-	if (!is_acpi_node(fwnode)) {
+-		ov08x->xvclk = devm_clk_get(dev, NULL);
+-		if (IS_ERR(ov08x->xvclk)) {
+-			dev_err(dev, "could not get xvclk clock (%pe)\n",
+-				ov08x->xvclk);
+-			ret = PTR_ERR(ov08x->xvclk);
+-			goto out_err;
+-		}
+-
++	ov08x->xvclk = devm_clk_get_optional(dev, NULL);
++	if (IS_ERR(ov08x->xvclk)) {
++		ret = dev_err_probe(dev, PTR_ERR(ov08x->xvclk),
++				    "getting xvclk\n");
++		goto out_err;
++	}
++	if (ov08x->xvclk) {
+ 		xvclk_rate = clk_get_rate(ov08x->xvclk);
+ 	} else {
+ 		ret = fwnode_property_read_u32(dev_fwnode(dev), "clock-frequency",
+-- 
+2.43.0
+

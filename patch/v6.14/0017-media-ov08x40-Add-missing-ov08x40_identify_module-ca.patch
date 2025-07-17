@@ -1,0 +1,43 @@
+From ef941d9354e9bfbaa2e6ab76cf1170d43e7ca0f5 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:28 +0100
+Subject: [PATCH 17/22] media: ov08x40: Add missing ov08x40_identify_module()
+ call on stream-start
+
+The driver might skip the ov08x40_identify_module() on probe() based on
+the acpi_dev_state_d0() check done in probe().
+
+If the ov08x40_identify_module() call is skipped on probe() it should
+be done on the first stream start. Add the missing call.
+
+Note ov08x40_identify_module() will only do something on its first call,
+subsequent calls are no-ops.
+
+Tested-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Fixes: b1a42fde6e07 ("media: ov08x40: Avoid sensor probing in D0 state")
+Cc: stable@vger.kernel.org
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 56f282662a23..ba00f42ea582 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -1973,6 +1973,10 @@ static int ov08x40_set_stream(struct v4l2_subdev *sd, int enable)
+ 		if (ret < 0)
+ 			goto err_unlock;
+ 
++		ret = ov08x40_identify_module(ov08x);
++		if (ret)
++			goto err_rpm_put;
++
+ 		/*
+ 		 * Apply default & customized values
+ 		 * and then start streaming.
+-- 
+2.43.0
+
