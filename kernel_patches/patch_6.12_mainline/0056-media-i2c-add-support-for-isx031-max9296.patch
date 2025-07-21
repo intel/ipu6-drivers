@@ -54,18 +54,12 @@ index 000000000000..acaf41a82fbe
 +#include <linux/gpio.h>
 +#include <linux/interrupt.h>
 +#include <linux/version.h>
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
-+#include <asm/unaligned.h>
-+#else
 +#include <linux/unaligned.h>
-+#endif
 +#include <media/v4l2-ctrls.h>
 +#include <media/v4l2-device.h>
 +#include <media/v4l2-fwnode.h>
 +#include <media/i2c/isx031.h>
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +#include <media/mipi-csi2.h>
-+#endif
 +#define to_isx031(_sd)			container_of(_sd, struct isx031, sd)
 +
 +#define ISX031_REG_MODE_SELECT		0x8A01
@@ -597,7 +591,6 @@ index 000000000000..acaf41a82fbe
 +	return 0;
 +}
 +
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +static unsigned int isx031_mbus_code_to_mipi(u32 code)
 +{
 +	switch (code) {
@@ -634,41 +627,30 @@ index 000000000000..acaf41a82fbe
 +		return 0x3f;
 +	}
 +}
-+#endif
 +
 +static int isx031_get_frame_desc(struct v4l2_subdev *sd,
 +	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
 +{
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +	struct isx031 *isx031 = to_isx031(sd);
-+#endif
 +	unsigned int i;
 +
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +	desc->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
-+#endif
 +	desc->num_entries = V4L2_FRAME_DESC_ENTRY_MAX;
 +
 +	for (i = 0; i < desc->num_entries; i++) {
 +		desc->entry[i].flags = 0;
 +		desc->entry[i].pixelcode = MEDIA_BUS_FMT_FIXED;
 +		desc->entry[i].length = 0;
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +		desc->entry[i].stream = i;
 +		desc->entry[i].bus.csi2.vc = i;
 +		desc->entry[i].bus.csi2.dt = isx031_mbus_code_to_mipi(isx031->cur_mode->code);
-+#endif
 +	}
 +
 +	return 0;
 +}
 +
 +static int isx031_set_format(struct v4l2_subdev *sd,
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-+			     struct v4l2_subdev_pad_config *cfg,
-+#else
 +			     struct v4l2_subdev_state *sd_state,
-+#endif
 +			     struct v4l2_subdev_format *fmt)
 +{
 +	struct isx031 *isx031 = to_isx031(sd);
@@ -690,13 +672,7 @@ index 000000000000..acaf41a82fbe
 +
 +	isx031_update_pad_format(mode, &fmt->format);
 +	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-+		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
-+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
-+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
-+#else
 +		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
-+#endif
 +	} else {
 +		isx031->cur_mode = mode;
 +	}
@@ -707,27 +683,15 @@ index 000000000000..acaf41a82fbe
 +}
 +
 +static int isx031_get_format(struct v4l2_subdev *sd,
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-+			     struct v4l2_subdev_pad_config *cfg,
-+#else
 +			     struct v4l2_subdev_state *sd_state,
-+#endif
 +			     struct v4l2_subdev_format *fmt)
 +{
 +	struct isx031 *isx031 = to_isx031(sd);
 +
 +	mutex_lock(&isx031->mutex);
 +	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-+		fmt->format = *v4l2_subdev_get_try_format(&isx031->sd, cfg,
-+							  fmt->pad);
-+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
-+		fmt->format = *v4l2_subdev_get_try_format(&isx031->sd, sd_state,
-+							  fmt->pad);
-+#else
 +		fmt->format = *v4l2_subdev_state_get_format(sd_state,
 +							  fmt->pad);
-+#endif
 +	else
 +		isx031_update_pad_format(isx031->cur_mode, &fmt->format);
 +
@@ -741,16 +705,8 @@ index 000000000000..acaf41a82fbe
 +	struct isx031 *isx031 = to_isx031(sd);
 +
 +	mutex_lock(&isx031->mutex);
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
-+	isx031_update_pad_format(&supported_modes[0],
-+				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
-+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
-+	isx031_update_pad_format(&supported_modes[0],
-+				 v4l2_subdev_get_try_format(sd, fh->state, 0));
-+#else
 +	isx031_update_pad_format(&supported_modes[0],
 +				 v4l2_subdev_state_get_format(fh->state, 0));
-+#endif
 +	mutex_unlock(&isx031->mutex);
 +
 +	return 0;
@@ -781,11 +737,7 @@ index 000000000000..acaf41a82fbe
 +	.open = isx031_open,
 +};
 +
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-+static int isx031_remove(struct i2c_client *client)
-+#else
 +static void isx031_remove(struct i2c_client *client)
-+#endif
 +{
 +	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 +	struct isx031 *isx031 = to_isx031(sd);
@@ -795,9 +747,6 @@ index 000000000000..acaf41a82fbe
 +	pm_runtime_disable(&client->dev);
 +	mutex_destroy(&isx031->mutex);
 +
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
-+	return 0;
-+#endif
 +}
 +
 +static int isx031_probe(struct i2c_client *client)
@@ -830,11 +779,7 @@ index 000000000000..acaf41a82fbe
 +	/* initialize subdevice */
 +	sd = &isx031->sd;
 +	v4l2_i2c_subdev_init(sd, client, &isx031_subdev_ops);
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
-+#else
 +	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-+#endif
 +	sd->internal_ops = &isx031_internal_ops;
 +	sd->entity.ops = &isx031_subdev_entity_ops;
 +	sd->entity.function = MEDIA_ENT_F_CAM_SENSOR;
@@ -870,11 +815,7 @@ index 000000000000..acaf41a82fbe
 +		goto probe_error_media_entity_cleanup;
 +	}
 +	isx031->cur_mode = isx031->pre_mode;
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
-+	ret = v4l2_async_register_subdev_sensor_common(&isx031->sd);
-+#else
 +	ret = v4l2_async_register_subdev_sensor(&isx031->sd);
-+#endif
 +	if (ret < 0) {
 +		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 +			ret);
@@ -914,11 +855,7 @@ index 000000000000..acaf41a82fbe
 +		.name = "isx031",
 +		.pm = &isx031_pm_ops,
 +	},
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
-+	.probe_new = isx031_probe,
-+#else
 +	.probe = isx031_probe,
-+#endif
 +	.remove = isx031_remove,
 +	.id_table = isx031_id_table,
 +};
@@ -6086,9 +6023,7 @@ index 000000000000..07581ecb42b4
 + */
 +#include <linux/platform_device.h>
 +#include <linux/version.h>
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +#include "ipu6-isys.h"
-+#endif
 +#include <media/ipu-acpi-pdata.h>
 +#include <media/ipu-acpi.h>
 +
@@ -6405,14 +6340,7 @@ index 000000000000..07581ecb42b4
 +		return 0;
 +	}
 +
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
-+	status = acpi_evaluate_reference(dev_handle, "_DEP", NULL,
-+					 &dep_devices);
-+
-+	if (ACPI_FAILURE(status)) {
-+#else
 +	if (!acpi_evaluate_reference(dev_handle, "_DEP", NULL, &dep_devices)) {
-+#endif
 +		pr_err("IPU6 ACPI: %s failed to evaluate _DEP", dev_name(dev));
 +		return -ENODEV;
 +	}
@@ -6438,12 +6366,8 @@ index 000000000000..07581ecb42b4
 +			continue;
 +
 +		/* Process device IN3472 created by acpi */
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
-+		if (acpi_bus_get_device(dep_devices.handles[i], &device)) {
-+#else
 +		device = acpi_fetch_acpi_dev(dep_devices.handles[i]);
 +		if (!device) {
-+#endif
 +			pr_err("IPU6 ACPI: Failed to get ACPI device");
 +			return -ENODEV;
 +		}
@@ -6542,9 +6466,7 @@ index 000000000000..f1f84ec445e5
 + *
 + */
 +#include <linux/version.h>
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 +#include "ipu6-isys.h"
-+#endif
 +#include <media/ipu-acpi.h>
 +#include <media/ipu-acpi-pdata.h>
 +
@@ -7020,11 +6942,7 @@ index 000000000000..f1f84ec445e5
 +		unsigned int lanes,
 +		unsigned int port)
 +{
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+	struct ipu_isys_csi2_config *csi2_config;
-+#else
 +	struct ipu6_isys_csi2_config *csi2_config;
-+#endif
 +
 +	csi2_config = kzalloc(sizeof(*csi2_config), GFP_KERNEL);
 +	if (!csi2_config)
@@ -7401,13 +7319,8 @@ index 000000000000..beed2597d864
 +#include <linux/pci.h>
 +#include <linux/version.h>
 +
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+#include <media/ipu-isys.h>
-+#include "ipu.h"
-+#else
 +#include "ipu6-isys.h"
 +#include "ipu6.h"
-+#endif
 +
 +#include <media/ipu-acpi-pdata.h>
 +#include <media/ipu-acpi.h>
@@ -7566,11 +7479,7 @@ index 000000000000..beed2597d864
 +				struct ipu_isys_subdev_pdata **built_in_pdata,
 +				int (*fn)
 +				(struct device *, void *,
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+				 struct ipu_isys_csi2_config *csi2,
-+#else
 +				 struct ipu6_isys_csi2_config *csi2,
-+#endif
 +				 bool reprobe))
 +{
 +	int rval;
@@ -7787,10 +7696,6 @@ index 000000000000..e585ee842615
 +#define MEDIA_INTEL_IPU_ACPI_H
 +
 +#include <linux/version.h>
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+#include <media/ipu-isys.h>
-+#include "ipu-isys.h"
-+#endif
 +
 +#define MAX_ACPI_SENSOR_NUM	4
 +#define MAX_ACPI_I2C_NUM	12
@@ -7918,11 +7823,7 @@ index 000000000000..e585ee842615
 +				struct ipu_isys_subdev_pdata **built_in_pdata,
 +				int (*fn)
 +				(struct device *, void *,
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+				 struct ipu_isys_csi2_config *csi2,
-+#else
 +				 struct ipu6_isys_csi2_config *csi2,
-+#endif
 +				 bool reprobe));
 +
 +struct ipu_isys_subdev_pdata *get_built_in_pdata(void);
@@ -7944,11 +7845,7 @@ index 000000000000..e585ee842615
 +
 +struct ipu_i2c_helper {
 +	int (*fn)(struct device *dev, void *priv,
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+		struct ipu_isys_csi2_config *csi2,
-+#else
 +		struct ipu6_isys_csi2_config *csi2,
-+#endif
 +		bool reprobe);
 +	void *driver_data;
 +};
@@ -7962,11 +7859,7 @@ index 000000000000..e585ee842615
 +struct ipu_camera_module_data {
 +	struct list_head list;
 +	struct ipu_isys_subdev_info sd;
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
-+	struct ipu_isys_csi2_config csi2;
-+#else
 +	struct ipu6_isys_csi2_config csi2;
-+#endif
 +	unsigned int ext_clk;
 +	void *pdata; /* Ptr to generated platform data*/
 +	void *priv; /* Private for specific subdevice */
