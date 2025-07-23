@@ -10,7 +10,7 @@ There are 4 repositories:
 
 ## Content of this repository:
 - Intel IPU kernel driver
-- Drivers for AR0234, LT6911UXC, LT6911UXE, D457, TI960 and IMX390
+- Drivers for AR0234, LT6911UXC, LT6911UXE, ISX031 & MAX9X
 
 ### Build with kernel source tree
 - Install Ubuntu image, check out kernel source code and build kernel driver
@@ -35,6 +35,7 @@ There are 4 repositories:
 	                CONFIG_INTEL_IPU6_ACPI=m
 	                CONFIG_VIDEO_INTEL_IPU_SOC=y
 	                CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA=y
+                        CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET=y
 
                 For kernel version >= 6.10:
                 Must be enabled:
@@ -42,10 +43,9 @@ There are 4 repositories:
                         CONFIG_IPU_BRIDGE=m
                         CONFIG_INTEL_SKL_INT3472=m
                         CONFIG_INTEL_IPU6_ACPI=m
-
-                For all kernel version:
-		Enabled by needed:
                         CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET=y
+
+		Enabled by needed:
                         CONFIG_VIDEO_AR0234=m 
                         CONFIG_VIDEO_LT6911UXC=m
                         CONFIG_VIDEO_LT6911UXE=m
@@ -61,12 +61,35 @@ There are 4 repositories:
         Anyway user can try community kernel source follow the readme under kernel patches folder.
         Such as 'kernel_patches/patch_6.11_mainline/README'.
 ```
-### Build with dkms
-- Requires kernel header installed on build machine
-- For kernel >= v6.10, apply patch 'dkms_patch/0001-v6.10-IPU6-headers-used-by-PSYS.patch', refer to 'dkms.conf'.
-
+### dkms build steps 
+- Install iot Ubuntu kernel header in GSG document. 
+- For kernel < v6.10: /* include: isys, psys, ar0234, lt6911uxc, lt6911uxe */
 ```sh
-	sudo dkms add .
-	sudo dkms build -m ipu6-drivers -v 0.0.1
-	sudo dkms autoinstall ipu6-drivers/0.0.1
+        -Rename non-upstream sensor driver code.
+        $cd ipu6-drivers/drivers/media/i2c
+        $mv ar0234.c.non_upstream ar0234.c
+        $mv lt6911uxc.c.non_upstream lt6911uxc.c
+        $mv lt6911uxe.c.non_upstream lt6911uxe.c
+
+        $cd ipu6-drivers/
+        $sudo dkms add .
+	$sudo dkms build -m ipu6-drivers -v 0.0.0
+	$sudo dkms autoinstall ipu6-drivers/0.0.0
+```
+- For kernel >= v6.10: /* include: isys, psys, ar0234, lt6911uxc, lt6911uxe, isx031 & max9x & platform (>= v6.12.15) */
+        - Download the iot Ubuntu kernel source code.
+        - Create dkms build source tree. /* cp isys from kernel source tree */
+                a. remove isys driver for kernel < v6.10
+                   $cd ipu6-drivers/drivers/media/pci/intel/ipu6/
+                   $rm -rf *.h *.c Makefile
+                b. copy isys driver from kernel source tree
+                   $cd <kernel source tree>/drivers/media/pci/intel/ipu6
+                   $cp *.c ipu6-drivers/drivers/media/pci/intel/ipu6/
+                   $cp *.h ipu6-drivers/drivers/media/pci/intel/ipu6/
+                   $cp Makefile ipu6-drivers/drivers/media/pci/intel/ipu6/
+                   $cp Kconfig ipu6-drivers/drivers/media/pci/intel/ipu6/
+```sh
+                   $sudo dkms add .
+                   $sudo dkms build -m ipu6-drivers -v 0.0.0
+                   $sudo dkms autoinstall ipu6-drivers/0.0.0
 ```
