@@ -65,7 +65,7 @@ There are 4 repositories:
 - Install iot Ubuntu kernel header in GSG document. 
 - For kernel < v6.10: /* include: isys, psys, ar0234, lt6911uxc, lt6911uxe */
 ```sh
-        -Rename non-upstream sensor driver code.
+        -Rename non-upstream sensor driver file's name.
         $cd ipu6-drivers/drivers/media/i2c
         $mv ar0234.c.non_upstream ar0234.c
         $mv lt6911uxc.c.non_upstream lt6911uxc.c
@@ -77,18 +77,20 @@ There are 4 repositories:
 	$sudo dkms autoinstall ipu6-drivers/0.0.0
 ```
 - For kernel >= v6.10: /* include: isys, psys, ar0234, lt6911uxc, lt6911uxe, isx031 & max9x & platform (>= v6.12.15) */
+```sh
         - Download the iot Ubuntu kernel source code.
         - Create dkms build source tree. /* cp isys from kernel source tree */
-                a. remove isys driver for kernel < v6.10
+		- Remove isys driver for kernel < v6.10
                    $cd ipu6-drivers/drivers/media/pci/intel/ipu6/
                    $rm -rf *.h *.c Makefile
-                b. copy isys driver from kernel source tree
+                - Copy upstream isys driver for kernel >= v6.10 from kernel source tree
                    $cd <kernel source tree>/drivers/media/pci/intel/ipu6
                    $cp *.c ipu6-drivers/drivers/media/pci/intel/ipu6/
                    $cp *.h ipu6-drivers/drivers/media/pci/intel/ipu6/
                    $cp Makefile ipu6-drivers/drivers/media/pci/intel/ipu6/
                    $cp Kconfig ipu6-drivers/drivers/media/pci/intel/ipu6/
-```sh
+	- Run dkms build.
+		   $cd ipu6-drivers/
                    $sudo dkms add .
                    $sudo dkms build -m ipu6-drivers -v 0.0.0
                    $sudo dkms autoinstall ipu6-drivers/0.0.0
