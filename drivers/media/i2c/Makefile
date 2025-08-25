@@ -13,4 +13,5 @@ obj-$(CONFIG_ICAMERA_HM2170) += hm2170.o
 obj-$(CONFIG_ICAMERA_HM2170) += hm2172.o
 obj-$(CONFIG_ICAMERA_IMX471) += imx471.o
 obj-$(CONFIG_ICAMERA_HI556) += hi556.o
+obj-$(CONFIG_ICAMERA_S5K3J1) += s5k3j1.o
 obj-$(CONFIG_POWER_CTRL_LOGIC) += power_ctrl_logic.o

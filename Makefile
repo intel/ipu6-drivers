@@ -28,6 +28,7 @@ KV_OV05C10 := 6.8.0
 KV_HI556 := 6.10.0
 KV_IPU6_ISYS := 6.10.0
 KV_IMX471 := 6.10.0
+KV_S5K3J1 := 6.10.0
 
 KERNEL_SRC ?= /lib/modules/$(KERNELRELEASE)/build
 MODSRC := $(shell pwd)
@@ -107,6 +108,10 @@ endif
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_IMX471)),false)
 export CONFIG_ICAMERA_IMX471 = m
+endif
+
+ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_S5K3J1)),false)
+export CONFIG_ICAMERA_S5K3J1 = m
 endif
 
 ifeq ($(call version_lt,$(KERNEL_VERSION),$(KV_HI556)),true)
