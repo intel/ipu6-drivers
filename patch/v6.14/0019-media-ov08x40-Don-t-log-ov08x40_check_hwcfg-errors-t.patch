@@ -1,0 +1,58 @@
+From d87150ec7e12e93637d5706dc5755cee24ff9a98 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:30 +0100
+Subject: [PATCH 19/22] media: ov08x40: Don't log ov08x40_check_hwcfg() errors
+ twice
+
+All ov08x40_check_hwcfg() error-exit paths already log a detailed reason,
+logging a second generic "failed to check hwcfg" error is not useful, and
+in case of the fwnode check failing with -EPROBE_DEFER this is outright
+problematic flooding the log with:
+
+[    4.557059] ov08x40 i2c-OVTI08F4:00: failed to check hwcfg: -517
+[    4.559636] ov08x40 i2c-OVTI08F4:00: failed to check hwcfg: -517
+etc.
+
+messages.
+
+The one exception to all ov08x40_check_hwcfg() error-exit paths already
+logging an error is on v4l2_fwnode_endpoint_alloc_parse() errors.
+
+Make ov08x40_check_hwcfg() log an error in that case too and drop
+the duplicate "failed to check hwcfg: %d\n" error logging.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 7be6e2ef98ae..6dcb2658a747 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -2164,7 +2164,7 @@ static int ov08x40_check_hwcfg(struct ov08x40 *ov08x, struct device *dev)
+ 	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
+ 	fwnode_handle_put(ep);
+ 	if (ret)
+-		return ret;
++		return dev_err_probe(dev, ret, "parsing endpoint failed\n");
+ 
+ 	ov08x->reset_gpio = devm_gpiod_get_optional(dev, "reset",
+ 						    GPIOD_OUT_LOW);
+@@ -2251,10 +2251,8 @@ static int ov08x40_probe(struct i2c_client *client)
+ 
+ 	/* Check HW config */
+ 	ret = ov08x40_check_hwcfg(ov08x, &client->dev);
+-	if (ret) {
+-		dev_err(&client->dev, "failed to check hwcfg: %d\n", ret);
++	if (ret)
+ 		return ret;
+-	}
+ 
+ 	/* Initialize subdev */
+ 	v4l2_i2c_subdev_init(&ov08x->sd, client, &ov08x40_subdev_ops);
+-- 
+2.43.0
+

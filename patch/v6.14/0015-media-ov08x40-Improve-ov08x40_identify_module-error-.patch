@@ -1,0 +1,51 @@
+From c4dd620b78c8fb58a9abf96faddc823ab71f54b1 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:26 +0100
+Subject: [PATCH 15/22] media: ov08x40: Improve ov08x40_identify_module() error
+ logging
+
+ov08x40_identify_module() already logs an error if the read ID mismatches,
+so having its caller also log an error results in 2 errors in this case.
+
+Add error logging to the ID register read in ov08x40_identify_module() and
+drop the error logging in the caller.
+
+Tested-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 8dc583c57461..a3a3f169574d 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -1943,8 +1943,10 @@ static int ov08x40_identify_module(struct ov08x40 *ov08x)
+ 
+ 	ret = ov08x40_read_reg(ov08x, OV08X40_REG_CHIP_ID,
+ 			       OV08X40_REG_VALUE_24BIT, &val);
+-	if (ret)
++	if (ret) {
++		dev_err(&client->dev, "error reading chip-id register: %d\n", ret);
+ 		return ret;
++	}
+ 
+ 	if (val != OV08X40_CHIP_ID) {
+ 		dev_err(&client->dev, "chip id mismatch: %x!=%x\n",
+@@ -2262,10 +2264,8 @@ static int ov08x40_probe(struct i2c_client *client)
+ 
+ 		/* Check module identity */
+ 		ret = ov08x40_identify_module(ov08x);
+-		if (ret) {
+-			dev_err(&client->dev, "failed to find sensor: %d\n", ret);
++		if (ret)
+ 			goto probe_power_off;
+-		}
+ 	}
+ 
+ 	/* Set default mode to max resolution */
+-- 
+2.43.0
+
