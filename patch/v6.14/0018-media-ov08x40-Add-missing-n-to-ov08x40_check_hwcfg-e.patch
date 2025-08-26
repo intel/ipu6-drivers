@@ -1,0 +1,73 @@
+From 8a2ee07c8b23981adf0d943cdec6607fd524bb55 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:29 +0100
+Subject: [PATCH 18/22] media: ov08x40: Add missing '\n' to
+ ov08x40_check_hwcfg() error messages
+
+A number of dev_err() error messages miss a terminating '\n', add
+the missing '\n' to these.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index ba00f42ea582..7be6e2ef98ae 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -2194,27 +2194,27 @@ static int ov08x40_check_hwcfg(struct ov08x40 *ov08x, struct device *dev)
+ 		ret = fwnode_property_read_u32(dev_fwnode(dev), "clock-frequency",
+ 					       &xvclk_rate);
+ 		if (ret) {
+-			dev_err(dev, "can't get clock frequency");
++			dev_err(dev, "can't get clock frequency\n");
+ 			goto out_err;
+ 		}
+ 	}
+ 
+ 	if (xvclk_rate != OV08X40_XVCLK) {
+-		dev_err(dev, "external clock %d is not supported",
++		dev_err(dev, "external clock %d is not supported\n",
+ 			xvclk_rate);
+ 		ret = -EINVAL;
+ 		goto out_err;
+ 	}
+ 
+ 	if (bus_cfg.bus.mipi_csi2.num_data_lanes != OV08X40_DATA_LANES) {
+-		dev_err(dev, "number of CSI2 data lanes %d is not supported",
++		dev_err(dev, "number of CSI2 data lanes %d is not supported\n",
+ 			bus_cfg.bus.mipi_csi2.num_data_lanes);
+ 		ret = -EINVAL;
+ 		goto out_err;
+ 	}
+ 
+ 	if (!bus_cfg.nr_of_link_frequencies) {
+-		dev_err(dev, "no link frequencies defined");
++		dev_err(dev, "no link frequencies defined\n");
+ 		ret = -EINVAL;
+ 		goto out_err;
+ 	}
+@@ -2227,7 +2227,7 @@ static int ov08x40_check_hwcfg(struct ov08x40 *ov08x, struct device *dev)
+ 		}
+ 
+ 		if (j == bus_cfg.nr_of_link_frequencies) {
+-			dev_err(dev, "no link frequency %lld supported",
++			dev_err(dev, "no link frequency %lld supported\n",
+ 				link_freq_menu_items[i]);
+ 			ret = -EINVAL;
+ 			goto out_err;
+@@ -2252,7 +2252,7 @@ static int ov08x40_probe(struct i2c_client *client)
+ 	/* Check HW config */
+ 	ret = ov08x40_check_hwcfg(ov08x, &client->dev);
+ 	if (ret) {
+-		dev_err(&client->dev, "failed to check hwcfg: %d", ret);
++		dev_err(&client->dev, "failed to check hwcfg: %d\n", ret);
+ 		return ret;
+ 	}
+ 
+-- 
+2.43.0
+

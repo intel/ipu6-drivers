@@ -1,0 +1,98 @@
+From 92820935f6e40bb035eda978181d156aecc8764f Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:23 +0100
+Subject: [PATCH 12/22] media: ov08x40: Get reset GPIO and regulators on ACPI
+ platforms too
+
+ACPI platforms might also have a reset GPIO and regulators, move the code
+to get these outside of the if (!is_acpi_node(fwnode)) check.
+
+This also removes the is_acpi_node(fwnode) checks from ov08x40_power_on() /
+ov08x40_power_off() both the GPIO hand the clk frameworks functions used
+there will happily accept the NULL pointer returned from the optional get()
+functions when there is no reset GPIO / no clk.
+
+While moving the code around also at error logging to the error exit
+path for getting the reset GPIO.
+
+Tested-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 38 ++++++++++++++++---------------------
+ 1 file changed, 16 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 35838f29c8a8..1c725d043e46 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -1322,9 +1322,6 @@ static int ov08x40_power_on(struct device *dev)
+ 	struct ov08x40 *ov08x = to_ov08x40(sd);
+ 	int ret;
+ 
+-	if (is_acpi_node(dev_fwnode(dev)))
+-		return 0;
+-
+ 	ret = clk_prepare_enable(ov08x->xvclk);
+ 	if (ret < 0) {
+ 		dev_err(dev, "failed to enable xvclk\n");
+@@ -1360,9 +1357,6 @@ static int ov08x40_power_off(struct device *dev)
+ 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+ 	struct ov08x40 *ov08x = to_ov08x40(sd);
+ 
+-	if (is_acpi_node(dev_fwnode(dev)))
+-		return 0;
+-
+ 	gpiod_set_value_cansleep(ov08x->reset_gpio, 1);
+ 	regulator_bulk_disable(ARRAY_SIZE(ov08x40_supply_names),
+ 			       ov08x->supplies);
+@@ -2165,6 +2159,22 @@ static int ov08x40_check_hwcfg(struct ov08x40 *ov08x, struct device *dev)
+ 	if (ret)
+ 		return ret;
+ 
++	ov08x->reset_gpio = devm_gpiod_get_optional(dev, "reset",
++						    GPIOD_OUT_LOW);
++	if (IS_ERR(ov08x->reset_gpio)) {
++		ret = dev_err_probe(dev, PTR_ERR(ov08x->reset_gpio),
++				    "getting reset GPIO\n");
++		goto out_err;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(ov08x40_supply_names); i++)
++		ov08x->supplies[i].supply = ov08x40_supply_names[i];
++
++	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(ov08x40_supply_names),
++				      ov08x->supplies);
++	if (ret)
++		goto out_err;
++
+ 	if (!is_acpi_node(fwnode)) {
+ 		ov08x->xvclk = devm_clk_get(dev, NULL);
+ 		if (IS_ERR(ov08x->xvclk)) {
+@@ -2175,22 +2185,6 @@ static int ov08x40_check_hwcfg(struct ov08x40 *ov08x, struct device *dev)
+ 		}
+ 
+ 		xvclk_rate = clk_get_rate(ov08x->xvclk);
+-
+-		ov08x->reset_gpio = devm_gpiod_get_optional(dev, "reset",
+-							    GPIOD_OUT_LOW);
+-		if (IS_ERR(ov08x->reset_gpio)) {
+-			ret = PTR_ERR(ov08x->reset_gpio);
+-			goto out_err;
+-		}
+-
+-		for (i = 0; i < ARRAY_SIZE(ov08x40_supply_names); i++)
+-			ov08x->supplies[i].supply = ov08x40_supply_names[i];
+-
+-		ret = devm_regulator_bulk_get(dev,
+-					      ARRAY_SIZE(ov08x40_supply_names),
+-					      ov08x->supplies);
+-		if (ret)
+-			goto out_err;
+ 	} else {
+ 		ret = fwnode_property_read_u32(dev_fwnode(dev), "clock-frequency",
+ 					       &xvclk_rate);
+-- 
+2.43.0
+

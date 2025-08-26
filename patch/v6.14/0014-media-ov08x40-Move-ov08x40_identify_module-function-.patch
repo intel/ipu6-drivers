@@ -1,0 +1,93 @@
+From 496c08db689a8ee88a5f5ec381c1f5618431eab1 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:25 +0100
+Subject: [PATCH 14/22] media: ov08x40: Move ov08x40_identify_module() function
+ up
+
+Move the ov08x40_identify_module() function to above ov08x40_set_stream()
+this is a preparation patch for adding a missing ov08x40_identify_module()
+call to ov08x40_set_stream().
+
+No functional changes, just moving code around.
+
+Tested-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 52 ++++++++++++++++++-------------------
+ 1 file changed, 26 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 9d6113bfb315..8dc583c57461 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -1931,6 +1931,32 @@ static int ov08x40_stop_streaming(struct ov08x40 *ov08x)
+ 				 OV08X40_REG_VALUE_08BIT, OV08X40_MODE_STANDBY);
+ }
+ 
++/* Verify chip ID */
++static int ov08x40_identify_module(struct ov08x40 *ov08x)
++{
++	struct i2c_client *client = v4l2_get_subdevdata(&ov08x->sd);
++	int ret;
++	u32 val;
++
++	if (ov08x->identified)
++		return 0;
++
++	ret = ov08x40_read_reg(ov08x, OV08X40_REG_CHIP_ID,
++			       OV08X40_REG_VALUE_24BIT, &val);
++	if (ret)
++		return ret;
++
++	if (val != OV08X40_CHIP_ID) {
++		dev_err(&client->dev, "chip id mismatch: %x!=%x\n",
++			OV08X40_CHIP_ID, val);
++		return -ENXIO;
++	}
++
++	ov08x->identified = true;
++
++	return 0;
++}
++
+ static int ov08x40_set_stream(struct v4l2_subdev *sd, int enable)
+ {
+ 	struct ov08x40 *ov08x = to_ov08x40(sd);
+@@ -1968,32 +1994,6 @@ static int ov08x40_set_stream(struct v4l2_subdev *sd, int enable)
+ 	return ret;
+ }
+ 
+-/* Verify chip ID */
+-static int ov08x40_identify_module(struct ov08x40 *ov08x)
+-{
+-	struct i2c_client *client = v4l2_get_subdevdata(&ov08x->sd);
+-	int ret;
+-	u32 val;
+-
+-	if (ov08x->identified)
+-		return 0;
+-
+-	ret = ov08x40_read_reg(ov08x, OV08X40_REG_CHIP_ID,
+-			       OV08X40_REG_VALUE_24BIT, &val);
+-	if (ret)
+-		return ret;
+-
+-	if (val != OV08X40_CHIP_ID) {
+-		dev_err(&client->dev, "chip id mismatch: %x!=%x\n",
+-			OV08X40_CHIP_ID, val);
+-		return -ENXIO;
+-	}
+-
+-	ov08x->identified = true;
+-
+-	return 0;
+-}
+-
+ static const struct v4l2_subdev_video_ops ov08x40_video_ops = {
+ 	.s_stream = ov08x40_set_stream,
+ };
+-- 
+2.43.0
+

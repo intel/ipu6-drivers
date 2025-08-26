@@ -1,0 +1,57 @@
+From 7f0c87d0680d01956a311e425f2fa66d4375ca5d Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 20 Dec 2024 15:41:21 +0100
+Subject: [PATCH 10/22] media: ov08x40: Properly turn sensor on/off when
+ runtime-suspended
+
+Commit df1ae2251a50 ("media: ov08x40: Add OF probe support") added support
+for a reset GPIO, regulators and a clk provider controlled through new
+ov08x40_power_off() and ov08x40_power_on() functions.
+
+But it missed adding a pm ops structure to call these functions on
+runtime suspend/resume. Add the missing pm ops and only call
+ov08x40_power_off() on remove() when not already runtime-suspended
+to avoid unbalanced regulator / clock disable calls.
+
+Fixes: df1ae2251a50 ("media: ov08x40: Add OF probe support")
+Cc: stable@vger.kernel.org
+Tested-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index 76371f9ec695..391f727e3f7e 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -2324,11 +2324,14 @@ static void ov08x40_remove(struct i2c_client *client)
+ 	ov08x40_free_controls(ov08x);
+ 
+ 	pm_runtime_disable(&client->dev);
++	if (!pm_runtime_status_suspended(&client->dev))
++		ov08x40_power_off(&client->dev);
+ 	pm_runtime_set_suspended(&client->dev);
+-
+-	ov08x40_power_off(&client->dev);
+ }
+ 
++static DEFINE_RUNTIME_DEV_PM_OPS(ov08x40_pm_ops, ov08x40_power_off,
++				 ov08x40_power_on, NULL);
++
+ #ifdef CONFIG_ACPI
+ static const struct acpi_device_id ov08x40_acpi_ids[] = {
+ 	{"OVTI08F4"},
+@@ -2349,6 +2352,7 @@ static struct i2c_driver ov08x40_i2c_driver = {
+ 		.name = "ov08x40",
+ 		.acpi_match_table = ACPI_PTR(ov08x40_acpi_ids),
+ 		.of_match_table = ov08x40_of_match,
++		.pm = pm_sleep_ptr(&ov08x40_pm_ops),
+ 	},
+ 	.probe = ov08x40_probe,
+ 	.remove = ov08x40_remove,
+-- 
+2.43.0
+

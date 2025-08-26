@@ -1,0 +1,32 @@
+From 4fa3022ee885114d1662622cdec71407d9e06789 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Sat, 1 Mar 2025 12:48:30 +0100
+Subject: [PATCH 21/22] media: ov08x40: Log chip ID when identifying the chip
+
+Debug log the chip ID after successfully identifying the chip, this is
+useful to see if the identification is done on probe() time or if it is
+delayed till the first stream on.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Reviewed-by: Bryan O'Donoghue <bryan.odonoghue@linaro.org>
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil@xs4all.nl>
+---
+ drivers/media/i2c/ov08x40.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index bdaeff2e2903..17112c02408a 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -1955,6 +1955,7 @@ static int ov08x40_identify_module(struct ov08x40 *ov08x)
+ 		return -ENXIO;
+ 	}
+ 
++	dev_dbg(&client->dev, "chip id 0x%x\n", val);
+ 	ov08x->identified = true;
+ 
+ 	return 0;
+-- 
+2.43.0
+
