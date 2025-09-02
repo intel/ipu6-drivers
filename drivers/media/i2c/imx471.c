@@ -15,6 +15,8 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-fwnode.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
 
 #define IMX471_REG_MODE_SELECT		0x0100
 #define IMX471_MODE_STANDBY		0x00
@@ -123,6 +125,10 @@ struct imx471 {
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *exposure;
+
+	struct gpio_desc *reset_gpio;
+	struct regulator *avdd;
+	struct clk *img_clk;
 
 	/* Current mode */
 	const struct imx471_mode *cur_mode;
@@ -608,6 +614,50 @@ static int imx471_identify_module(struct imx471 *imx471)
 	return 0;
 }
 
+static int imx471_power_off(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct imx471 *imx471 = to_imx471(sd);
+
+	dev_info(dev, "imx471 power off");
+
+	clk_disable_unprepare(imx471->img_clk);
+	gpiod_set_value_cansleep(imx471->reset_gpio, 1);
+	if (imx471->avdd)
+		regulator_disable(imx471->avdd);
+
+	return 0;
+}
+
+static int imx471_power_on(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct imx471 *imx471 = to_imx471(sd);
+	int ret;
+
+	dev_info(dev, "start to power on");
+
+	if (imx471->avdd) {
+		ret = regulator_enable(imx471->avdd);
+		if (ret < 0) {
+			dev_err(dev, "failed to enable avdd: %d", ret);
+			return ret;
+		}
+	}
+
+	ret = clk_prepare_enable(imx471->img_clk);
+	if (ret < 0) {
+		dev_err(dev, "failed to enable imaging clock: %d", ret);
+		return ret;
+	}
+
+	gpiod_set_value_cansleep(imx471->reset_gpio, 0);
+
+	usleep_range(1000, 1500);
+
+	return 0;
+}
+
 /* Start streaming */
 static int imx471_start_streaming(struct imx471 *imx471)
 {
@@ -811,6 +861,36 @@ error:
 	return ret;
 }
 
+static int imx471_get_pm_resources(struct device *dev)
+{
+	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+	struct imx471 *imx471 = to_imx471(sd);
+	int ret;
+
+	imx471->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(imx471->reset_gpio)) {
+		return dev_err_probe(dev, PTR_ERR(imx471->reset_gpio),
+				     "failed to get reset gpio\n");
+	}
+
+	imx471->avdd = devm_regulator_get_optional(dev, "avdd");
+	if (IS_ERR(imx471->avdd)) {
+		ret = PTR_ERR(imx471->avdd);
+		dev_info(dev, "reg returned %d\n", ret);
+		imx471->avdd = NULL;
+		if (ret != -ENODEV)
+			return dev_err_probe(dev, ret,
+					     "failed to get avdd regulator\n");
+	}
+
+	imx471->img_clk = devm_clk_get_optional(dev, NULL);
+	if (IS_ERR(imx471->img_clk))
+		return dev_err_probe(dev, PTR_ERR(imx471->img_clk),
+						     "failed to get imaging clock\n");
+
+	return 0;
+}
+
 static int imx471_check_hwcfg(struct device *dev)
 {
         struct v4l2_fwnode_endpoint bus_cfg = {
@@ -874,6 +954,15 @@ out_err:
         return ret;
 }
 
+static int imx471_suspend(struct device *dev)
+{
+	return imx471_power_off(dev);
+}
+
+static int imx471_resume(struct device *dev)
+{
+	return imx471_power_on(dev);
+}
 
 static int imx471_probe(struct i2c_client *client)
 {
@@ -883,11 +972,11 @@ static int imx471_probe(struct i2c_client *client)
 
 
 	/* Check HW config */
-        ret = imx471_check_hwcfg(&client->dev);
-        if (ret) {
-                dev_err(&client->dev, "failed to check hwcfg: %d", ret);
-                return ret;
-        }
+	ret = imx471_check_hwcfg(&client->dev);
+	if (ret) {
+		dev_err(&client->dev, "failed to check hwcfg: %d", ret);
+		return ret;
+	}
 
 	imx471 = devm_kzalloc(&client->dev, sizeof(*imx471), GFP_KERNEL);
 	if (!imx471)
@@ -898,8 +987,18 @@ static int imx471_probe(struct i2c_client *client)
 	/* Initialize subdev */
 	v4l2_i2c_subdev_init(&imx471->sd, client, &imx471_subdev_ops);
 
+	ret = imx471_get_pm_resources(&client->dev);
+	if (ret)
+		return ret;
+
 	full_power = acpi_dev_state_d0(&client->dev);
 	if (full_power) {
+		ret = imx471_power_on(&client->dev);
+		if (ret) {
+			dev_err(&client->dev, "failed to power on\n");
+			return ret;
+		}
+
 		/* Check module identity */
 		ret = imx471_identify_module(imx471);
 		if (ret) {
@@ -942,6 +1041,7 @@ static int imx471_probe(struct i2c_client *client)
 	if (ret < 0)
 		goto error_media_entity_pm;
 
+	dev_info(&client->dev, "imx471 probe successfully\n");
 	return 0;
 
 error_media_entity_pm:
@@ -954,6 +1054,9 @@ error_handler_free:
 
 error_probe:
 	mutex_destroy(&imx471->mutex);
+
+error_power_off:
+	imx471_power_off(&client->dev);
 
 	return ret;
 }
@@ -973,6 +1076,9 @@ static void imx471_remove(struct i2c_client *client)
 	mutex_destroy(&imx471->mutex);
 }
 
+static DEFINE_RUNTIME_DEV_PM_OPS(imx471_pm_ops, imx471_suspend, imx471_resume,
+				 NULL);
+
 static const struct acpi_device_id imx471_acpi_ids[] __maybe_unused = {
 	{ "SONY471A" },
 	{ /* sentinel */ }
@@ -983,6 +1089,7 @@ static struct i2c_driver imx471_i2c_driver = {
 	.driver = {
 		.name = "imx471",
 		.acpi_match_table = ACPI_PTR(imx471_acpi_ids),
+		.pm = pm_ptr(&imx471_pm_ops),
 	},
 	.probe = imx471_probe,
 	.remove = imx471_remove,
@@ -991,5 +1098,6 @@ static struct i2c_driver imx471_i2c_driver = {
 module_i2c_driver(imx471_i2c_driver);
 
 MODULE_AUTHOR("Jimmy Su <jimmy.su@intel.com>");
+MODULE_AUTHOR("Serin Yeh <serin.yeh@intel.com>");
 MODULE_DESCRIPTION("Sony imx471 sensor driver");
 MODULE_LICENSE("GPL v2");
