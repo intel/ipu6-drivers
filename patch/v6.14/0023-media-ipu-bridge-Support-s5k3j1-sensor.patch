@@ -1,0 +1,22 @@
+From 0a4b26c48b18bf6e2c8c9a5e12c60225574c93e8 Mon Sep 17 00:00:00 2001
+From: Jimmy Su <jimmy.su@intel.com>
+Date: Mon, 25 Aug 2025 22:45:22 +0800
+Subject: [PATCH] media: ipu-bridge: Support s5k3j1 sensor
+
+
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index a986e300a7f9..daca1d58c840 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -58,6 +58,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("INT0310", 0),
+ 	/* Omnivision OV5693 */
+ 	IPU_SENSOR_CONFIG("INT33BE", 1, 419200000),
++	/* Samsung S5K3J1 */
++	IPU_SENSOR_CONFIG("INT346D", 1, 848000000),
+ 	/* Omnivision OV2740 */
+ 	IPU_SENSOR_CONFIG("INT3474", 1, 180000000),
+ 	/* Omnivision OV8865 */
+-- 
+2.34.1
+
