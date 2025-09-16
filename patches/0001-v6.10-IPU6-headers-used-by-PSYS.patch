@@ -28,7 +28,7 @@ new file mode 100644
 index 000000000..b26c6aee1
 --- /dev/null
 +++ b/drivers/media/pci/intel/ipu6/ipu6-bus.h
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,60 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/* Copyright (C) 2013 - 2024 Intel Corporation */
 +
@@ -59,7 +59,9 @@ index 000000000..b26c6aee1
 +	struct ipu6_mmu *mmu;
 +	struct ipu6_device *isp;
 +	struct ipu6_buttress_ctrl *ctrl;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
 +	u64 dma_mask;
++#endif
 +	const struct firmware *fw;
 +	struct sg_table fw_sgt;
 +	u64 *pkg_dir;
