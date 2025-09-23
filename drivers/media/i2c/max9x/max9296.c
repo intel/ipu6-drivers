@@ -24,9 +24,8 @@
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/i2c.h>
-#include <linux/i2c-mux.h>
+#include <linux/pm.h>
 #include <linux/regmap.h>
-#include <linux/sysfs.h>
 #include <linux/slab.h>
 
 #include "max9296.h"
@@ -35,11 +34,6 @@
 int max9296_serial_link_timeout_ms = MAX9296_DEFAULT_SERIAL_LINK_TIMEOUT_MS;
 module_param(max9296_serial_link_timeout_ms, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(max9296_serial_link_timeout_ms, "Timeout for serial link in milliseconds");
-
-static const struct regmap_config max9296_regmap_config = {
-	.reg_bits = 16,
-	.val_bits = 8,
-};
 
 // Declarations
 static int max9296_set_phy_mode(struct max9x_common *common, unsigned int phy_mode);
@@ -51,7 +45,6 @@ static int max9296_set_mipi_lane_cnt(struct max9x_common *common, unsigned int c
 static int max9296_set_initial_deskew(struct max9x_common *common, unsigned int csi_id,
 				      bool enable, unsigned int width);
 static int max9296_configure_csi_dphy(struct max9x_common *common);
-static int max9296_verify_devid(struct max9x_common *common);
 static int max9296_enable(struct max9x_common *common);
 static int max9296_max_elements(struct max9x_common *common, enum max9x_element_type element);
 static int max9296_get_serial_link_lock(struct max9x_common *common, unsigned int link_id, bool *locked);
@@ -143,7 +136,6 @@ static int max9296_set_phy_dpll_freq(struct max9x_common *common, unsigned int c
 		MAX9X_FIELD_PREP(MAX9296_DPLL_FREQ_FIELD, freq_mhz / MAX9296_DPLL_FREQ_MHZ_MULTIPLE));
 }
 
-
 static int max9296_set_mipi_lane_cnt(struct max9x_common *common, unsigned int csi_id, int num_lanes)
 {
 	struct device *dev = common->dev;
@@ -213,6 +205,29 @@ static int max9296_conf_phy_maps(struct max9x_common *common, unsigned int csi_i
 	return 0;
 }
 
+/*
+ * MAX9296A has four PHYs, but does not support single-PHY configurations,
+ * only double-PHY configurations, even when only using two lanes.
+ * For PHY 0 + PHY 1, PHY 1 is the master PHY.
+ * For PHY 2 + PHY 3, PHY 2 is the master PHY.
+ * Clock is always on the master PHY.
+ * For first pair of PHYs, first lanes are on the master PHY.
+ * For second pair of PHYs, first lanes are on the master PHY too.
+ *
+ * PHY 0 + 1
+ * CLK = PHY 1
+ * PHY1 Lane 0 = D0
+ * PHY1 Lane 1 = D1
+ * PHY0 Lane 0 = D2
+ * PHY0 Lane 1 = D3
+ *
+ * PHY 2 + 3
+ * CLK = PHY 2
+ * PHY2 Lane 0 = D0
+ * PHY2 Lane 1 = D1
+ * PHY3 Lane 0 = D2
+ * PHY3 Lane 1 = D3
+ */
 static int max9296_configure_csi_dphy(struct max9x_common *common)
 {
 	struct device *dev = common->dev;
@@ -307,31 +322,6 @@ static int max9296_configure_csi_dphy(struct max9x_common *common)
 	return 0;
 }
 
-static int max9296_verify_devid(struct max9x_common *common)
-{
-	struct device *dev = common->dev;
-	struct regmap *map = common->map;
-	unsigned int dev_id, dev_rev;
-	int ret;
-
-	// Fetch and output chip name + revision
-	TRY(ret, regmap_read(map, MAX9296_DEV_ID, &dev_id));
-	TRY(ret, regmap_read(map, MAX9296_DEV_REV, &dev_rev));
-
-	dev_rev = FIELD_GET(MAX9296_DEV_REV_FIELD, dev_rev);
-	switch (dev_id) {
-	case MAX9296A:
-		dev_info(dev, "Detected MAX9296A revision 0x%x", dev_rev);
-		break;
-	default:
-		dev_warn(dev, "Unknown chip ID 0x%x revision 0x%x",
-			 dev_id, dev_rev);
-		break;
-	}
-
-	return 0;
-}
-
 static int max9296_set_all_reset(struct max9x_common *common, bool enable)
 {
 	struct device *dev = common->dev;
@@ -342,31 +332,6 @@ static int max9296_set_all_reset(struct max9x_common *common, bool enable)
 	return regmap_update_bits(map, MAX9296_CTRL0,
 			MAX9296_CTRL0_RESET_ALL_FIELD,
 			MAX9X_FIELD_PREP(MAX9296_CTRL0_RESET_ALL_FIELD, enable ? 1U : 0U));
-}
-
-static int max9296_enable(struct max9x_common *common)
-{
-	struct device *dev = common->dev;
-	int link_id;
-	int ret;
-
-	dev_dbg(dev, "Enable");
-
-	for (link_id = 0; link_id < common->num_serial_links; link_id++) {
-		ret = max9296_disable_serial_link(common, link_id);
-		if (ret)
-			return ret;
-	}
-
-	ret = max9296_verify_devid(common);
-	if (ret)
-		return ret;
-
-	ret = max9296_configure_csi_dphy(common);
-	if (ret)
-		return ret;
-
-	return 0;
 }
 
 static int max9296_soft_reset(struct max9x_common *common)
@@ -406,7 +371,6 @@ static struct max9x_common_ops max9296_common_ops = {
 	.enable = max9296_enable,
 	.soft_reset = max9296_soft_reset,
 	.max_elements = max9296_max_elements,
-	.verify_devid = max9296_verify_devid,
 };
 
 static int max9296_set_video_pipe_src(struct max9x_common *common, unsigned int pipe_id,
@@ -608,7 +572,7 @@ static int max9296_set_serial_link_rate(struct max9x_common *common, unsigned in
 	struct device *dev = common->dev;
 	struct regmap *map = common->map;
 	struct max9x_serdes_serial_config *config = &common->serial_link[link_id].config;
-	unsigned int tx_rate, rx_rate;
+	int tx_rate, rx_rate;
 
 	tx_rate = max9x_serdes_mhz_to_rate(max9296_tx_rates, ARRAY_SIZE(max9296_tx_rates), config->tx_freq_mhz);
 	if (tx_rate < 0)
@@ -764,6 +728,10 @@ static int max9296_deisolate_serial_link(struct max9x_common *common, unsigned i
 		link_cfg = MAX9296_LINK_A;
 	else if (link_b)
 		link_cfg = MAX9296_LINK_B;
+	else {
+		dev_err(dev, "No link was detected");
+		return -1;
+	}
 
 	dev_dbg(dev, "Deisolate link %d (link_cfg=%d)", link, link_cfg);
 
@@ -871,102 +839,40 @@ static struct max9x_csi_link_ops max9296_csi_link_ops = {
 	.disable = max9296_disable_csi_link,
 };
 
-static int max9296_resume(struct device *dev)
+static int max9296_enable(struct max9x_common *common)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct max9x_common *common = max9x_client_to_common(client);
+	struct device *dev = common->dev;
+	int link_id;
+	int ret;
 
-	return max9x_common_resume(common);
-}
+	dev_dbg(dev, "Enable");
 
-static int max9296_suspend(struct device *dev)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-	struct max9x_common *common = max9x_client_to_common(client);
-
-	return max9x_common_suspend(common);
-}
-
-static int max9296_freeze(struct device *dev)
-{
-	return max9296_suspend(dev);
-}
-
-static int max9296_thaw(struct device *dev)
-{
-	return max9296_resume(dev);
-}
-
-static int max9296_restore(struct device *dev)
-{
-	return max9296_resume(dev);
-}
-
-static int max9296_probe(struct i2c_client *client)
-{
-	struct device *dev = &client->dev;
-	struct max9x_common *des = NULL;
-	int ret = 0;
-
-	dev_dbg(dev, "Probing");
-
-	des = devm_kzalloc(dev, sizeof(*des), GFP_KERNEL);
-	if (!des) {
-		dev_err(dev, "Failed to allocate memory.");
-		return -ENOMEM;
+	for (link_id = 0; link_id < common->num_serial_links; link_id++) {
+		ret = max9296_disable_serial_link(common, link_id);
+		if (ret)
+			return ret;
 	}
 
-	des->type = MAX9X_DESERIALIZER;
+	ret = max9296_configure_csi_dphy(common);
 
-	ret = max9x_common_init_i2c_client(des, client, &max9296_regmap_config,
-					   &max9296_common_ops,
-					   &max9296_serial_link_ops,
-					   &max9296_csi_link_ops,
-					   NULL);
 	if (ret)
 		return ret;
 
-	dev_info(dev, "probe successful");
 	return 0;
 }
 
-static void max9296_remove(struct i2c_client *client)
+int max9296_get_ops(struct max9x_common_ops **common_ops, struct max9x_serial_link_ops **serial_ops,
+		    struct max9x_csi_link_ops **csi_ops, struct max9x_line_fault_ops **lf_ops,
+			struct max9x_translation_ops **trans_ops)
 {
-	struct device *dev = &client->dev;
-	struct max9x_common *des = NULL;
+	*common_ops = &max9296_common_ops;
+	*serial_ops = &max9296_serial_link_ops;
+	*csi_ops = &max9296_csi_link_ops;
+	*lf_ops = NULL;
+	*trans_ops = NULL;
 
-	dev_dbg(dev, "%s Removing", client->name);
-
-	des = max9x_client_to_common(client);
-	max9x_destroy(des);
+	return 0;
 }
-
-static const struct dev_pm_ops max9296_pm_ops = {
-	.suspend = max9296_suspend,
-	.resume = max9296_resume,
-	.freeze = max9296_freeze,
-	.restore = max9296_restore,
-	.thaw = max9296_thaw,
-};
-
-static struct i2c_device_id max9296_idtable[] = {
-	{"max9296", 0},
-	{},
-};
-MODULE_DEVICE_TABLE(i2c, max9296_idtable);
-
-static struct i2c_driver max9296_driver = {
-	.driver = {
-		.name = "max9296",
-		.owner = THIS_MODULE,
-		.pm = &max9296_pm_ops,
-	},
-	.probe = max9296_probe,
-	.remove = max9296_remove,
-	.id_table = max9296_idtable,
-};
-
-module_i2c_driver(max9296_driver);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Josh Watts <jwatts@d3embedded.com>");

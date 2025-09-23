@@ -25,17 +25,11 @@
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/i2c.h>
-#include <linux/i2c-mux.h>
+#include <linux/pm.h>
 #include <linux/regmap.h>
-#include <linux/sysfs.h>
 #include <linux/slab.h>
 
 #include "max9295.h"
-
-static const struct regmap_config max9295_regmap_config = {
-	.reg_bits = 16,
-	.val_bits = 8,
-};
 
 static const char *const max9295_gpio_chip_names[] = {
 	"MFP1",
@@ -68,6 +62,7 @@ static int max9295_verify_devid(struct max9x_common *common);
 static int max9295_enable(struct max9x_common *common);
 static int max9295_disable(struct max9x_common *common);
 static int max9295_remap_addr(struct max9x_common *common);
+static int max9295_remap_reset(struct max9x_common *common);
 static int max9295_add_translate_addr(struct max9x_common *common,
 				      unsigned int i2c_id, unsigned int virt_addr, unsigned int phys_addr);
 static int max9295_remove_translate_addr(struct max9x_common *common,
@@ -80,7 +75,11 @@ static int max9295_gpio_get_direction(struct gpio_chip *chip, unsigned int offse
 static int max9295_gpio_direction_input(struct gpio_chip *chip, unsigned int offset);
 static int max9295_gpio_direction_output(struct gpio_chip *chip, unsigned int offset, int value);
 static int max9295_gpio_get(struct gpio_chip *chip, unsigned int offset);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 static void max9295_gpio_set(struct gpio_chip *chip, unsigned int offset, int value);
+#else
+static int max9295_gpio_set(struct gpio_chip *chip, unsigned int offset, int value);
+#endif
 static int max9295_setup_gpio(struct max9x_common *common);
 /* max9295 gpio */
 
@@ -91,6 +90,7 @@ static struct max9x_common_ops max9295_common_ops = {
 	.disable = max9295_disable,
 	.verify_devid = max9295_verify_devid,
 	.remap_addr = max9295_remap_addr,
+	.remap_reset = max9295_remap_reset,
 	.setup_gpio = max9295_setup_gpio,
 };
 
@@ -166,6 +166,7 @@ static int max9295_gpio_get(struct gpio_chip *chip, unsigned int offset)
 	return FIELD_GET(MAX9295_GPIO_A_IN_FIELD, val);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 17, 0)
 static void max9295_gpio_set(struct gpio_chip *chip, unsigned int offset, int value)
 {
 	struct max9x_common *common = from_gpio_chip(chip);
@@ -175,6 +176,17 @@ static void max9295_gpio_set(struct gpio_chip *chip, unsigned int offset, int va
 		MAX9295_GPIO_A_OUT_FIELD,
 		MAX9X_FIELD_PREP(MAX9295_GPIO_A_OUT_FIELD, (value == 0 ? 0U : 1U)));
 }
+#else
+static int max9295_gpio_set(struct gpio_chip *chip, unsigned int offset, int value)
+{
+	struct max9x_common *common = from_gpio_chip(chip);
+	struct regmap *map = common->map;
+
+	return regmap_update_bits(map, MAX9295_GPIO_A(offset),
+		MAX9295_GPIO_A_OUT_FIELD,
+		MAX9X_FIELD_PREP(MAX9295_GPIO_A_OUT_FIELD, (value == 0 ? 0U : 1U)));
+}
+#endif
 
 static int max9295_setup_gpio(struct max9x_common *common)
 {
@@ -182,8 +194,8 @@ static int max9295_setup_gpio(struct max9x_common *common)
 	int ret;
 	struct max9x_gpio_pdata *gpio_pdata;
 
-	if (common->dev->platform_data) {
-		struct max9x_pdata *pdata = common->dev->platform_data;
+	if (dev->platform_data) {
+		struct max9x_pdata *pdata = dev->platform_data;
 		gpio_pdata = &pdata->gpio;
 	}
 
@@ -237,7 +249,7 @@ static int max9295_set_pipe_csi_enabled(struct max9x_common *common,
 	);
 
 	// Select CSI port csi_id for video pipe pipe_id
-	// Enable CSI port csi_id (9295A only has port 1, 9295B has both ports)
+	// Enable CSI port csi_id (9295A only has port B, 9295B has both ports)
 	TRY(ret, regmap_update_bits(map, MAX9295_FRONTTOP_0,
 			MAX9295_FRONTTOP_0_SEL_CSI_FIELD(pipe_id) | MAX9295_FRONTTOP_0_START_CSI_FIELD(csi_id),
 			MAX9X_FIELD_PREP(MAX9295_FRONTTOP_0_SEL_CSI_FIELD(pipe_id), csi_id) |
@@ -638,11 +650,13 @@ static int max9295_disable(struct max9x_common *common)
 	return 0;
 }
 
-//TODO: more efforts to remap
 static int max9295_remap_addr(struct max9x_common *common)
 {
 	int ret;
 	struct device *dev = common->dev;
+	const unsigned int RETRY_MS_MIN = 32;
+	const unsigned int RETRY_MS_MAX = 512;
+	unsigned int ms;
 
 	if (!common->phys_client)
 		return 0;
@@ -662,20 +676,49 @@ static int max9295_remap_addr(struct max9x_common *common)
 	 * Use lower bits of I2C address as unique TX_SRC_ID to prevent
 	 * conflicts for info frames, SPI, etc. (Leave video pipes alone)
 	 */
-	ret = regmap_update_bits(common->map, MAX9295_CFGI_INFOFR_TR3, MAX9295_TR3_TX_SRC_ID,
-		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr));
-	ret |= regmap_update_bits(common->map, MAX9295_CFGL_SPI_TR3, MAX9295_TR3_TX_SRC_ID,
-		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr));
-	ret |= regmap_update_bits(common->map, MAX9295_CFGC_CC_TR3, MAX9295_TR3_TX_SRC_ID,
-		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr));
-	ret |= regmap_update_bits(common->map, MAX9295_CFGL_GPIO_TR3, MAX9295_TR3_TX_SRC_ID,
-		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr));
-	ret |= regmap_update_bits(common->map, MAX9295_CFGL_IIC_X, MAX9295_TR3_TX_SRC_ID,
-		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr));
-	ret |= regmap_update_bits(common->map, MAX9295_CFGL_IIC_Y, MAX9295_TR3_TX_SRC_ID,
-		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr));
-	if (ret)
-		return ret;
+	TRY_DEV_HERE(ret, regmap_update_bits(common->map, MAX9295_CFGI_INFOFR_TR3, MAX9295_TR3_TX_SRC_ID,
+		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr)), dev);
+	TRY_DEV_HERE(ret, regmap_update_bits(common->map, MAX9295_CFGL_SPI_TR3, MAX9295_TR3_TX_SRC_ID,
+		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr)), dev);
+	/*
+	 * This exponential retry works around for MAX96724X.
+	 */
+	for (ms = RETRY_MS_MIN; ms <= RETRY_MS_MAX; ms <<= 1) {
+		ret = regmap_update_bits(common->map, MAX9295_CFGC_CC_TR3, MAX9295_TR3_TX_SRC_ID,
+			MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr));
+		if (ret) {
+			dev_warn(dev,
+				"configure MAX9295_CFGC_CC_TR3 failed, trying again (waiting %d ms)", ms);
+			msleep(ms);
+		} else
+			break;
+	}
+
+	TRY_DEV_HERE(ret, regmap_update_bits(common->map, MAX9295_CFGL_GPIO_TR3, MAX9295_TR3_TX_SRC_ID,
+		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr)), dev);
+	TRY_DEV_HERE(ret, regmap_update_bits(common->map, MAX9295_CFGL_IIC_X, MAX9295_TR3_TX_SRC_ID,
+		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr)), dev);
+	TRY_DEV_HERE(ret, regmap_update_bits(common->map, MAX9295_CFGL_IIC_Y, MAX9295_TR3_TX_SRC_ID,
+		MAX9X_FIELD_PREP(MAX9295_TR3_TX_SRC_ID, common->client->addr)), dev);
+
+	return 0;
+}
+
+static int max9295_remap_reset(struct max9x_common *common)
+{
+	int ret;
+	struct device *dev = common->dev;
+	struct max9x_pdata *pdata = dev->platform_data;
+	u32 phys_addr = pdata->phys_addr ? pdata->phys_addr :
+					   common->client->addr;
+	u32 virt_addr = common->client->addr;
+
+	dev_info(dev, "Remap reset address from 0x%02x to 0x%02x", virt_addr,
+		 phys_addr);
+
+	TRY(ret, regmap_update_bits(
+			 common->map, MAX9295_REG0, MAX9295_REG0_DEV_ADDR_FIELD,
+			 FIELD_PREP(MAX9295_REG0_DEV_ADDR_FIELD, phys_addr)));
 
 	return 0;
 }
@@ -707,7 +750,7 @@ static int max9295_add_translate_addr(struct max9x_common *common,
 		}
 	}
 
-	return -ENOMEM;
+	return 0;
 }
 
 static int max9295_remove_translate_addr(struct max9x_common *common,
@@ -745,105 +788,17 @@ static int max9295_reset(struct max9x_common *common)
 	return 0;
 }
 
-static int max9295_resume(struct device *dev)
+int max9295_get_ops(struct max9x_common_ops **common_ops, struct max9x_serial_link_ops **serial_ops,
+		    struct max9x_csi_link_ops **csi_ops, struct max9x_line_fault_ops **lf_ops,
+			struct max9x_translation_ops **trans_ops)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct max9x_common *common = max9x_client_to_common(client);
-
-	while (max9295_verify_devid(common) != 0) {
-		dev_dbg(dev, "resume not ready");
-		usleep_range(100000, 100050);
-	}
-	return max9x_common_resume(common);
-}
-
-static int max9295_suspend(struct device *dev)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-	struct max9x_common *common = max9x_client_to_common(client);
-
-	return max9x_common_suspend(common);
-}
-
-static int max9295_freeze(struct device *dev)
-{
-	return max9295_suspend(dev);
-}
-
-static int max9295_restore(struct device *dev)
-{
-	return max9295_resume(dev);
-}
-
-static int max9295_probe(struct i2c_client *client)
-{
-	struct device *dev = &client->dev;
-	struct max9x_common *ser = NULL;
-	int ret;
-
-	dev_dbg(dev, "Probing");
-
-	ser = devm_kzalloc(dev, sizeof(*ser), GFP_KERNEL);
-	if (!ser) {
-		dev_err(dev, "Failed to allocate memory.");
-		return -ENOMEM;
-	}
-
-	ser->type = MAX9X_SERIALIZER;
-	ser->translation_ops = &max9295_translation_ops;
-
-	ret = max9x_common_init_i2c_client(ser, client, &max9295_regmap_config,
-					   &max9295_common_ops,
-					   &max9295_serial_link_ops,
-					   NULL, NULL);
-	if (ret)
-		return ret;
-
-	dev_info(dev, "probe successful");
+	(*common_ops) = &max9295_common_ops;
+	(*serial_ops) = &max9295_serial_link_ops;
+	(*csi_ops) = NULL;
+	(*lf_ops) = NULL;
+	(*trans_ops) = &max9295_translation_ops;
 	return 0;
 }
-
-static void max9295_remove(struct i2c_client *client)
-{
-	struct device *dev = &client->dev;
-	struct max9x_common *ser = NULL;
-
-	dev_dbg(dev, "Removing");
-
-	ser = max9x_client_to_common(client);
-	max9x_destroy(ser);
-}
-
-static const struct dev_pm_ops max9295_pm_ops = {
-	.suspend = max9295_suspend,
-	.resume = max9295_resume,
-	.freeze = max9295_freeze,
-	.restore = max9295_restore,
-};
-
-static struct i2c_device_id max9295_idtable[] = {
-	{"max9295", 0},
-	{},
-};
-MODULE_DEVICE_TABLE(i2c, max9295_idtable);
-
-static struct i2c_driver max9295_driver = {
-	.driver = {
-		.name = "max9295",
-		.owner = THIS_MODULE,
-		/*
-		 * TODO:
-		 * Since max9295 is powered externally,
-		 * there is no need to handle suspend/resume now, but will add later:
-		 * .pm = &max9295_pm_ops,
-		 */
-	},
-	.probe = max9295_probe,
-	.remove = max9295_remove,
-	.id_table = max9295_idtable,
-};
-
-module_i2c_driver(max9295_driver);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Josh Watts <jwatts@d3embedded.com>");

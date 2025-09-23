@@ -22,7 +22,7 @@
 #define _SERDES_H_
 
 #include <linux/acpi.h>
-#include <linux/bitfield.h>
+#include <linux/bitops.h>
 #include <linux/types.h>
 #include <linux/module.h>
 #include <linux/i2c.h>
@@ -41,13 +41,17 @@
 #include <media/v4l2-subdev.h>
 #include <uapi/linux/media-bus-format.h>
 
+#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU6)
 #include "ipu6-isys.h"
+#endif
 #include <media/ipu-acpi-pdata.h>
 #include "max9x_pdata.h"
 
 #define MAX9X_VDD_REGULATOR_NAME "vdd"
 #define MAX9X_POC_REGULATOR_NAME "poc"
 #define MAX9X_RESET_GPIO_NAME "reset"
+#define MAX9X_DEV_ID 0xD
+#define MAX9X_DEV_REV_FIELD GENMASK(3, 0)
 
 /*Used for device attributes*/
 #define ATTR_NAME_LEN (30) /* arbitrary number used to allocate an attribute */
@@ -125,6 +129,20 @@ static inline int mbus_code_to_csi_dt(int code)
 	}
 }
 
+static const struct regmap_config max9x_regmap_config = {
+	.reg_bits = 16,
+	.val_bits = 8,
+};
+
+enum max9x_chip_type {
+	MAX9296 = 0,
+	MAX96724 = 1,
+	MAX9295,
+	MAX96717,
+	MAX96724F,
+	MAX96724R,
+};
+
 enum max9x_serdes_type {
 	MAX9X_DESERIALIZER = 0,
 	MAX9X_SERIALIZER = 1,
@@ -138,6 +156,7 @@ struct max9x_serdes_rate_table {
 struct max9x_serdes_csi_config {
 	struct max9x_serdes_phy_map *map;
 	unsigned int num_maps;
+	enum v4l2_mbus_type bus_type;
 	unsigned int num_lanes;
 	unsigned int freq_mhz;
 	unsigned int initial_deskew_width;
@@ -228,6 +247,7 @@ struct max9x_serdes_line_fault {
 };
 
 struct max9x_common {
+	struct max9x_desc *des;
 	struct device *dev;
 	struct i2c_client *client;
 	struct regmap *map;
@@ -269,8 +289,6 @@ struct max9x_common {
 };
 
 int max9x_serdes_mhz_to_rate(struct max9x_serdes_rate_table *table, int len, unsigned int freq_mhz);
-
-struct max9x_common *max9x_phandle_to_common(struct device_node *node, const char *name);
 struct max9x_common *max9x_sd_to_common(struct v4l2_subdev *sd);
 struct max9x_common *max9x_client_to_common(struct i2c_client *client);
 
@@ -290,6 +308,7 @@ struct max9x_common_ops {
 	int (*max_elements)(struct max9x_common *common, enum max9x_element_type element);
 	int (*verify_devid)(struct max9x_common *common);
 	int (*remap_addr)(struct max9x_common *common);
+	int (*remap_reset)(struct max9x_common *common);
 	int (*setup_gpio)(struct max9x_common *common);
 };
 
@@ -319,6 +338,19 @@ struct max9x_line_fault_ops {
 	int (*get_status)(struct max9x_common *common, unsigned int line);
 };
 
+struct max9x_desc {
+	char dev_id;
+	char rev_reg;
+	enum max9x_serdes_type serdes_type;
+	enum max9x_chip_type chip_type;
+	int (*get_max9x_ops)(char dev_id,
+		struct max9x_common_ops **common_ops,
+		struct max9x_serial_link_ops **serial_ops,
+		struct max9x_csi_link_ops **csi_ops,
+		struct max9x_line_fault_ops **lf_ops,
+		struct max9x_translation_ops **trans_ops);
+};
+
 int max9x_common_init_i2c_client(struct max9x_common *common,
 	struct i2c_client *client,
 	const struct regmap_config *regmap_config,
@@ -329,7 +361,31 @@ int max9x_common_init_i2c_client(struct max9x_common *common,
 void max9x_destroy(struct max9x_common *common);
 int max9x_common_resume(struct max9x_common *common);
 int max9x_common_suspend(struct max9x_common *common);
-
+int max9x_get_ops(char dev_id, struct max9x_common_ops **common_ops,
+		struct max9x_serial_link_ops **serial_ops,
+		struct max9x_csi_link_ops **csi_ops,
+		struct max9x_line_fault_ops **lf_ops,
+		struct max9x_translation_ops **trans_ops);
+extern int max96724_get_ops(struct max9x_common_ops **common_ops,
+			    struct max9x_serial_link_ops **serial_ops,
+			    struct max9x_csi_link_ops **csi_ops,
+			    struct max9x_line_fault_ops **lf_ops,
+			    struct max9x_translation_ops **trans_ops);
+extern int max96717_get_ops(struct max9x_common_ops **common_ops,
+			    struct max9x_serial_link_ops **serial_ops,
+			    struct max9x_csi_link_ops **csi_ops,
+			    struct max9x_line_fault_ops **lf_ops,
+			    struct max9x_translation_ops **trans_ops);
+extern int max9296_get_ops(struct max9x_common_ops **common_ops,
+			   struct max9x_serial_link_ops **serial_ops,
+			   struct max9x_csi_link_ops **csi_ops,
+			   struct max9x_line_fault_ops **lf_ops,
+			   struct max9x_translation_ops **trans_ops);
+extern int max9295_get_ops(struct max9x_common_ops **common_ops,
+			   struct max9x_serial_link_ops **serial_ops,
+			   struct max9x_csi_link_ops **csi_ops,
+			   struct max9x_line_fault_ops **lf_ops,
+			   struct max9x_translation_ops **trans_ops);
 /*
  * Both DES and SER have their own i2c_mux_core:
  * 1. SER's muxc does not provide select/deselect and has at most one link

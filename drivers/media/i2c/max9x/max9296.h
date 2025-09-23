@@ -74,10 +74,6 @@ enum max9296_link_mode {
 #define MAX9296_PHY_LOCKED(link) (0x13) /* Based on link mode */
 #define MAX9296_PHY_LOCKED_FIELD BIT(3)
 
-#define MAX9296_DEV_ID 0xD
-#define MAX9296_DEV_REV 0xE
-#define MAX9296_DEV_REV_FIELD GENMASK(3, 0)
-
 #define MAX9296_VIDEO_PIPE_SEL(pipe) (0x50 + pipe)
 #define MAX9296_VIDEO_PIPE_STR_SEL_FIELD GENMASK(1, 0)
 
