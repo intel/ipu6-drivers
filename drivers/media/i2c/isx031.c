@@ -23,7 +23,7 @@
 #endif
 #define to_isx031(_sd)			container_of(_sd, struct isx031, sd)
 
-#define ISX031_REG_MODE_SELECT		0x8A01
+#define ISX031_REG_MODE_SET_F		0x8A01
 #define ISX031_MODE_STANDBY		0x00
 #define ISX031_MODE_STREAMING		0x80
 
@@ -33,6 +33,11 @@
 
 #define ISX031_REG_MODE_SET_F_LOCK	0xBEF0
 #define ISX031_MODE_UNLOCK		0x53
+
+#define ISX031_REG_MODE_SELECT		0x8A00
+#define ISX031_MODE_4LANES_60FPS	0x01
+#define ISX031_MODE_4LANES_30FPS	0x17
+#define ISX031_MODE_2LANES_30FPS	0x18
 
 struct isx031_reg {
 	enum {
@@ -53,6 +58,18 @@ struct isx031_link_freq_config {
 	const struct isx031_reg_list reg_list;
 };
 
+struct isx031_driver_mode {
+	int lanes;
+	int fps;
+	int mode;
+};
+
+static const struct isx031_driver_mode isx031_driver_modes[] = {
+	{ 4, 60, ISX031_MODE_4LANES_60FPS },
+	{ 4, 30, ISX031_MODE_4LANES_30FPS },
+	{ 2, 30, ISX031_MODE_2LANES_30FPS },
+};
+
 struct isx031_mode {
 	/* Frame width in pixels */
 	u32 width;
@@ -62,6 +79,11 @@ struct isx031_mode {
 
 	/* MEDIA_BUS_FMT */
 	u32 code;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	/* CSI-2 data type ID */
+	u8 datatype;
+#endif
 
 	/* MODE_FPS*/
 	u32 fps;
@@ -78,6 +100,7 @@ struct isx031 {
 	const struct isx031_mode *cur_mode;
 	/* Previous mode */
 	const struct isx031_mode *pre_mode;
+	u8 lanes;
 
 	/* To serialize asynchronus callbacks */
 	struct mutex mutex;
@@ -205,6 +228,9 @@ static const struct isx031_mode supported_modes[] = {
 		.width = 1920,
 		.height = 1080,
 		.code = MEDIA_BUS_FMT_UYVY8_1X16,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+		.datatype = MIPI_CSI2_DT_YUV422_8B,
+#endif
 		.fps = 30,
 		.reg_list = isx031_1920_1080_30fps_reg_list,
 	},
@@ -212,6 +238,9 @@ static const struct isx031_mode supported_modes[] = {
 		.width = 1280,
 		.height = 720,
 		.code = MEDIA_BUS_FMT_UYVY8_1X16,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+		.datatype = MIPI_CSI2_DT_YUV422_8B,
+#endif
 		.fps = 30,
 		.reg_list = isx031_1280_720_30fps_reg_list,
 	},
@@ -219,6 +248,9 @@ static const struct isx031_mode supported_modes[] = {
 		.width = 1920,
 		.height = 1536,
 		.code = MEDIA_BUS_FMT_UYVY8_1X16,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+		.datatype = MIPI_CSI2_DT_YUV422_8B,
+#endif
 		.fps = 30,
 		.reg_list = isx031_1920_1536_30fps_reg_list,
 	},
@@ -314,6 +346,31 @@ static int isx031_write_reg_list(struct isx031 *isx031,
 	return 0;
 }
 
+static int isx031_find_driver_mode(int lanes, int fps)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(isx031_driver_modes); i++) {
+		if (isx031_driver_modes[i].lanes == lanes && isx031_driver_modes[i].fps == fps)
+			return isx031_driver_modes[i].mode;
+	}
+
+	return -EINVAL;
+}
+
+static int isx031_set_driver_mode(struct isx031 *isx031)
+{
+	int ret;
+	int mode;
+
+	mode = isx031_find_driver_mode(isx031->lanes, isx031->cur_mode->fps);
+	if (mode < 0)
+		return mode;
+
+	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SELECT, 1, mode);
+	return ret;
+}
+
 static int isx031_mode_transit(struct isx031 *isx031, int state)
 {
 	struct i2c_client *client = isx031->client;
@@ -337,13 +394,20 @@ static int isx031_mode_transit(struct isx031 *isx031, int state)
 	}
 	cur_mode = val;
 
+	//TODO: only set if isx031->lanes != 0, means get lanes from pdata
+	ret = isx031_set_driver_mode(isx031);
+	if (ret) {
+		dev_err(&client->dev, "failed to set driver mode");
+		return ret;
+	}
+
 	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SET_F_LOCK, 1,
 				ISX031_MODE_UNLOCK);
 	if (ret) {
 		dev_err(&client->dev, "failed to unlock mode");
 		return ret;
 	}
-	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SELECT, 1,
+	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SET_F, 1,
 			mode);
 	if (ret) {
 		dev_err(&client->dev, "failed to transit mode from 0x%x to 0x%x",
@@ -393,7 +457,7 @@ static int isx031_identify_module(struct isx031 *isx031)
 	ret = isx031_write_reg_list(isx031, &isx031_init_reg_list);
 	if (ret)
 		return ret;
-	if (isx031->platform_data != NULL) {
+	if (isx031->platform_data != NULL && !isx031->platform_data->irq_pin_flags) {
 		ret = isx031_write_reg_list(isx031, &isx031_framesync_reg_list);
 		if (ret) {
 			dev_err(&client->dev, "failed in set framesync.");
@@ -553,70 +617,39 @@ static int __maybe_unused isx031_resume(struct device *dev)
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-static unsigned int isx031_mbus_code_to_mipi(u32 code)
+static int isx031_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
+				 struct v4l2_mbus_frame_desc *desc)
 {
-	switch (code) {
-	case MEDIA_BUS_FMT_RGB565_1X16:
-		return MIPI_CSI2_DT_RGB565;
-	case MEDIA_BUS_FMT_RGB888_1X24:
-		return MIPI_CSI2_DT_RGB888;
-	case MEDIA_BUS_FMT_UYVY8_1X16:
-	case MEDIA_BUS_FMT_YUYV8_1X16:
-		return MIPI_CSI2_DT_YUV422_8B;
-	case MEDIA_BUS_FMT_SBGGR16_1X16:
-	case MEDIA_BUS_FMT_SGBRG16_1X16:
-	case MEDIA_BUS_FMT_SGRBG16_1X16:
-	case MEDIA_BUS_FMT_SRGGB16_1X16:
-		return MIPI_CSI2_DT_RAW16;
-	case MEDIA_BUS_FMT_SBGGR12_1X12:
-	case MEDIA_BUS_FMT_SGBRG12_1X12:
-	case MEDIA_BUS_FMT_SGRBG12_1X12:
-	case MEDIA_BUS_FMT_SRGGB12_1X12:
-		return MIPI_CSI2_DT_RAW12;
-	case MEDIA_BUS_FMT_SBGGR10_1X10:
-	case MEDIA_BUS_FMT_SGBRG10_1X10:
-	case MEDIA_BUS_FMT_SGRBG10_1X10:
-	case MEDIA_BUS_FMT_SRGGB10_1X10:
-		return MIPI_CSI2_DT_RAW10;
-	case MEDIA_BUS_FMT_SBGGR8_1X8:
-	case MEDIA_BUS_FMT_SGBRG8_1X8:
-	case MEDIA_BUS_FMT_SGRBG8_1X8:
-	case MEDIA_BUS_FMT_SRGGB8_1X8:
-		return MIPI_CSI2_DT_RAW8;
-	default:
-		/* return unavailable MIPI data type - 0x3f */
-		WARN_ON(1);
-		return 0x3f;
-	}
-}
-#endif
+	struct isx031 *isx031 = to_isx031(sd);
 
+	desc->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
+	desc->num_entries = 0;
+	desc->entry[desc->num_entries].flags = V4L2_MBUS_FRAME_DESC_FL_LEN_MAX;
+	desc->entry[desc->num_entries].stream = 0;
+	desc->entry[desc->num_entries].pixelcode = isx031->cur_mode->code;
+	desc->entry[desc->num_entries].length = 0;
+	desc->entry[desc->num_entries].bus.csi2.vc = 0;
+	desc->entry[desc->num_entries].bus.csi2.dt = isx031->cur_mode->datatype;
+	desc->num_entries++;
+	return 0;
+}
+#else
 static int isx031_get_frame_desc(struct v4l2_subdev *sd,
 	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-	struct isx031 *isx031 = to_isx031(sd);
-#endif
 	unsigned int i;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-	desc->type = V4L2_MBUS_FRAME_DESC_TYPE_CSI2;
-#endif
 	desc->num_entries = V4L2_FRAME_DESC_ENTRY_MAX;
 
 	for (i = 0; i < desc->num_entries; i++) {
 		desc->entry[i].flags = 0;
 		desc->entry[i].pixelcode = MEDIA_BUS_FMT_FIXED;
 		desc->entry[i].length = 0;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-		desc->entry[i].stream = i;
-		desc->entry[i].bus.csi2.vc = i;
-		desc->entry[i].bus.csi2.dt = isx031_mbus_code_to_mipi(isx031->cur_mode->code);
-#endif
 	}
 
 	return 0;
 }
+#endif
 
 static int isx031_set_format(struct v4l2_subdev *sd,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
@@ -810,8 +843,11 @@ static int isx031_probe(struct i2c_client *client)
 	}
 
 	if (isx031->platform_data && isx031->platform_data->suffix)
-		snprintf(isx031->sd.name, sizeof(isx031->sd.name), "isx031 %c",
+		snprintf(isx031->sd.name, sizeof(isx031->sd.name), "isx031 %s",
 			 isx031->platform_data->suffix);
+
+	if (isx031->platform_data && isx031->platform_data->lanes)
+		isx031->lanes = isx031->platform_data->lanes;
 
 	mutex_init(&isx031->mutex);
 
