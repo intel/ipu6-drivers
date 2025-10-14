@@ -503,10 +503,19 @@ static int isx031_start_streaming(struct isx031 *isx031)
 	}
 
 	/* Drive FSIN GPIO high to enable frame sync */
-	if (isx031->fsin_gpio){
-		gpiod_set_value_cansleep(isx031->fsin_gpio, 0);
-		usleep_range(300000, 500000);
-		gpiod_set_value_cansleep(isx031->fsin_gpio, 1);
+	if (isx031->fsin_gpio != NULL){
+		int fsin_count = 0;
+		int fsin_ret;
+
+		do {
+			gpiod_set_value_cansleep(isx031->fsin_gpio, 1);
+			fsin_ret = gpiod_get_value_cansleep(isx031->fsin_gpio);
+			usleep_range(10000, 10500);
+			if(++fsin_count >= 5) {
+				dev_err(&client->dev, "%s: failed to set FSIN GPIO high, gpiop value is %d\n", __func__, fsin_ret);
+				break;
+			}
+		} while (fsin_ret != 1);
 	} else {
 		dev_warn(&client->dev, "FSIN GPIO not available during streaming start\n");
 	}
@@ -521,10 +530,19 @@ static void isx031_stop_streaming(struct isx031 *isx031)
 		dev_err(&client->dev, "failed to stop streaming");
 
 	/* Drive FSIN GPIO low to disable frame sync */
-	if (isx031->fsin_gpio){
-		gpiod_set_value_cansleep(isx031->fsin_gpio, 1);
-		usleep_range(300000, 500000);
-		gpiod_set_value_cansleep(isx031->fsin_gpio, 0);
+	if (isx031->fsin_gpio != NULL){
+		int fsin_count = 0;
+		int fsin_ret;
+
+		do {
+			gpiod_set_value_cansleep(isx031->fsin_gpio, 0);
+			fsin_ret = gpiod_get_value_cansleep(isx031->fsin_gpio);
+			usleep_range(10000, 10500);
+			if(++fsin_count >= 5) {
+				dev_err(&client->dev, "%s: failed to set FSIN GPIO low, gpiop value is %d\n", __func__, fsin_ret);
+				break;
+			}
+		} while (fsin_ret != 0);
 	} else {
 		dev_warn(&client->dev, "FSIN GPIO not available during streaming stop\n");
 	}
