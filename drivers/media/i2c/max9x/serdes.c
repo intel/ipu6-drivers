@@ -1859,7 +1859,7 @@ static int max9x_registered(struct v4l2_subdev *sd)
 						.table = {
 							GPIO_LOOKUP("", 0, "reset",
 								    GPIO_ACTIVE_LOW),
-							GPIO_LOOKUP("", 0, "fsin",
+							GPIO_LOOKUP("", 7, "fsin",
 									GPIO_ACTIVE_LOW),
 							{}
 						},
