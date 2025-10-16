@@ -1,0 +1,133 @@
+From 28bd818d525b517a63ef5cec3a2b2a179a8c91d2 Mon Sep 17 00:00:00 2001
+From: "Goh, Wei Khang1" <wei.khang1.goh@intel.com>
+Date: Thu, 16 Oct 2025 10:45:50 +0800
+Subject: [PATCH 2/3] media: isx031: ISX031 x2 lanes couldn't stream after
+ coming out of S4
+
+It seems that the sensor's registers are reset to it's default values
+only after exiting S4 state. Need to set the appropriate number of lanes
+to allow it to start streaming.
+
+Signed-off-by: Jonathan, Lui <jonathan.ming.jun.lui@intel.com>
+Signed-off-by: Goh, Wei Khang1 <wei.khang1.goh@intel.com>
+---
+ drivers/media/i2c/isx031.c | 63 +++++++++++++++++++++++++++++++++++---
+ 1 file changed, 59 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/media/i2c/isx031.c b/drivers/media/i2c/isx031.c
+index 8a6f60ccdacb..b5697c738597 100644
+--- a/drivers/media/i2c/isx031.c
++++ b/drivers/media/i2c/isx031.c
+@@ -411,6 +411,51 @@ static void isx031_update_pad_format(const struct isx031_mode *mode,
+ 	fmt->field = V4L2_FIELD_NONE;
+ }
+ 
++static int isx031_lane_sel(struct isx031 *isx031, struct device *dev)
++{
++	struct fwnode_handle *endpoint;
++	struct v4l2_fwnode_endpoint bus_cfg = {
++		.bus_type = V4L2_MBUS_CSI2_DPHY,
++	};
++
++	/* Setting default mode to 4 lanes */
++	int value = 0x17;
++	int ret;
++
++	endpoint =
++		fwnode_graph_get_endpoint_by_id(dev_fwnode(dev), 0, 0,
++						FWNODE_GRAPH_ENDPOINT_NEXT);
++	if (!endpoint) {
++		dev_err(dev, "endpoint node not found");
++		return -EPROBE_DEFER;
++	}
++
++	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &bus_cfg);
++	if (ret) {
++		dev_err(dev, "parsing endpoint node failed");
++		goto out_err;
++	}
++
++	/* Check the number of MIPI CSI2 data lanes */
++	if (bus_cfg.bus.mipi_csi2.num_data_lanes != 2 &&
++	    bus_cfg.bus.mipi_csi2.num_data_lanes != 4) {
++		dev_err(dev, "only 2 or 4 data lanes are currently supported");
++		goto out_err;
++	}
++
++	if (2 == bus_cfg.bus.mipi_csi2.num_data_lanes) {
++		value = 0x18;
++	}
++
++	ret = isx031_write_reg(isx031, 0x8A00, ISX031_REG_LEN_08BIT,
++			value);
++
++out_err:
++	v4l2_fwnode_endpoint_free(&bus_cfg);
++	fwnode_handle_put(endpoint);
++	return ret;
++}
++
+ static int isx031_start_streaming(struct isx031 *isx031)
+ {
+ 	int ret;
+@@ -513,10 +558,9 @@ static int __maybe_unused isx031_suspend(struct device *dev)
+ 	if (isx031->streaming)
+ 		isx031_stop_streaming(isx031);
+ 
+-	mutex_unlock(&isx031->mutex);
+-
+ 	/* Active low gpio reset, set 1 to power off sensor */
+ 	gpiod_set_value_cansleep(isx031->reset_gpio, 1);
++	mutex_unlock(&isx031->mutex);
+ 
+ 	return 0;
+ }
+@@ -539,10 +583,11 @@ static int __maybe_unused isx031_resume(struct device *dev)
+ 			ret = gpiod_get_value_cansleep(isx031->reset_gpio);
+ 			usleep_range(200 * 1000, 200 * 1000 + 500);
+ 
+-			if (++count >= 5) {
++			if (++count >= 10) {
+ 				dev_err(&client->dev, "%s: failed to power on reset gpio, reset gpio is %d", __func__, ret);
+ 				break;
+ 			}
++
+ 		} while (ret != 0);
+ 	}
+ 
+@@ -570,6 +615,9 @@ static int __maybe_unused isx031_resume(struct device *dev)
+ 		}
+ 	}
+ 
++	ret = isx031_lane_sel(isx031, &client->dev);
++	if (ret)
++		dev_err(&client->dev, "isx031 mode select failed");
+ 	mutex_unlock(&isx031->mutex);
+ 
+ 	return 0;
+@@ -832,7 +880,7 @@ static int isx031_probe(struct i2c_client *client)
+ 	else if (isx031->reset_gpio == NULL)
+ 		dev_warn(&client->dev, "Reset GPIO not found");
+ 	else
+-		dev_dbg(&client->dev, "Found reset GPIO");
++		dev_info(&client->dev, "Reset GPIO found");
+ 
+ 	info = device_get_match_data(&client->dev);
+ 	if (info)
+@@ -893,6 +941,13 @@ static int isx031_probe(struct i2c_client *client)
+ 		dev_err(&client->dev, "failed to apply preset mode");
+ 		goto probe_error_media_entity_cleanup;
+ 	}
++
++	ret = isx031_lane_sel(isx031, &client->dev);
++	if (ret) {
++		dev_err(&client->dev, "failed to set mode because %d", ret);
++		goto probe_error_media_entity_cleanup;
++	}
++
+ 	isx031->cur_mode = isx031->pre_mode;
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
+ 	ret = v4l2_async_register_subdev_sensor_common(&isx031->sd);
+-- 
+2.17.1
+

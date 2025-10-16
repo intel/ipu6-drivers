@@ -1,0 +1,33 @@
+From 178efcff638845e471d7366f638fecdab8326325 Mon Sep 17 00:00:00 2001
+From: "Goh, Wei Khang1" <wei.khang1.goh@intel.com>
+Date: Thu, 16 Oct 2025 10:52:32 +0800
+Subject: [PATCH 3/3] media: isx031: pm_runtime_get_sync() returns "Permission
+ Denied"
+
+This happened because pm_runtime_disable() is called in the probe
+function before it is even enabled. This causes a negative count.
+Since pm_runtime_enable() is only called for a successful probe,
+pm_runtime_disable() is removed from the error handling path in the
+probe function.
+
+Signed-off-by: Jonathan, Lui <jonathan.ming.jun.lui@intel.com>
+Signed-off-by: Goh, Wei Khang1 <wei.khang1.goh@intel.com>
+---
+ drivers/media/i2c/isx031.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/media/i2c/isx031.c b/drivers/media/i2c/isx031.c
+index b5697c738597..42c1c0110253 100644
+--- a/drivers/media/i2c/isx031.c
++++ b/drivers/media/i2c/isx031.c
+@@ -972,7 +972,6 @@ static int isx031_probe(struct i2c_client *client)
+ 
+ probe_error_media_entity_cleanup:
+ 	media_entity_cleanup(&isx031->sd.entity);
+-	pm_runtime_disable(&client->dev);
+ 	mutex_destroy(&isx031->mutex);
+ 
+ probe_error_v4l2_ctrl_handler_free:
+-- 
+2.17.1
+

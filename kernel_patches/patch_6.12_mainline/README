@@ -60,6 +60,9 @@ build kernel driver with community kernel version 6.11 but not iot kernel
        git am 0056-media-i2c-add-support-for-isx031-max9296.patch
        git am 0057-fix-S4-issue-on-TWL.patch
        git am 0058-code-changes-for-link-frequency-and-sensor-physical-.patch
+       git am 0059-media-isx031-Add-support-on-ISX031-MIPI-CSI.patch
+       git am 0060-media-isx031-ISX031-x2-lanes-couldn-t-stream-after-c.patch
+       git am 0061-media-isx031-pm_runtime_get_sync-returns-Permission-.patch
        /*  end   */
 
     c. for USB device need to apply below 2 patches, they are merged to kernel 6.13.
