@@ -1008,7 +1008,6 @@ static int isx031_probe(struct i2c_client *client)
 
 probe_error_media_entity_cleanup:
 	media_entity_cleanup(&isx031->sd.entity);
-	pm_runtime_disable(&client->dev);
 	mutex_destroy(&isx031->mutex);
 
 probe_error_v4l2_ctrl_handler_free:
