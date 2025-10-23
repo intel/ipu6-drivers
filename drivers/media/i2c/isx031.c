@@ -34,6 +34,10 @@
 #define ISX031_REG_MODE_SET_F_LOCK	0xBEF0
 #define ISX031_MODE_UNLOCK		0x53
 
+struct isx031_info {
+	bool is_direct;
+};
+
 #define ISX031_REG_MODE_SELECT		0x8A00
 #define ISX031_MODE_4LANES_60FPS	0x01
 #define ISX031_MODE_4LANES_30FPS	0x17
@@ -102,7 +106,7 @@ struct isx031 {
 	const struct isx031_mode *pre_mode;
 	u8 lanes;
 
-	/* To serialize asynchronus callbacks */
+	/* To serialize asynchronous callbacks */
 	struct mutex mutex;
 
 	/* i2c client */
@@ -113,6 +117,15 @@ struct isx031 {
 
 	/* Streaming on/off */
 	bool streaming;
+
+	struct v4l2_ctrl_handler ctrls;
+
+	/* MIPI direct connection */
+	bool is_direct;
+};
+
+static const s64 isx031_link_frequencies[] = {
+	300000000ULL
 };
 
 static const struct isx031_reg isx031_init_reg[] = {
@@ -124,7 +137,7 @@ static const struct isx031_reg isx031_init_reg[] = {
 static const struct isx031_reg isx031_framesync_reg[] = {
 	/* External sync */
 	{ISX031_REG_LEN_08BIT, 0xBF14, 0x01}, /* SG_MODE_APL */
-	{ISX031_REG_LEN_08BIT, 0x8AFF, 0x0c}, /*  Hi-Z (input setting or output disabled) */
+	{ISX031_REG_LEN_08BIT, 0x8AFF, 0x0c}, /* Hi-Z (input setting or output disabled) */
 	{ISX031_REG_LEN_08BIT, 0x0153, 0x00},
 	{ISX031_REG_LEN_08BIT, 0x8AF0, 0x01}, /* external pulse-based sync */
 	{ISX031_REG_LEN_08BIT, 0x0144, 0x00},
@@ -256,20 +269,6 @@ static const struct isx031_mode supported_modes[] = {
 	},
 };
 
-static int isx031_reset(struct gpio_desc *reset_gpio)
-{
-	if (!IS_ERR_OR_NULL(reset_gpio)) {
-		gpiod_set_value_cansleep(reset_gpio, 0);
-		usleep_range(500, 1000);
-		gpiod_set_value_cansleep(reset_gpio, 1);
-		/*Needs to sleep for quite a while before register writes*/
-		usleep_range(200 * 1000, 200 * 1000 + 500);
-
-		return 0;
-	}
-
-	return -EINVAL;
-}
 
 static int isx031_read_reg(struct isx031 *isx031, u16 reg, u16 len, u32 *val)
 {
@@ -394,7 +393,10 @@ static int isx031_mode_transit(struct isx031 *isx031, int state)
 	}
 	cur_mode = val;
 
-	//TODO: only set if isx031->lanes != 0, means get lanes from pdata
+	/* Note: Ideally, driver mode should only be set if isx031->lanes != 0,
+	 * which would mean the number of lanes is obtained from platform data.
+	 * Currently, driver mode is always set.
+	 */
 	ret = isx031_set_driver_mode(isx031);
 	if (ret) {
 		dev_err(&client->dev, "failed to set driver mode");
@@ -495,6 +497,14 @@ static int isx031_start_streaming(struct isx031 *isx031)
 		dev_dbg(&client->dev, "same mode, skip write reg list");
 	}
 
+	if (isx031->is_direct) {
+		ret = __v4l2_ctrl_handler_setup(&isx031->ctrls);
+		if (ret) {
+			dev_err(&client->dev, "failed to setup ctrls");
+			return ret;
+		}
+	}
+
 	ret = isx031_mode_transit(isx031, ISX031_STATE_STREAMING);
 	if (ret) {
 		dev_err(&client->dev, "failed to start streaming");
@@ -573,6 +583,9 @@ static int __maybe_unused isx031_suspend(struct device *dev)
 
 	mutex_unlock(&isx031->mutex);
 
+	/* Active low gpio reset, set 1 to power off sensor */
+	gpiod_set_value_cansleep(isx031->reset_gpio, 1);
+
 	return 0;
 }
 
@@ -584,8 +597,23 @@ static int __maybe_unused isx031_resume(struct device *dev)
 	const struct isx031_reg_list *reg_list;
 	int ret;
 
-	if (isx031->reset_gpio != NULL)
-		isx031_reset(isx031->reset_gpio);
+	int count = 0;
+
+	/* Active low gpio reset, set 0 to power on sensor,
+	 * sensor must on back before start resume
+	 */
+	if (isx031->reset_gpio != NULL) {
+		do {
+			gpiod_set_value_cansleep(isx031->reset_gpio, 0);
+			ret = gpiod_get_value_cansleep(isx031->reset_gpio);
+			usleep_range(200 * 1000, 200 * 1000 + 500);
+
+			if (++count >= 5) {
+				dev_err(&client->dev, "%s: failed to power on reset gpio, reset gpio is %d", __func__, ret);
+				break;
+			}
+		} while (ret != 0);
+	}
 
 	ret = isx031_identify_module(isx031);
 	if (ret == 0) {
@@ -769,6 +797,35 @@ static const struct v4l2_subdev_internal_ops isx031_internal_ops = {
 	.open = isx031_open,
 };
 
+static int isx031_set_ctrl(struct v4l2_ctrl *ctrl)
+{
+	return 0;
+};
+
+static const struct v4l2_ctrl_ops isx031_ctrl_ops = {
+	.s_ctrl = isx031_set_ctrl,
+};
+
+static int isx031_ctrls_init(struct isx031 *sensor)
+{
+	int ret = 0;
+	struct v4l2_ctrl *ctrl;
+
+	v4l2_ctrl_handler_init(&sensor->ctrls, 10);
+
+	/* There's a need to set the link frequency because IPU6 dictates it. */
+	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrls, &isx031_ctrl_ops,
+				      V4L2_CID_LINK_FREQ,
+				      ARRAY_SIZE(isx031_link_frequencies) - 1, 0,
+				      isx031_link_frequencies);
+
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	sensor->sd.ctrl_handler = &sensor->ctrls;
+	return ret;
+}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 static int isx031_remove(struct i2c_client *client)
 #else
@@ -792,6 +849,7 @@ static int isx031_probe(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd;
 	struct isx031 *isx031;
+	const struct isx031_info *info;
 	const struct isx031_reg_list *reg_list;
 	int ret;
 
@@ -805,19 +863,31 @@ static int isx031_probe(struct i2c_client *client)
 		dev_warn(&client->dev, "no platform data provided\n");
 
 	isx031->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
+
 	if (IS_ERR(isx031->reset_gpio))
 		return -EPROBE_DEFER;
 	else if (isx031->reset_gpio == NULL)
 		dev_warn(&client->dev, "Reset GPIO not found");
-	else {
+	else
 		dev_dbg(&client->dev, "Found reset GPIO");
-		isx031_reset(isx031->reset_gpio);
-	}
+
+	info = device_get_match_data(&client->dev);
+	if (info)
+		isx031->is_direct = info->is_direct;
+	else
+		isx031->is_direct = false;
 
 	/* initialize subdevice */
 	sd = &isx031->sd;
 	v4l2_i2c_subdev_init(sd, client, &isx031_subdev_ops);
+	if (isx031->is_direct) {
+		ret = isx031_ctrls_init(isx031);
+		if (ret) {
+			dev_err(&client->dev, "failed to init sensor ctrls: %d", ret);
+			return ret;
+		}
+	}
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
 #else
@@ -831,9 +901,13 @@ static int isx031_probe(struct i2c_client *client)
 	isx031->pad.flags = MEDIA_PAD_FL_SOURCE;
 	ret = media_entity_pads_init(&sd->entity, 1, &isx031->pad);
 	if (ret < 0) {
-		dev_err(&client->dev,
-			"%s : media entity init Failed %d\n", __func__, ret);
-		return ret;
+		dev_err(&client->dev, "failed to init entity pads: %d", ret);
+		goto probe_error_v4l2_ctrl_handler_free;
+	}
+
+	if (isx031->is_direct) {
+		isx031->sd.state_lock = isx031->sd.ctrl_handler->lock;
+		v4l2_subdev_init_finalize(&isx031->sd);
 	}
 
 	ret = isx031_identify_module(isx031);
@@ -842,11 +916,11 @@ static int isx031_probe(struct i2c_client *client)
 		return ret;
 	}
 
-	if (isx031->platform_data && isx031->platform_data->suffix)
+	if (isx031->platform_data)
 		snprintf(isx031->sd.name, sizeof(isx031->sd.name), "isx031 %s",
 			 isx031->platform_data->suffix);
 
-	if (isx031->platform_data && isx031->platform_data->lanes)
+	if (isx031->platform_data)
 		isx031->lanes = isx031->platform_data->lanes;
 
 	mutex_init(&isx031->mutex);
@@ -887,6 +961,9 @@ probe_error_media_entity_cleanup:
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&isx031->mutex);
 
+probe_error_v4l2_ctrl_handler_free:
+	v4l2_ctrl_handler_free(isx031->sd.ctrl_handler);
+
 	return ret;
 }
 
@@ -896,13 +973,25 @@ static const struct dev_pm_ops isx031_pm_ops = {
 
 static const struct i2c_device_id isx031_id_table[] = {
 	{ "isx031", 0 },
-	{ /* sentinel */ },
+	{}
 };
 MODULE_DEVICE_TABLE(i2c, isx031_id_table);
+
+static const struct isx031_info isx031_mipi_info = {
+    .is_direct = true,
+};
+
+static const struct acpi_device_id isx031_acpi_ids[] = {
+	{ "INTC3031", (kernel_ulong_t)&isx031_mipi_info },
+	{}
+};
+
+MODULE_DEVICE_TABLE(acpi, isx031_acpi_ids);
 
 static struct i2c_driver isx031_i2c_driver = {
 	.driver = {
 		.name = "isx031",
+		.acpi_match_table = ACPI_PTR(isx031_acpi_ids),
 		.pm = &isx031_pm_ops,
 	},
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
@@ -916,6 +1005,8 @@ static struct i2c_driver isx031_i2c_driver = {
 
 module_i2c_driver(isx031_i2c_driver);
 
-MODULE_AUTHOR("Hao Yao <hao.yao@intel.com>");
 MODULE_DESCRIPTION("isx031 sensor driver");
+MODULE_AUTHOR("Hao Yao <hao.yao@intel.com>");
+MODULE_AUTHOR("Jonathan Lui <jonathan.ming.jun.lui@intel.com>");
+MODULE_AUTHOR("Wei Khang, Goh <wei.khang1.goh@intel.com>");
 MODULE_LICENSE("GPL v2");

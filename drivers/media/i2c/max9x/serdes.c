@@ -1858,7 +1858,7 @@ static int max9x_registered(struct v4l2_subdev *sd)
 						.dev_id = "",
 						.table = {
 							GPIO_LOOKUP("", 0, "reset",
-								    GPIO_ACTIVE_HIGH),
+								    GPIO_ACTIVE_LOW),
 							{}
 						},
 					};
