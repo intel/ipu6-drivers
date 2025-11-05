@@ -44,7 +44,7 @@
 #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU6)
 #include "ipu6-isys.h"
 #endif
-#include <media/ipu-acpi-pdata.h>
+#include "ipu-acpi-pdata.h"
 #include "max9x_pdata.h"
 
 #define MAX9X_VDD_REGULATOR_NAME "vdd"

@@ -46,8 +46,11 @@ struct serdes_platform_data {
 	unsigned int FPD_gpio;
 	char suffix;
 	unsigned int link_freq_mbps;
+	enum v4l2_mbus_type bus_type;
 	unsigned int deser_nlanes;
 	unsigned int ser_nlanes;
+	unsigned int des_port;
+	char ser_name[I2C_NAME_SIZE];
 	struct i2c_board_info *deser_board_info;
 };
 
@@ -58,6 +61,8 @@ struct serdes_subdev_info {
 	unsigned short phy_i2c_addr;
 	unsigned short ser_alias;
 	char suffix[5]; /* suffix for subdevs */
+	unsigned short ser_phys_addr;
+	unsigned int sensor_dt;
 };
 
 struct serdes_module_pdata {
