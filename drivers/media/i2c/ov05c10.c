@@ -88,21 +88,16 @@ struct ov05c10_mode {
 
 static const struct cci_reg_sequence ov05c10_soft_standby[] = {
 	{ REG_PAGE_FLAG, PAGE_0 },
-	{ CCI_REG8(0x20), 0x5b },
+	{ CCI_REG8(0xa0), 0x00 },
 	{ REG_PAGE_FLAG, PAGE_1 },
-	{ CCI_REG8(0x33), 0x02 },
-	{ CCI_REG8(0x01), 0x02 },
 	{ CCI_REG8(0x01), 0x02 },
 };
 
 static const struct cci_reg_sequence ov05c10_streaming[] = {
-	{ REG_PAGE_FLAG, PAGE_1 },
-	{ CCI_REG8(0x33), 0x03 },
-	{ CCI_REG8(0x01), 0x02 },
-	{ CCI_REG8(0x01), 0x02 },
-	{ CCI_REG8(0x01), 0x02 },
 	{ REG_PAGE_FLAG, PAGE_0 },
-	{ CCI_REG8(0x20), 0x1f },
+	{ CCI_REG8(0xa0), 0x01 },
+	{ REG_PAGE_FLAG, PAGE_1 },
+	{ CCI_REG8(0x01), 0x02 },
 };
 
 static const struct cci_reg_sequence ov05c10_test_enable[] = {
@@ -264,7 +259,13 @@ static const struct cci_reg_sequence mode_2800_1576_30fps[] = {
 	{ CCI_REG8(0xb6), 0x20 },
 	{ CCI_REG8(0xbb), 0x80 },
 	{ CCI_REG8(0xfd), 0x00 },
-	{ CCI_REG8(0xa0), 0x01 }, //enable MIPI
+	{ CCI_REG8(0xa0), 0x00 }, //disable MIPI
+	{ CCI_REG8(0xfd), 0x01 },
+	{ CCI_REG8(0x33), 0x03 },
+	{ CCI_REG8(0x01), 0x02 },
+	{ CCI_REG8(0xfd), 0x00 },
+	{ CCI_REG8(0x20), 0x1f },
+	{ CCI_REG8(0xfd), 0x01 },
 };
 
 static const struct ov05c10_mode supported_modes[] = {
