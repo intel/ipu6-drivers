@@ -124,7 +124,7 @@ struct ov01a1s_mode {
 static const struct ov01a1s_reg mipi_data_rate_720mbps[] = {
 };
 
-static const struct ov01a1s_reg sensor_1296x800_setting[] = {
+static const struct ov01a1s_reg sensor_1288x800_setting[] = {
 	{0x0103, 0x01},
 	{0x0302, 0x00},
 	{0x0303, 0x06},
@@ -198,22 +198,22 @@ static const struct ov01a1s_reg sensor_1296x800_setting[] = {
 	{0x3806, 0x03},
 	{0x3807, 0x2f},
 	{0x3808, 0x05},
-	{0x3809, 0x00},
+	{0x3809, 0x08},
 	{0x380a, 0x03},
-	{0x380b, 0x1e},
+	{0x380b, 0x20},
 	{0x380c, 0x05},
 	{0x380d, 0xd0},
 	{0x380e, 0x03},
 	{0x380f, 0x80},
 	{0x3810, 0x00},
-	{0x3811, 0x09},
+	{0x3811, 0x08},
 	{0x3812, 0x00},
-	{0x3813, 0x08},
+	{0x3813, 0x09},
 	{0x3814, 0x01},
 	{0x3815, 0x01},
 	{0x3816, 0x01},
 	{0x3817, 0x01},
-	{0x3820, 0xa8},
+	{0x3820, 0x88},
 	{0x3822, 0x03},
 	{0x3832, 0x28},
 	{0x3833, 0x10},
@@ -256,15 +256,6 @@ static const struct ov01a1s_reg sensor_1296x800_setting[] = {
 	{0x4837, 0x14},
 	{0x0305, 0xf4},
 	{0x0325, 0xc2},
-	{0x3808, 0x05},
-	{0x3809, 0x10},
-	{0x380a, 0x03},
-	{0x380b, 0x1e},
-	{0x3810, 0x00},
-	{0x3811, 0x00},
-	{0x3812, 0x00},
-	{0x3813, 0x09},
-	{0x3820, 0x88},
 	{0x373d, 0x24},
 };
 
@@ -291,14 +282,14 @@ static const struct ov01a1s_link_freq_config link_freq_configs[] = {
 
 static const struct ov01a1s_mode supported_modes[] = {
 	{
-		.width = 1296,
-		.height = 798,
+		.width = 1288,
+		.height = 800,
 		.hts = 1488,
 		.vts_def = OV01A1S_VTS_DEF,
 		.vts_min = OV01A1S_VTS_MIN,
 		.reg_list = {
-			.num_of_regs = ARRAY_SIZE(sensor_1296x800_setting),
-			.regs = sensor_1296x800_setting,
+			.num_of_regs = ARRAY_SIZE(sensor_1288x800_setting),
+			.regs = sensor_1288x800_setting,
 		},
 		.link_freq_index = OV01A1S_LINK_FREQ_400MHZ_INDEX,
 	},
