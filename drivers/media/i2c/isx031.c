@@ -114,6 +114,7 @@ struct isx031 {
 
 	struct isx031_platform_data *platform_data;
 	struct gpio_desc *reset_gpio;
+	struct gpio_desc *fsin_gpio;
 
 	/* Streaming on/off */
 	bool streaming;
@@ -904,7 +905,8 @@ static int isx031_probe(struct i2c_client *client)
 
 	isx031->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
 						     GPIOD_OUT_LOW);
-
+	isx031->fsin_gpio = devm_gpiod_get_optional(&client->dev, "fsin",
+						     GPIOD_OUT_LOW);
 	if (IS_ERR(isx031->reset_gpio))
 		return -EPROBE_DEFER;
 	else if (isx031->reset_gpio == NULL)
