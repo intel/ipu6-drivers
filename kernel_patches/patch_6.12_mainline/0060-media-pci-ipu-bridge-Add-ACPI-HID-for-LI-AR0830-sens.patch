@@ -1,0 +1,34 @@
+From 04cccad4653445755a4b9e64043be38bf7a3a261 Mon Sep 17 00:00:00 2001
+From: Izzul Irfan <muhammadx.izzul.irfan.bin.che.iswanizam@intel.com>
+Date: Wed, 17 Dec 2025 19:07:57 +0800
+Subject: [PATCH 2/4] media: pci: ipu-bridge: Add ACPI HID for LI AR0830 sensor
+
+Register the ACPI Hardware ID (HID) "LIAR0830"
+for the LI AR0830 image sensor in the IPU bridge driver.
+
+Extend the ipu_supported_sensors array to include the LI AR0830 sensor
+with its corresponding HID and configuration.
+This enables proper detection and initialization of the AR0830 sensor via ACPI,
+supporting platforms that use this sensor.
+
+Signed-off-by: Jonathan, Lui <jonathan.ming.jun.lui@intel.com>
+---
+ drivers/media/pci/intel/ipu-bridge.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index 4e4f86a1f0b8..23c2aa5b840d 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -91,6 +91,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("INTC10C5", 0),
+ 	/* Lontium lt6911uxc */
+ 	IPU_SENSOR_CONFIG("INTC10B1", 0),
++	/* LI AR0830 */
++	IPU_SENSOR_CONFIG("LIAR0830", 1, 600000000),
+ };
+ 
+ static const struct ipu_sensor_config ipu_supported_sensors_dummy[] = {
+-- 
+2.34.1
+

@@ -1,0 +1,47 @@
+From 66921d91a43ad925ab24b011499ae8392ddfe6cb Mon Sep 17 00:00:00 2001
+From: Izzul Irfan <muhammadx.izzul.irfan.bin.che.iswanizam@intel.com>
+Date: Thu, 18 Dec 2025 16:04:21 +0800
+Subject: [PATCH 1/4] media: platform: intel: Add AR0820 sensor support to IPU
+ ACPI device table
+
+Register the AR0820 sensor in the supported_devices array
+when CONFIG_VIDEO_AR0820 is enabled.
+Add the AR0820 ACPI HID to the ipu_acpi_match table
+for proper device detection.
+Enables platform integration and detection of
+the SENSING AR0820 sensor via ACPI.
+
+Signed-off-by: Tay, Boon Wooi <boonx.wooi.tay@intel.com>
+---
+ drivers/media/platform/intel/ipu-acpi.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/media/platform/intel/ipu-acpi.c b/drivers/media/platform/intel/ipu-acpi.c
+index 8b94dc307735..cc0228d78c8c 100644
+--- a/drivers/media/platform/intel/ipu-acpi.c
++++ b/drivers/media/platform/intel/ipu-acpi.c
+@@ -63,6 +63,10 @@ static const struct ipu_acpi_devices supported_devices[] = {
+ 	{ "INTC031M", ISX031_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, "max9x",
+ 		ISX031_I2C_ADDRESS, 1600 },	// D3 ISX031 HID
+ #endif
++#if IS_ENABLED(CONFIG_VIDEO_AR0820)
++	{ "AR0820", AR0820_NAME, get_sensor_pdata, NULL, 0, TYPE_SERDES, "max9296",
++		AR0820_I2C_ADDRESS, 1600 },     // SENSING AR0820 HID
++#endif
+ #endif
+ };
+ 
+@@ -89,6 +93,10 @@ static const struct acpi_device_id ipu_acpi_match[] = {
+ 	{ "INTC1031", 0 },	// ISX031 HID
+ 	{ "INTC031M", 0 },	// D3CMC68N-115-084 ISX031 HID
+ #endif
++#if IS_ENABLED(CONFIG_VIDEO_AR0820)
++	{ "AR0820", 0 },      // AR0820 HID
++#endif
++
+ 	{},
+ };
+ 
+-- 
+2.34.1
+

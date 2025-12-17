@@ -1,0 +1,35 @@
+From 1201bdb7c4c261faa6bdd2b03fec0e2d17327066 Mon Sep 17 00:00:00 2001
+From: Izzul Irfan <muhammadx.izzul.irfan.bin.che.iswanizam@intel.com>
+Date: Wed, 17 Dec 2025 19:16:40 +0800
+Subject: [PATCH 3/4] media: pci: ipu-bridge: Add ACPI ID for ISX031 sensor
+
+Register the ACPI Hardware ID (HID) "INTC113C"
+for the ISX031 sensor in the IPU bridge driver.
+
+Extend the ipu_supported_sensors array to include the ISX031 sensor
+with its corresponding configuration (300 MHz).
+This enables proper detection and initialization of the ISX031 sensor via ACPI,
+supporting platforms that use this sensor.
+
+Signed-off-by: Yew, Chang Ching <chang.ching.yew@intel.com>
+Signed-off-by: Goh, Wei Khang1 <wei.khang1.goh@intel.com>
+---
+ drivers/media/pci/intel/ipu-bridge.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index 23c2aa5b840d..1830d46da575 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -93,6 +93,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("INTC10B1", 0),
+ 	/* LI AR0830 */
+ 	IPU_SENSOR_CONFIG("LIAR0830", 1, 600000000),
++	/* ISX031 */
++	IPU_SENSOR_CONFIG("INTC113C", 1, 300000000),
+ };
+ 
+ static const struct ipu_sensor_config ipu_supported_sensors_dummy[] = {
+-- 
+2.34.1
+

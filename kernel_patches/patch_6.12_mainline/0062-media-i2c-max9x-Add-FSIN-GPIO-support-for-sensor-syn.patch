@@ -1,0 +1,46 @@
+From 8ea780866a4d4ac9d220b5753197e15b77a3622e Mon Sep 17 00:00:00 2001
+From: Izzul Irfan <muhammadx.izzul.irfan.bin.che.iswanizam@intel.com>
+Date: Wed, 17 Dec 2025 19:01:11 +0800
+Subject: [PATCH 4/4] media: i2c: max9x: Add FSIN GPIO support for sensor
+ synchronization
+
+Introduce support for the FSIN (Frame Synchronization Input) GPIO
+in the MAX9x serdes driver.
+
+Add a new GPIO lookup entry for FSIN (GPIO 7) with active low polarity.
+Ensure the FSIN GPIO is registered with the correct chip label,
+similar to the reset GPIO.
+
+This enables external frame synchronization for image sensors,
+improving multi-sensor alignment and timing.
+
+Signed-off-by: Izzul Irfan <muhammadx.izzul.irfan.bin.che.iswanizam@intel.com>
+---
+ drivers/media/i2c/max9x/serdes.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/max9x/serdes.c b/drivers/media/i2c/max9x/serdes.c
+index f29949d96aa7..2f45401b8bf1 100644
+--- a/drivers/media/i2c/max9x/serdes.c
++++ b/drivers/media/i2c/max9x/serdes.c
+@@ -1655,13 +1655,16 @@ static int max9x_registered(struct v4l2_subdev *sd)
+ 						.dev_id = "",
+ 						.table = {
+ 							GPIO_LOOKUP("", 0, "reset",
+-								    GPIO_ACTIVE_HIGH),
++								    GPIO_ACTIVE_LOW),
++							GPIO_LOOKUP("", 7, "fsin",
++								    GPIO_ACTIVE_LOW),
+ 							{}
+ 						},
+ 					};
+ 
+ 					sensor_gpios.dev_id = dev_id;
+ 					sensor_gpios.table[0].key = common->gpio_chip.label;
++					sensor_gpios.table[1].key = common->gpio_chip.label;
+ 
+ 					gpiod_add_lookup_table(&sensor_gpios);
+ 
+-- 
+2.34.1
+
