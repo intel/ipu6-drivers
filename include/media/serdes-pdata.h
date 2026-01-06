@@ -8,6 +8,10 @@
 #include <media/i2c/isx031.h>
 #endif
 
+#if IS_ENABLED(CONFIG_VIDEO_AR0820)
+#include <media/i2c/ar0820.h>
+#endif
+
 struct serdes_subdev_info {
 	struct i2c_board_info board_info;
 	int i2c_adapter_id;
