@@ -1168,6 +1168,7 @@ static DEFINE_RUNTIME_DEV_PM_OPS(imx471_pm_ops, imx471_suspend, imx471_resume,
 
 static const struct acpi_device_id imx471_acpi_ids[] __maybe_unused = {
 	{ "SONY471A" },
+	{ "TBE20A0"  },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(acpi, imx471_acpi_ids);
