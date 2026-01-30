@@ -318,10 +318,13 @@ static void update_subdev(struct device *dev,
 	update_int(dev, "pdata lanes", &(old_pdata)->lanes, new_pdata->lanes);
 	update_hex(dev, "pdata I2C slave addr", &(old_pdata)->i2c_slave_address,
 		new_pdata->i2c_slave_address);
-	update_int(dev, "pdata irq_pin", &(old_pdata)->irq_pin, new_pdata->irq_pin);
+	if (new_pdata->irq_pin >= 0)
+		update_int(dev, "pdata irq_pin", (unsigned int *)&(old_pdata)->irq_pin, new_pdata->irq_pin);
 	update_str(dev, "pdata irq_pin_name", old_pdata->irq_pin_name, new_pdata->irq_pin_name);
-	update_int(dev, "pdata reset_pin", &(old_pdata)->reset_pin, new_pdata->reset_pin);
-	update_int(dev, "pdata detect_pin", &(old_pdata)->detect_pin, new_pdata->detect_pin);
+	if (new_pdata->reset_pin >= 0)
+		update_int(dev, "pdata reset_pin", (unsigned int *)&(old_pdata)->reset_pin, new_pdata->reset_pin);
+	if (new_pdata->detect_pin >= 0)
+		update_int(dev, "pdata detect_pin", (unsigned int *)&(old_pdata)->detect_pin, new_pdata->detect_pin);
 	update_inta(dev, "pdata gpios", old_pdata->gpios, new_pdata->gpios, IPU_SPDATA_GPIO_NUM);
 }
 
@@ -373,8 +376,10 @@ static void update_serdes_subdev(struct device *dev,
 			if (!strcmp(old_mpdata->module_name, new_mpdata->module_name)) {
 				update_int(dev, "mPdata lanes", &old_mpdata->lanes,
 					new_mpdata->lanes);
-				update_int(dev, "mPdata fsin", &old_mpdata->fsin,
-					new_mpdata->fsin);
+				if (new_mpdata->fsin >= 0)
+					update_int(dev, "mPdata fsin",
+						   (unsigned int *)&old_mpdata->fsin,
+						   new_mpdata->fsin);
 				update_inta(dev, "mPdata gpio_powerup_seq",
 						(int *)old_mpdata->gpio_powerup_seq,
 						(int *)new_mpdata->gpio_powerup_seq,
