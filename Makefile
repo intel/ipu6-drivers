@@ -46,6 +46,7 @@ export CONFIG_VIDEO_AR0234 = m
 # kernel version >= 6.12.15
 export CONFIG_VIDEO_ISX031=m
 export CONFIG_VIDEO_MAX9X=m
+export CONFIG_VIDEO_AR0820=m
 
 obj-y += drivers/media/i2c/
 
@@ -74,6 +75,9 @@ subdir-ccflags-$(CONFIG_INTEL_SKL_INT3472) += \
 
 subdir-ccflags-$(CONFIG_VIDEO_ISX031) += \
 	-DCONFIG_VIDEO_ISX031
+
+subdir-ccflags-$(CONFIG_VIDEO_AR0820) += \
+    -DCONFIG_VIDEO_AR0820
 
 subdir-ccflags-y += $(subdir-ccflags-m)
 
