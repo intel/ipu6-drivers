@@ -470,6 +470,7 @@ struct ov05c10 {
 	struct regulator *avdd;
 	struct regulator *dvdd;
 	struct gpio_desc *reset;
+	struct mutex mutex;
 };
 
 static int ov05c10_test_pattern(struct ov05c10 *ov05c10, u32 pattern)
