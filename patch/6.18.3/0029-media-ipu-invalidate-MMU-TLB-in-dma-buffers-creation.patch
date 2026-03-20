@@ -1,0 +1,35 @@
+From b742fdfc2135545c8de543145e7b4e523a9e887b Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Thu, 4 Dec 2025 10:15:14 +0800
+Subject: [PATCH 29/29] media: ipu: invalidate MMU TLB in dma buffers creation
+
+This patch ensures that the MMU TLB is properly invalidated during
+the creation and mapping of DMA buffers for IPU devices. Without
+explicit invalidation, stale or incorrect entries in the TLB can cause
+invalid memory access in hardware.
+
+Test Platform:
+ARLRVP
+TWLRVP
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-dma.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-dma.c b/drivers/media/pci/intel/ipu6/ipu6-dma.c
+index 7296373d36b0..80b70e036008 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-dma.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-dma.c
+@@ -206,6 +206,8 @@ void *ipu6_dma_alloc(struct ipu6_bus_device *sys, size_t size,
+ 		}
+ 	}
+ 
++	mmu->tlb_invalidate(mmu);
++
+ 	info->vaddr = vmap(pages, count, VM_USERMAP, PAGE_KERNEL);
+ 	if (!info->vaddr)
+ 		goto out_unmap;
+-- 
+2.43.0
+

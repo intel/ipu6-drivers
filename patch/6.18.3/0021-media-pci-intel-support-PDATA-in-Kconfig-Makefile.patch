@@ -1,0 +1,79 @@
+From 4c3cdbed174d25211505643de029157e7e5227c1 Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Mon, 13 Oct 2025 14:03:09 +0800
+Subject: [PATCH 21/29] media: pci: intel: support PDATA in Kconfig/Makefile
+
+support PDATA both in IPU6 Kconfig and platform
+Kconfig/Makefile
+
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+---
+ drivers/media/pci/intel/Kconfig       |  6 ++++++
+ drivers/media/platform/intel/Kconfig  | 19 +++++++++++++++++++
+ drivers/media/platform/intel/Makefile | 12 ++++++++++++
+ 3 files changed, 37 insertions(+)
+
+diff --git a/drivers/media/pci/intel/Kconfig b/drivers/media/pci/intel/Kconfig
+index d9fcddce028b..64b6ba30bdbc 100644
+--- a/drivers/media/pci/intel/Kconfig
++++ b/drivers/media/pci/intel/Kconfig
+@@ -19,3 +19,9 @@ config IPU_BRIDGE
+ 	  - Microsoft Surface models (except Surface Pro 3)
+ 	  - The Lenovo Miix line (for example the 510, 520, 710 and 720)
+ 	  - Dell 7285
++
++config VIDEO_INTEL_IPU_USE_PLATFORMDATA
++        bool "Enable platform data"
++        default y
++        help
++          Enalbe platform data in IPU.
+diff --git a/drivers/media/platform/intel/Kconfig b/drivers/media/platform/intel/Kconfig
+index 724e80a9086d..32747f824fa9 100644
+--- a/drivers/media/platform/intel/Kconfig
++++ b/drivers/media/platform/intel/Kconfig
+@@ -12,3 +12,22 @@ config VIDEO_PXA27x
+ 	select V4L2_FWNODE
+ 	help
+ 	  This is a v4l2 driver for the PXA27x Quick Capture Interface
++
++config INTEL_IPU6_ADLRVP_PDATA
++        bool "Enable built in platform data for ADL RVP"
++        depends on MEDIA_CAMERA_SUPPORT
++        help
++         Pre-ACPI system platform data is compiled inside kernel
++
++         This platform data is useful for software development before
++         the SOC system not ready.
++
++config INTEL_IPU_ACPI
++        tristate "Enable IPU ACPI driver"
++        depends on I2C
++        depends on ACPI
++        depends on INTEL_SKL_INT3472
++        help
++        Driver to read ACPI data from BIOS
++
++        This driver is used to read ACPI data from BIOS
+diff --git a/drivers/media/platform/intel/Makefile b/drivers/media/platform/intel/Makefile
+index 7e8889cbd2df..b661fabda699 100644
+--- a/drivers/media/platform/intel/Makefile
++++ b/drivers/media/platform/intel/Makefile
+@@ -1,2 +1,14 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ obj-$(CONFIG_VIDEO_PXA27x) += pxa_camera.o
++
++ifneq ($(filter y m, $(CONFIG_VIDEO_INTEL_IPU7)),)
++ccflags-y += -I$(src)/../../pci/intel/ipu7/
++endif
++
++ifneq ($(filter y m, $(CONFIG_VIDEO_INTEL_IPU6)),)
++ccflags-y += -I$(src)/../../pci/intel/ipu6/
++endif
++obj-$(CONFIG_INTEL_IPU6_ADLRVP_PDATA) += ipu6-adlrvp-pdata.o
++obj-$(CONFIG_INTEL_IPU_ACPI)         += ipu-acpi.o \
++                                         ipu-acpi-pdata.o \
++                                         ipu-acpi-common.o
+-- 
+2.43.0
+

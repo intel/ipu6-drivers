@@ -1,0 +1,114 @@
+From 3a380d6838799f8c3e1a97831ee8b052207efe18 Mon Sep 17 00:00:00 2001
+From: Yuling Liang <yuling.liang@intel.com>
+Date: Thu, 5 Feb 2026 14:52:41 +0800
+Subject: [PATCH 24/29] Apply IPU6 patch 0053: add missing #if for PDATA
+
+---
+ drivers/media/pci/intel/ipu6/ipu6-buttress.c | 5 ++++-
+ drivers/media/pci/intel/ipu6/ipu6-buttress.h | 2 ++
+ drivers/media/pci/intel/ipu6/ipu6-isys.c     | 8 ++++----
+ drivers/media/pci/intel/ipu6/ipu6-isys.h     | 7 ++++---
+ 4 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-buttress.c b/drivers/media/pci/intel/ipu6/ipu6-buttress.c
+index 9523cc612d7f..cc43b2dc0158 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-buttress.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-buttress.c
+@@ -21,8 +21,9 @@
+ #include <linux/scatterlist.h>
+ #include <linux/slab.h>
+ #include <linux/time64.h>
++#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ #include <linux/i2c.h>
+-
++#endif
+ #include "ipu6.h"
+ #include "ipu6-bus.h"
+ #include "ipu6-dma.h"
+@@ -775,6 +776,7 @@ int ipu6_buttress_start_tsc_sync(struct ipu6_device *isp)
+ }
+ EXPORT_SYMBOL_NS_GPL(ipu6_buttress_start_tsc_sync, "INTEL_IPU6");
+ 
++#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ /*
+  * The dev_id was hard code in platform data, as i2c bus number
+  * may change dynamiclly, we need to update this bus id
+@@ -815,6 +817,7 @@ int ipu6_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len)
+ 	return -1;
+ }
+ EXPORT_SYMBOL_NS_GPL(ipu6_get_i2c_bus_id, "INTEL_IPU6");
++#endif
+ 
+ void ipu6_buttress_tsc_read(struct ipu6_device *isp, u64 *val)
+ {
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-buttress.h b/drivers/media/pci/intel/ipu6/ipu6-buttress.h
+index 6fed522ffed2..d6884c75a8e2 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-buttress.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-buttress.h
+@@ -82,5 +82,7 @@ void ipu6_buttress_exit(struct ipu6_device *isp);
+ void ipu6_buttress_csi_port_config(struct ipu6_device *isp,
+ 				   u32 legacy, u32 combo);
+ void ipu6_buttress_restore(struct ipu6_device *isp);
++#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ int ipu6_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len);
++#endif
+ #endif /* IPU6_BUTTRESS_H */
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+index 6fb1bc7cace9..f934d78da184 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
+@@ -1146,16 +1146,16 @@ static int isys_register_devices(struct ipu6_isys *isys)
+ #else
+ 	isys_register_ext_subdevs(isys);
+ #endif
+-
++#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ 	ret = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
+ 	if (ret)
+ 		goto out_isys_unregister_ext_subdevs;
+-
++#endif
+ 	return 0;
+-
++#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ out_isys_unregister_ext_subdevs:
+ 	isys_unregister_ext_subdevs(isys);
+-
++#endif
+ out_isys_unregister_subdevices:
+ 	isys_csi2_unregister_subdevices(isys);
+ 
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.h b/drivers/media/pci/intel/ipu6/ipu6-isys.h
+index 22a3c73d220b..795e8bdc7c1f 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys.h
+@@ -10,8 +10,9 @@
+ #include <linux/pm_qos.h>
+ #include <linux/spinlock_types.h>
+ #include <linux/types.h>
++#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ #include <linux/clkdev.h>
+-
++#endif
+ #include <media/media-device.h>
+ #include <media/v4l2-async.h>
+ #include <media/v4l2-device.h>
+@@ -191,13 +192,13 @@ struct isys_fw_msgs {
+ 	struct list_head head;
+ 	dma_addr_t dma_addr;
+ };
+-
++#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+ struct ipu6_isys_subdev_i2c_info {
+ 	struct i2c_board_info board_info;
+ 	int i2c_adapter_id;
+ 	char i2c_adapter_bdf[32];
+ };
+-
++#endif
+ #if (IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
+ 	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)) \
+ 	|| IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
+-- 
+2.43.0
+
