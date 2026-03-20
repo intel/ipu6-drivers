@@ -643,7 +643,7 @@ static int set_serdes_subdev(struct ipu_isys_subdev_info **serdes_sd,
 		snprintf(serdes_sdinfo[i].suffix, sizeof(serdes_sdinfo[i].suffix), "%c-%d",
 			 SUFFIX_BASE + i, port);
 #if IS_ENABLED(CONFIG_VIDEO_ISX031)
-		serdes_sdinfo[i].ser_phys_addr = 0x40;
+		serdes_sdinfo[i].ser_phys_addr = 0x62;
 		serdes_sdinfo[i].sensor_dt = 0x1e;
 #endif
 	}
