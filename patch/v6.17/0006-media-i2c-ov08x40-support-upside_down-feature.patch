@@ -1,0 +1,103 @@
+From d553ebd410102edf5330c9dfd839fb4347bb5285 Mon Sep 17 00:00:00 2001
+From: Jimmy Su <jimmy.su@intel.com>
+Date: Tue, 24 Mar 2026 22:00:25 +0800
+Subject: [PATCH] media: i2c: ov08x40: support upside_down feature
+
+Some customer HW and mechanical design will cause image rotating issue.
+We add upside_down to support different design in the same sensor driver.
+
+Signed-off-by: Jimmy Su <jimmy.su@intel.com>
+
+diff --git a/drivers/media/i2c/ov08x40.c b/drivers/media/i2c/ov08x40.c
+index e0094305ca2a..92bb7331140f 100644
+--- a/drivers/media/i2c/ov08x40.c
++++ b/drivers/media/i2c/ov08x40.c
+@@ -1333,6 +1333,9 @@ struct ov08x40 {
+ 	bool identified;
+ 
+ 	unsigned long link_freq_bitmap;
++
++	/* Orientation of sensor */
++	bool upside_down;
+ };
+ 
+ #define to_ov08x40(_sd)	container_of(_sd, struct ov08x40, sd)
+@@ -1648,7 +1651,8 @@ static int ov08x40_set_ctrl_hflip(struct ov08x40 *ov08x, u32 ctrl_val)
+ 
+ 	return ov08x40_write_reg(ov08x, OV08X40_REG_MIRROR,
+ 				 OV08X40_REG_VALUE_08BIT,
+-				 ctrl_val ? val | BIT(2) : val & ~BIT(2));
++				 (ctrl_val ^ ov08x->upside_down) ?
++				 val | BIT(2) : val & ~BIT(2));
+ }
+ 
+ static int ov08x40_set_ctrl_vflip(struct ov08x40 *ov08x, u32 ctrl_val)
+@@ -1663,7 +1667,8 @@ static int ov08x40_set_ctrl_vflip(struct ov08x40 *ov08x, u32 ctrl_val)
+ 
+ 	return ov08x40_write_reg(ov08x, OV08X40_REG_VFLIP,
+ 				 OV08X40_REG_VALUE_08BIT,
+-				 ctrl_val ? val | BIT(2) : val & ~BIT(2));
++				 (ctrl_val ^ ov08x->upside_down) ?
++				 val | BIT(2) : val & ~BIT(2));
+ }
+ 
+ static int ov08x40_set_ctrl(struct v4l2_ctrl *ctrl)
+@@ -1915,6 +1920,7 @@ static int ov08x40_start_streaming(struct ov08x40 *ov08x)
+ 	struct i2c_client *client = v4l2_get_subdevdata(&ov08x->sd);
+ 	const struct ov08x40_reg_list *reg_list;
+ 	int ret, link_freq_index;
++	u32 val;
+ 
+ 	/* Get out of from software reset */
+ 	ret = ov08x40_write_reg(ov08x, OV08X40_REG_SOFTWARE_RST,
+@@ -1966,6 +1972,26 @@ static int ov08x40_start_streaming(struct ov08x40 *ov08x)
+ 		return ret;
+ 	}
+ 
++	/* Set physical orientation */
++	if (ov08x->upside_down) {
++		ret = ov08x40_read_reg(ov08x, OV08X40_REG_MIRROR,
++				       OV08X40_REG_VALUE_08BIT, &val);
++		if (ret)
++			return ret;
++
++		ov08x40_write_reg(ov08x, OV08X40_REG_MIRROR,
++				  OV08X40_REG_VALUE_08BIT, (val | BIT(2)));
++
++		ret = ov08x40_read_reg(ov08x, OV08X40_REG_VFLIP,
++				       OV08X40_REG_VALUE_08BIT, &val);
++
++		if (ret)
++			return ret;
++
++		ov08x40_write_reg(ov08x, OV08X40_REG_VFLIP,
++				  OV08X40_REG_VALUE_08BIT, (val | BIT(2)));
++	};
++
+ 	/* Apply customized values from user */
+ 	ret =  __v4l2_ctrl_handler_setup(ov08x->sd.ctrl_handler);
+ 	if (ret)
+@@ -2289,6 +2315,7 @@ static int ov08x40_probe(struct i2c_client *client)
+ {	struct ov08x40 *ov08x;
+ 	int ret;
+ 	bool full_power;
++	unsigned int rotation;
+ 
+ 	ov08x = devm_kzalloc(&client->dev, sizeof(*ov08x), GFP_KERNEL);
+ 	if (!ov08x)
+@@ -2316,6 +2343,12 @@ static int ov08x40_probe(struct i2c_client *client)
+ 			goto probe_power_off;
+ 	}
+ 
++	/* Indicate of physical rotation of sensor */
++	rotation = 0;
++	device_property_read_u32(&client->dev, "rotation", &rotation);
++	if (rotation == 180)
++		ov08x->upside_down = true;
++
+ 	/* Set default mode to max resolution */
+ 	ov08x->cur_mode = &supported_modes[0];
+ 
+-- 
+2.34.1
+
