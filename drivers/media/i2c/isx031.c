@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2022-2025 Intel Corporation.
+// Copyright (c) 2022-2026 Intel Corporation.
 
 #include <linux/acpi.h>
 #include <linux/delay.h>
+#include <linux/gpio.h>
 #include <linux/i2c.h>
+#include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
-#include <linux/gpio.h>
-#include <linux/interrupt.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
 #include <asm/unaligned.h>
 #else
 #include <linux/unaligned.h>
 #endif
-#include <media/v4l2-ctrls.h>
-#include <media/v4l2-device.h>
-#include <media/v4l2-fwnode.h>
-#include <media/i2c/isx031.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 #include <media/mipi-csi2.h>
 #endif
+#include <media/v4l2-ctrls.h>
+#include <media/v4l2-device.h>
+#include <media/v4l2-fwnode.h>
+#include "media/i2c/isx031.h"
 #define to_isx031(_sd)			container_of(_sd, struct isx031, sd)
 
 #define ISX031_OTP_TYPE_NAME_L		0x7E8A
@@ -43,6 +43,13 @@
 #define ISX031_MODE_4LANES_60FPS	0x01
 #define ISX031_MODE_4LANES_30FPS	0x17
 #define ISX031_MODE_2LANES_30FPS	0x18
+
+#define ISX031_READ_REG_RETRY_TIMEOUT	50
+#define ISX031_WRITE_REG_RETRY_TIMEOUT	100
+#define ISX031_PM_RETRY_TIMEOUT		10
+#define ISX031_REG_SLEEP_10000US	10000	/* 10ms */
+#define ISX031_REG_SLEEP_20MS		20	/* 20ms */
+#define ISX031_REG_SLEEP_200MS		200	/* 200ms */
 
 /* To serialize asynchronous callbacks */
 static DEFINE_MUTEX(isx031_mutex);
@@ -72,148 +79,133 @@ struct isx031_drive_mode {
 	int mode;
 };
 
-struct isx031_info {
-	bool is_direct;
-};
-
 static const struct isx031_drive_mode isx031_drive_modes[] = {
 	{ 4, 60, ISX031_MODE_4LANES_60FPS },
 	{ 4, 30, ISX031_MODE_4LANES_30FPS },
 	{ 2, 30, ISX031_MODE_2LANES_30FPS },
+	{ }
 };
 
 struct isx031_mode {
-	/* Frame width in pixels */
-	u32 width;
-
-	/* Frame height in pixels */
-	u32 height;
-
-	/* MEDIA_BUS_FMT */
-	u32 code;
-
+	u32 width;		/* Frame width in pixels */
+	u32 height;		/* Frame height in pixels */
+	u32 code;		/* MEDIA_BUS_FMT */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-	/* CSI-2 data type ID */
-	u8 datatype;
+	u8 datatype;		/* CSI-2 data type ID */
 #endif
+	u32 fps;		/* MODE_FPS */
 
-	/* MODE_FPS*/
-	u32 fps;
-
-	/* Sensor register settings for this resolution */
+	/* Sensor register settings for a specific resolution */
 	const struct isx031_reg_list reg_list;
 };
 
 struct isx031 {
 	struct v4l2_subdev sd;
-	struct media_pad pad;
-
-	/* Current mode */
-	const struct isx031_mode *cur_mode;
-	/* Previous mode */
-	const struct isx031_mode *pre_mode;
-	u8 lanes;
-
-	/* i2c client */
-	struct i2c_client *client;
-
-	struct isx031_platform_data *platform_data;
-	struct gpio_desc *reset_gpio;
-
-	/* Streaming on/off */
-	bool streaming;
-
 	struct v4l2_ctrl_handler ctrls;
 
-	/* MIPI direct connection */
-	bool is_direct;
+	struct sensor_platform_data *platform_data;
+	struct i2c_client *client;
+
+	struct gpio_desc *reset_gpio;
+	struct gpio_desc *fsin_gpio;
+	struct media_pad pad;
+
+	const struct isx031_mode *cur_mode;	/* Current mode */
+	const struct isx031_mode *pre_mode;	/* Previous mode */
+
+	u8 lanes;
+	bool streaming;		/* Streaming on/off */
 };
 
 static const s64 isx031_link_frequencies[] = {
-	300000000ULL
+	300000000ULL,
 };
 
 static const struct isx031_reg isx031_init_reg[] = {
-	{ISX031_REG_LEN_08BIT, 0xFFFF, 0x00}, // select mode
-	{ISX031_REG_LEN_08BIT, 0x0171, 0x00}, // close F_EBD
-	{ISX031_REG_LEN_08BIT, 0x0172, 0x00}, // close R_EBD
+	{ ISX031_REG_LEN_08BIT, 0xFFFF, 0x00 },	/* Select mode */
+	{ ISX031_REG_LEN_08BIT, 0x0171, 0x00 },	/* Close F_EBD */
+	{ ISX031_REG_LEN_08BIT, 0x0172, 0x00 },	/* Close R_EBD */
+	{ }
 };
 
 static const struct isx031_reg isx031_framesync_reg[] = {
-	/* External sync */
-	{ISX031_REG_LEN_08BIT, 0xBF14, 0x01}, /* SG_MODE_APL */
-	{ISX031_REG_LEN_08BIT, 0x8AFF, 0x0c}, /* Hi-Z (input setting or output disabled) */
-	{ISX031_REG_LEN_08BIT, 0x0153, 0x00},
-	{ISX031_REG_LEN_08BIT, 0x8AF0, 0x01}, /* external pulse-based sync */
-	{ISX031_REG_LEN_08BIT, 0x0144, 0x00},
-	{ISX031_REG_LEN_08BIT, 0x8AF1, 0x00},
+	{ ISX031_REG_LEN_08BIT, 0xBF14, 0x01 },	/* SG_MODE_APL */
+	{ ISX031_REG_LEN_08BIT, 0x8AFF, 0x0c },	/* Hi-Z (input setting or output disabled) */
+	{ ISX031_REG_LEN_08BIT, 0x0153, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0x8AF0, 0x01 },	/* External pulse-based sync */
+	{ ISX031_REG_LEN_08BIT, 0x0144, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0x8AF1, 0x00 },
+	{ }
 };
 
 static const struct isx031_reg isx031_1920_1536_30fps_reg[] = {
-	{ISX031_REG_LEN_08BIT, 0x8AA8, 0x01}, // crop enable
-	{ISX031_REG_LEN_08BIT, 0x8AAA, 0x80}, // H size = 1920
-	{ISX031_REG_LEN_08BIT, 0x8AAB, 0x07},
-	{ISX031_REG_LEN_08BIT, 0x8AAC, 0x00}, // H croped 0
-	{ISX031_REG_LEN_08BIT, 0x8AAD, 0x00},
-	{ISX031_REG_LEN_08BIT, 0x8AAE, 0x00}, // V size 1536
-	{ISX031_REG_LEN_08BIT, 0x8AAF, 0x06},
-	{ISX031_REG_LEN_08BIT, 0x8AB0, 0x00}, // V cropped 0
-	{ISX031_REG_LEN_08BIT, 0x8AB1, 0x00},
-	{ISX031_REG_LEN_08BIT, 0x8ADA, 0x03}, // DCROP_DATA_SEL
-	{ISX031_REG_LEN_08BIT, 0xBF04, 0x01},
-	{ISX031_REG_LEN_08BIT, 0xBF06, 0x80},
-	{ISX031_REG_LEN_08BIT, 0xBF07, 0x07},
-	{ISX031_REG_LEN_08BIT, 0xBF08, 0x00},
-	{ISX031_REG_LEN_08BIT, 0xBF09, 0x00},
-	{ISX031_REG_LEN_08BIT, 0xBF0A, 0x00},
-	{ISX031_REG_LEN_08BIT, 0xBF0B, 0x06},
-	{ISX031_REG_LEN_08BIT, 0xBF0C, 0x00},
-	{ISX031_REG_LEN_08BIT, 0xBF0D, 0x00},
+	{ ISX031_REG_LEN_08BIT, 0x8AA8, 0x01 },	/* Crop enable */
+	{ ISX031_REG_LEN_08BIT, 0x8AAA, 0x80 },	/* H size = 1920 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAB, 0x07 },
+	{ ISX031_REG_LEN_08BIT, 0x8AAC, 0x00 },	/* H croped 0 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAD, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0x8AAE, 0x00 },	/* V size 1536 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAF, 0x06 },
+	{ ISX031_REG_LEN_08BIT, 0x8AB0, 0x00 },	/* V cropped 0 */
+	{ ISX031_REG_LEN_08BIT, 0x8AB1, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0x8ADA, 0x03 },	/* DCROP_DATA_SEL */
+	{ ISX031_REG_LEN_08BIT, 0xBF04, 0x01 },
+	{ ISX031_REG_LEN_08BIT, 0xBF06, 0x80 },
+	{ ISX031_REG_LEN_08BIT, 0xBF07, 0x07 },
+	{ ISX031_REG_LEN_08BIT, 0xBF08, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0xBF09, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0A, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0B, 0x06 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0C, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0D, 0x00 },
+	{ }
 };
 
 static const struct isx031_reg isx031_1920_1080_30fps_reg[] = {
-	{ISX031_REG_LEN_08BIT, 0x8AA8, 0x01}, // crop enable
-	{ISX031_REG_LEN_08BIT, 0x8AAA, 0x80}, // H size = 1920
-	{ISX031_REG_LEN_08BIT, 0x8AAB, 0x07},
-	{ISX031_REG_LEN_08BIT, 0x8AAC, 0x00}, // H croped 0
-	{ISX031_REG_LEN_08BIT, 0x8AAD, 0x00},
-	{ISX031_REG_LEN_08BIT, 0x8AAE, 0x38}, // V size 1080
-	{ISX031_REG_LEN_08BIT, 0x8AAF, 0x04},
-	{ISX031_REG_LEN_08BIT, 0x8AB0, 0xE4}, // V cropped 228*2
-	{ISX031_REG_LEN_08BIT, 0x8AB1, 0x00},
-	{ISX031_REG_LEN_08BIT, 0x8ADA, 0x03}, // DCROP_DATA_SEL
-	{ISX031_REG_LEN_08BIT, 0xBF04, 0x01},
-	{ISX031_REG_LEN_08BIT, 0xBF06, 0x80},
-	{ISX031_REG_LEN_08BIT, 0xBF07, 0x07},
-	{ISX031_REG_LEN_08BIT, 0xBF08, 0x00},
-	{ISX031_REG_LEN_08BIT, 0xBF09, 0x00},
-	{ISX031_REG_LEN_08BIT, 0xBF0A, 0x38},
-	{ISX031_REG_LEN_08BIT, 0xBF0B, 0x04},
-	{ISX031_REG_LEN_08BIT, 0xBF0C, 0xE4},
-	{ISX031_REG_LEN_08BIT, 0xBF0D, 0x00},
+	{ ISX031_REG_LEN_08BIT, 0x8AA8, 0x01 },	/* Crop enable */
+	{ ISX031_REG_LEN_08BIT, 0x8AAA, 0x80 },	/* H size = 1920 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAB, 0x07 },
+	{ ISX031_REG_LEN_08BIT, 0x8AAC, 0x00 },	/* H croped 0 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAD, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0x8AAE, 0x38 },	/* V size 1080 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAF, 0x04 },
+	{ ISX031_REG_LEN_08BIT, 0x8AB0, 0xE4 },	/* V cropped 228*2 */
+	{ ISX031_REG_LEN_08BIT, 0x8AB1, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0x8ADA, 0x03 },	/* DCROP_DATA_SEL */
+	{ ISX031_REG_LEN_08BIT, 0xBF04, 0x01 },
+	{ ISX031_REG_LEN_08BIT, 0xBF06, 0x80 },
+	{ ISX031_REG_LEN_08BIT, 0xBF07, 0x07 },
+	{ ISX031_REG_LEN_08BIT, 0xBF08, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0xBF09, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0A, 0x38 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0B, 0x04 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0C, 0xE4 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0D, 0x00 },
+	{ }
 
 };
 
 static const struct isx031_reg isx031_1280_720_30fps_reg[] = {
-	{ISX031_REG_LEN_08BIT, 0x8AA8, 0x01}, // crop enable
-	{ISX031_REG_LEN_08BIT, 0x8AAA, 0x00}, // H size = 1280
-	{ISX031_REG_LEN_08BIT, 0x8AAB, 0x05},
-	{ISX031_REG_LEN_08BIT, 0x8AAC, 0x40}, // H croped 320*2
-	{ISX031_REG_LEN_08BIT, 0x8AAD, 0x01},
-	{ISX031_REG_LEN_08BIT, 0x8AAE, 0xD0}, // V size 720
-	{ISX031_REG_LEN_08BIT, 0x8AAF, 0x02},
-	{ISX031_REG_LEN_08BIT, 0x8AB0, 0x98}, // V cropped 408*2
-	{ISX031_REG_LEN_08BIT, 0x8AB1, 0x01},
-	{ISX031_REG_LEN_08BIT, 0x8ADA, 0x03}, // DCROP_DATA_SEL
-	{ISX031_REG_LEN_08BIT, 0xBF04, 0x01},
-	{ISX031_REG_LEN_08BIT, 0xBF06, 0x00},
-	{ISX031_REG_LEN_08BIT, 0xBF07, 0x05},
-	{ISX031_REG_LEN_08BIT, 0xBF08, 0x40},
-	{ISX031_REG_LEN_08BIT, 0xBF09, 0x01},
-	{ISX031_REG_LEN_08BIT, 0xBF0A, 0xD0},
-	{ISX031_REG_LEN_08BIT, 0xBF0B, 0x02},
-	{ISX031_REG_LEN_08BIT, 0xBF0C, 0x98},
-	{ISX031_REG_LEN_08BIT, 0xBF0D, 0x01},
+	{ ISX031_REG_LEN_08BIT, 0x8AA8, 0x01 },	/* Crop enable */
+	{ ISX031_REG_LEN_08BIT, 0x8AAA, 0x00 },	/* H size = 1280 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAB, 0x05 },
+	{ ISX031_REG_LEN_08BIT, 0x8AAC, 0x40 },	/* H croped 320*2 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAD, 0x01 },
+	{ ISX031_REG_LEN_08BIT, 0x8AAE, 0xD0 },	/* V size 720 */
+	{ ISX031_REG_LEN_08BIT, 0x8AAF, 0x02 },
+	{ ISX031_REG_LEN_08BIT, 0x8AB0, 0x98 },	/* V cropped 408*2 */
+	{ ISX031_REG_LEN_08BIT, 0x8AB1, 0x01 },
+	{ ISX031_REG_LEN_08BIT, 0x8ADA, 0x03 },	/* DCROP_DATA_SEL */
+	{ ISX031_REG_LEN_08BIT, 0xBF04, 0x01 },
+	{ ISX031_REG_LEN_08BIT, 0xBF06, 0x00 },
+	{ ISX031_REG_LEN_08BIT, 0xBF07, 0x05 },
+	{ ISX031_REG_LEN_08BIT, 0xBF08, 0x40 },
+	{ ISX031_REG_LEN_08BIT, 0xBF09, 0x01 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0A, 0xD0 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0B, 0x02 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0C, 0x98 },
+	{ ISX031_REG_LEN_08BIT, 0xBF0D, 0x01 },
+	{ }
 };
 
 static const struct isx031_reg_list isx031_init_reg_list = {
@@ -243,42 +235,43 @@ static const struct isx031_reg_list isx031_1280_720_30fps_reg_list = {
 
 static const struct isx031_mode supported_modes[] = {
 	{
-		.width = 1920,
-		.height = 1536,
-		.code = MEDIA_BUS_FMT_UYVY8_1X16,
+	 .width = 1920,
+	 .height = 1536,
+	 .code = MEDIA_BUS_FMT_UYVY8_1X16,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-		.datatype = MIPI_CSI2_DT_YUV422_8B,
+	 .datatype = MIPI_CSI2_DT_YUV422_8B,
 #endif
-		.fps = 30,
-		.reg_list = isx031_1920_1536_30fps_reg_list,
-	},
+	 .fps = 30,
+	 .reg_list = isx031_1920_1536_30fps_reg_list,
+	  },
 	{
-		.width = 1920,
-		.height = 1080,
-		.code = MEDIA_BUS_FMT_UYVY8_1X16,
+	 .width = 1920,
+	 .height = 1080,
+	 .code = MEDIA_BUS_FMT_UYVY8_1X16,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-		.datatype = MIPI_CSI2_DT_YUV422_8B,
+	 .datatype = MIPI_CSI2_DT_YUV422_8B,
 #endif
-		.fps = 30,
-		.reg_list = isx031_1920_1080_30fps_reg_list,
-	},
+	 .fps = 30,
+	 .reg_list = isx031_1920_1080_30fps_reg_list,
+	  },
 	{
-		.width = 1280,
-		.height = 720,
-		.code = MEDIA_BUS_FMT_UYVY8_1X16,
+	 .width = 1280,
+	 .height = 720,
+	 .code = MEDIA_BUS_FMT_UYVY8_1X16,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-		.datatype = MIPI_CSI2_DT_YUV422_8B,
+	 .datatype = MIPI_CSI2_DT_YUV422_8B,
 #endif
-		.fps = 30,
-		.reg_list = isx031_1280_720_30fps_reg_list,
-	},
+	 .fps = 30,
+	 .reg_list = isx031_1280_720_30fps_reg_list,
+	  },
 };
 
-static int isx031_read_reg(struct i2c_client *client, u16 reg, u16 len, u32 *val)
+static int isx031_read_reg(struct i2c_client *client, u16 reg, u16 len,
+			   u32 * val)
 {
 	struct i2c_msg msgs[2];
 	u8 addr_buf[2];
-	u8 data_buf[4] = {0};
+	u8 data_buf[4] = { 0 };
 	int ret;
 
 	if (len > 4)
@@ -303,65 +296,84 @@ static int isx031_read_reg(struct i2c_client *client, u16 reg, u16 len, u32 *val
 	return 0;
 }
 
-static int isx031_write_reg(struct isx031 *isx031, u16 reg, u16 len, u32 val)
-{
-	struct i2c_client *client = isx031->client;
-	u8 buf[6];
-
-	if (len > 4)
-		return -EINVAL;
-
-	dev_dbg(&client->dev, "%s, reg %x len %x, val %x\n", __func__, reg, len, val);
-	put_unaligned_be16(reg, buf);
-	put_unaligned_be32(val << 8 * (4 - len), buf + 2);
-	if (i2c_master_send(client, buf, len + 2) != len + 2) {
-		dev_err(&client->dev, "%s:failed: reg=%2x\n", __func__, reg);
-		return -EIO;
-	}
-
-	return 0;
-}
-
-static int isx031_write_reg_retry(struct isx031 *isx031, u16 reg, u16 len, u32 val)
+static int isx031_read_reg_retry(struct i2c_client *client, u16 reg, u16 len,
+				 u32 * val)
 {
 	int ret;
-	int retry = 100;
+	int i;
 
-	while (retry--) {
-		ret = isx031_write_reg(isx031, reg, len, val);
+	for (i = 0; i < ISX031_READ_REG_RETRY_TIMEOUT; i++) {
+		ret = isx031_read_reg(client, reg, len, val);
 		if (!ret)
 			break;
-		msleep(20);
+		usleep_range(ISX031_REG_SLEEP_10000US,
+			     ISX031_REG_SLEEP_10000US + 500);
 	}
 
 	return ret;
 }
 
-static int isx031_write_reg_list(struct isx031 *isx031,
-				 const struct isx031_reg_list *r_list,
-				 bool isRetry)
+static int isx031_write_reg(struct i2c_client *client, u16 reg, u16 len,
+			    u32 val)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&isx031->sd);
+	u8 buf[6];
+	int ret;
+
+	if (len > 4)
+		return -EINVAL;
+
+	put_unaligned_be16(reg, buf);
+	put_unaligned_be32(val << (8 * (4 - len)), buf + 2);
+	ret = i2c_master_send(client, buf, len + 2);
+	if (ret != len + 2)
+		return -EIO;
+
+	return 0;
+}
+
+static int isx031_write_reg_retry(struct i2c_client *client, u16 reg, u16 len,
+				  u32 val)
+{
+	int ret;
+	int i;
+
+	for (i = 0; i < ISX031_WRITE_REG_RETRY_TIMEOUT; i++) {
+		ret = isx031_write_reg(client, reg, len, val);
+		if (!ret)
+			break;
+		msleep(ISX031_REG_SLEEP_20MS);
+	}
+
+	return ret;
+}
+
+static int isx031_write_reg_list(struct i2c_client *client,
+				 const struct isx031_reg_list *r_list,
+				 bool is_retry)
+{
 	unsigned int i;
 	int ret;
 
 	for (i = 0; i < r_list->num_of_regs; i++) {
-		if (r_list->regs[i].mode == ISX031_REG_LEN_DELAY) {
-			msleep(r_list->regs[i].val);
+		const struct isx031_reg *reg = &r_list->regs[i];
+
+		if (reg->mode == ISX031_REG_LEN_DELAY) {
+			msleep(reg->val);
 			continue;
 		}
-		ret = isRetry ?
-			      isx031_write_reg_retry(isx031,
-						     r_list->regs[i].address,
+
+		if (is_retry)
+			ret = isx031_write_reg_retry(client, reg->address,
 						     ISX031_REG_LEN_08BIT,
-						     r_list->regs[i].val) :
-			      isx031_write_reg(isx031, r_list->regs[i].address,
-					       ISX031_REG_LEN_08BIT,
-					       r_list->regs[i].val);
+						     reg->val);
+		else
+			ret = isx031_write_reg(client, reg->address,
+					       ISX031_REG_LEN_08BIT, reg->val);
+
 		if (ret) {
 			dev_err_ratelimited(&client->dev,
-				"failed to write reg 0x%4.4x. error = %d",
-				r_list->regs[i].address, ret);
+					    "write reg failed (addr=0x%04x, err=%d)\n",
+					    reg->address, ret);
 			return ret;
 		}
 	}
@@ -374,7 +386,8 @@ static int isx031_find_drive_mode(int lanes, int fps)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(isx031_drive_modes); i++) {
-		if (isx031_drive_modes[i].lanes == lanes && isx031_drive_modes[i].fps == fps)
+		if (isx031_drive_modes[i].lanes == lanes &&
+		    isx031_drive_modes[i].fps == fps)
 			return isx031_drive_modes[i].mode;
 	}
 
@@ -383,14 +396,16 @@ static int isx031_find_drive_mode(int lanes, int fps)
 
 static int isx031_set_drive_mode(struct isx031 *isx031)
 {
-	int ret;
-	int mode;
+	struct i2c_client *client = isx031->client;
+	int mode, ret;
 
 	mode = isx031_find_drive_mode(isx031->lanes, isx031->cur_mode->fps);
-	if (mode < 0)
+	if (mode < 0) {
+		dev_err(&client->dev, "Failed to find drive mode\n");
 		return mode;
+	}
 
-	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SELECT, 1, (u32)mode);
+	ret = isx031_write_reg(client, ISX031_REG_MODE_SELECT, 1, mode);
 
 	return ret;
 }
@@ -399,57 +414,60 @@ static int isx031_mode_transit(struct isx031 *isx031, int state)
 {
 	struct i2c_client *client = isx031->client;
 	int ret;
-	int cur_mode, mode;
+	int cur_mode, mode = ISX031_MODE_STANDBY;
 	u32 val;
-	int retry = 50;
+	int i;
 
 	if (state == ISX031_STATE_STARTUP)
 		mode = ISX031_MODE_STANDBY;
 	else if (state == ISX031_STATE_STREAMING)
 		mode = ISX031_MODE_STREAMING;
+	else
+		return -EINVAL;
 
-	retry = 50;
-	while (retry--) {
-		ret = isx031_read_reg(client, ISX031_REG_SENSOR_STATE,
-			      ISX031_REG_LEN_08BIT, &val);
-		if (ret == 0)
-			break;
-		usleep_range(10000, 10500);
+	/* read sensor current mode */
+	ret = isx031_read_reg_retry(client, ISX031_REG_SENSOR_STATE,
+				    ISX031_REG_LEN_08BIT, &val);
+	if (ret) {
+		dev_err(&client->dev, "Failed to read sensor state");
+		return ret;
 	}
 	cur_mode = val;
 
-	/* Note: Ideally, drive mode should only be set if isx031->lanes != 0,
-	 * which would mean the number of lanes is obtained from platform data.
-	 * Currently, drive mode is always set.
-	 */
 	ret = isx031_set_drive_mode(isx031);
 	if (ret) {
-		dev_err(&client->dev, "failed to set drive mode");
+		dev_err(&client->dev, "Failed to set drive mode\n");
 		return ret;
 	}
 
-	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SET_F_LOCK, 1,
-				ISX031_MODE_UNLOCK);
+	ret = isx031_write_reg(client, ISX031_REG_MODE_SET_F_LOCK, 1,
+			       ISX031_MODE_UNLOCK);
 	if (ret) {
-		dev_err(&client->dev, "failed to unlock mode");
+		dev_err(&client->dev, "Failed to unlock mode\n");
 		return ret;
 	}
-	ret = isx031_write_reg(isx031, ISX031_REG_MODE_SET_F, 1,
-			       (u32)mode);
+
+	ret = isx031_write_reg(client, ISX031_REG_MODE_SET_F, 1, mode);
 	if (ret) {
-		dev_err(&client->dev, "failed to transit mode from 0x%x to 0x%x",
-			cur_mode, mode);
+		dev_err(&client->dev,
+			"Failed to transit mode from 0x%x to 0x%x\n", cur_mode,
+			mode);
 		return ret;
 	}
 
 	/* streaming transit to standby need 1 frame+5ms */
-	retry = 50;
-	while (retry--) {
+	for (i = 0; i < ISX031_READ_REG_RETRY_TIMEOUT; i++) {
 		ret = isx031_read_reg(client, ISX031_REG_SENSOR_STATE,
-				ISX031_REG_LEN_08BIT, &val);
+				      ISX031_REG_LEN_08BIT, &val);
 		if (ret == 0 && val == state)
 			break;
-		usleep_range(10000, 10500);
+		usleep_range(ISX031_REG_SLEEP_10000US,
+			     ISX031_REG_SLEEP_10000US + 500);
+	}
+
+	if (ret) {
+		dev_err(&client->dev, "failed to read sensor state");
+		return ret;
 	}
 
 	return 0;
@@ -462,32 +480,31 @@ static int isx031_initialize_module(struct isx031 *isx031)
 	int retry = 50;
 	u32 val;
 
-	while (retry--) {
-		ret = isx031_read_reg(client, ISX031_REG_SENSOR_STATE,
-			      ISX031_REG_LEN_08BIT, &val);
-		if (ret == 0)
-			break;
-		usleep_range(100000, 100500);
+	/* Read sensor current state */
+	ret = isx031_read_reg_retry(client, ISX031_REG_SENSOR_STATE,
+				    ISX031_REG_LEN_08BIT, &val);
+	if (ret) {
+		dev_err(&client->dev, "Failed to read sensor state\n");
+		return ret;
 	}
 
-	if (ret)
-		return ret;
-
-	dev_dbg(&client->dev, "sensor in mode 0x%x", val);
-
-	/* if sensor alreay in ISX031_STATE_STARTUP, can access i2c write directly */
+	/* If sensor is streaming, transition to startup before initialization */
 	if (val == ISX031_STATE_STREAMING) {
-		if (isx031_mode_transit(isx031, ISX031_STATE_STARTUP))
+		ret = isx031_mode_transit(isx031, ISX031_STATE_STARTUP);
+		if (ret)
 			return ret;
 	}
 
-	ret = isx031_write_reg_list(isx031, &isx031_init_reg_list, true);
+	ret = isx031_write_reg_list(client, &isx031_init_reg_list, true);
 	if (ret)
 		return ret;
-	if (isx031->platform_data != NULL && !isx031->platform_data->irq_pin_flags) {
-		ret = isx031_write_reg_list(isx031, &isx031_framesync_reg_list, false);
+
+	if (isx031->platform_data && !isx031->platform_data->irq_pin_flags) {
+		ret =
+		    isx031_write_reg_list(client, &isx031_framesync_reg_list,
+					  false);
 		if (ret) {
-			dev_err(&client->dev, "failed in set framesync.");
+			dev_err(&client->dev, "Failed to set framesync\n");
 			return ret;
 		}
 	}
@@ -497,45 +514,36 @@ static int isx031_initialize_module(struct isx031 *isx031)
 
 static int isx031_identify_module(struct i2c_client *client)
 {
-	u32 NAME_L = 0;
-	u32 NAME_H = 0;
-	int ret = 0;
-	int i = 0;
-	int retry = 50;
+	u32 name_l = 0;
+	u32 name_h = 0;
+	u16 module_id;
+	int ret;
 
-	for (i = 0; i < retry; i++) {
-		ret = isx031_read_reg(client, ISX031_OTP_TYPE_NAME_L,
-				      ISX031_REG_LEN_08BIT, &NAME_L);
-		if (!ret)
-			break;
-	}
-
-	if (i == retry) {
-		dev_err(&client->dev, "isx031 read NAME_L failed");
+	ret =
+	    isx031_read_reg_retry(client, ISX031_OTP_TYPE_NAME_L,
+				  ISX031_REG_LEN_08BIT, &name_l);
+	if (ret) {
+		dev_err(&client->dev, "Failed to read OTP NAME_L register\n");
 		return ret;
 	}
 
-	for (i = 0; i < retry; i++) {
-		ret = isx031_read_reg(client, ISX031_OTP_TYPE_NAME_H,
-				      ISX031_REG_LEN_08BIT, &NAME_H);
-		if (!ret)
-			break;
-	}
-
-	if (i == retry) {
-		dev_err(&client->dev, "isx031 read NAME_H failed");
+	ret =
+	    isx031_read_reg_retry(client, ISX031_OTP_TYPE_NAME_H,
+				  ISX031_REG_LEN_08BIT, &name_h);
+	if (ret) {
+		dev_err(&client->dev, "Failed to read OTP NAME_H register\n");
 		return ret;
 	}
 
-	if (((NAME_H & ISX031_OTP_TYPE_NAME_H_FIELD) << 8 | NAME_L) !=
-	    ISX031_OTP_MODULE_ID_L) {
-		dev_err(&client->dev, "isx031 module id mismatch: 0x%4.4x\n",
-			((NAME_H & ISX031_OTP_TYPE_NAME_H_FIELD) << 8 |
-			 NAME_L));
+	module_id = ((name_h & ISX031_OTP_TYPE_NAME_H_FIELD) << 8) | name_l;
+	if (module_id != ISX031_OTP_MODULE_ID_L) {
+		dev_err(&client->dev,
+			"Invalid module ID: expected 0x%04x, got 0x%04x\n",
+			ISX031_OTP_MODULE_ID_L, module_id);
 		return -ENODEV;
 	}
 
-	return ret;
+	return 0;
 }
 
 static void isx031_update_pad_format(const struct isx031_mode *mode,
@@ -544,36 +552,36 @@ static void isx031_update_pad_format(const struct isx031_mode *mode,
 	fmt->width = mode->width;
 	fmt->height = mode->height;
 	fmt->code = mode->code;
-	fmt->field = V4L2_FIELD_NONE;
+	fmt->field = V4L2_FIELD_ANY;
 }
 
-static int isx031_get_mipi_lane(struct isx031 *isx031, struct device *dev)
+static int isx031_get_mipi_lanes_count(struct isx031 *isx031,
+				       struct device *dev)
 {
 	struct fwnode_handle *endpoint;
 	struct v4l2_fwnode_endpoint bus_cfg = {
 		.bus_type = V4L2_MBUS_CSI2_DPHY,
 	};
-
 	int ret;
 
 	endpoint =
-		fwnode_graph_get_endpoint_by_id(dev_fwnode(dev), 0, 0,
-			FWNODE_GRAPH_ENDPOINT_NEXT);
+	    fwnode_graph_get_endpoint_by_id(dev_fwnode(dev),
+					    0, 0, FWNODE_GRAPH_ENDPOINT_NEXT);
 	if (!endpoint) {
-		dev_err(dev, "endpoint node not found");
+		dev_err(dev, "No endpoint node found\n");
 		return -EPROBE_DEFER;
 	}
 
 	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &bus_cfg);
 	if (ret) {
-		dev_err(dev, "parsing endpoint node fail");
+		dev_err(dev, "Failed to parse endpoint node: %d\n", ret);
 		goto out_err;
 	}
 
-	/* Check the number of MIPI CSI2 data lanes */
 	if (bus_cfg.bus.mipi_csi2.num_data_lanes != 2 &&
-		bus_cfg.bus.mipi_csi2.num_data_lanes != 4) {
-		dev_err(dev, "only 2 or 4 data lanes are currently supported");
+	    bus_cfg.bus.mipi_csi2.num_data_lanes != 4) {
+		dev_err(dev, "Only 2 or 4 data lanes are supported\n");
+		ret = -EINVAL;
 		goto out_err;
 	}
 
@@ -588,33 +596,30 @@ out_err:
 
 static int isx031_start_streaming(struct isx031 *isx031)
 {
-	int ret;
 	struct i2c_client *client = isx031->client;
 	const struct isx031_reg_list *reg_list;
+	int ret;
 
+	/* Apply mode registers only if mode changed */
 	if (isx031->cur_mode != isx031->pre_mode) {
 		reg_list = &isx031->cur_mode->reg_list;
-		ret = isx031_write_reg_list(isx031, reg_list, true);
+		ret = isx031_write_reg_list(client, reg_list, true);
 		if (ret) {
-			dev_err(&client->dev, "failed to set stream mode");
+			dev_err(&client->dev, "Failed to set stream mode\n");
 			return ret;
 		}
 		isx031->pre_mode = isx031->cur_mode;
-	} else {
-		dev_dbg(&client->dev, "same mode, skip write reg list");
 	}
 
-	if (isx031->is_direct) {
-		ret = __v4l2_ctrl_handler_setup(&isx031->ctrls);
-		if (ret) {
-			dev_err(&client->dev, "failed to setup ctrls");
-			return ret;
-		}
+	ret = __v4l2_ctrl_handler_setup(&isx031->ctrls);
+	if (ret) {
+		dev_err(&client->dev, "Failed to setup controls\n");
+		return ret;
 	}
 
 	ret = isx031_mode_transit(isx031, ISX031_STATE_STREAMING);
 	if (ret) {
-		dev_err(&client->dev, "failed to start streaming");
+		dev_err(&client->dev, "Failed to start streaming\n");
 		return ret;
 	}
 
@@ -624,8 +629,11 @@ static int isx031_start_streaming(struct isx031 *isx031)
 static void isx031_stop_streaming(struct isx031 *isx031)
 {
 	struct i2c_client *client = isx031->client;
-	if (isx031_mode_transit(isx031, ISX031_STATE_STARTUP))
-		dev_err(&client->dev, "failed to stop streaming");
+	int ret;
+
+	ret = isx031_mode_transit(isx031, ISX031_STATE_STARTUP);
+	if (ret)
+		dev_err(&client->dev, "Failed to stop streaming: %d\n", ret);
 }
 
 static int isx031_set_stream(struct v4l2_subdev *sd, int enable)
@@ -634,46 +642,47 @@ static int isx031_set_stream(struct v4l2_subdev *sd, int enable)
 	struct i2c_client *client = isx031->client;
 	int ret = 0;
 
-	if (isx031->streaming == enable)
-		return 0;
-
 	mutex_lock(&isx031_mutex);
+
+	if (isx031->streaming == enable)
+		goto unlock;
+
 	if (enable) {
-		ret = pm_runtime_get_sync(&client->dev);
-		if (ret < 0) {
-			pm_runtime_put_noidle(&client->dev);
-			goto err_unlock;
-		}
+		ret = pm_runtime_resume_and_get(&client->dev);
+		if (ret < 0)
+			goto unlock;
 
 		ret = isx031_start_streaming(isx031);
 		if (ret) {
-			enable = 0;
 			isx031_stop_streaming(isx031);
 			pm_runtime_put(&client->dev);
+			goto unlock;
 		}
+
+		isx031->streaming = true;
+
 	} else {
 		isx031_stop_streaming(isx031);
 		pm_runtime_put(&client->dev);
+		isx031->streaming = false;
 	}
 
-	isx031->streaming = enable;
-
-err_unlock:
+unlock:
 	mutex_unlock(&isx031_mutex);
 
 	return ret;
 }
 
 static int isx031_enable_streams(struct v4l2_subdev *subdev,
-	struct v4l2_subdev_state *state,
-	u32 pad, u64 streams_mask)
+				 struct v4l2_subdev_state *state,
+				 u32 pad, u64 streams_mask)
 {
 	return isx031_set_stream(subdev, true);
 }
 
 static int isx031_disable_streams(struct v4l2_subdev *subdev,
-	 struct v4l2_subdev_state *state,
-	 u32 pad, u64 streams_mask)
+				  struct v4l2_subdev_state *state,
+				  u32 pad, u64 streams_mask)
 {
 	return isx031_set_stream(subdev, false);
 }
@@ -691,7 +700,8 @@ static int __maybe_unused isx031_suspend(struct device *dev)
 	mutex_unlock(&isx031_mutex);
 
 	/* Active low gpio reset, set 1 to power off sensor */
-	gpiod_set_value_cansleep(isx031->reset_gpio, 1);
+	if (isx031->reset_gpio)
+		gpiod_set_value_cansleep(isx031->reset_gpio, 1);
 
 	return 0;
 }
@@ -702,64 +712,71 @@ static int __maybe_unused isx031_resume(struct device *dev)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct isx031 *isx031 = to_isx031(sd);
 	const struct isx031_reg_list *reg_list;
-	int count = 0;
-	int ret = 0;
+	int ret;
+	int count;
 
 	mutex_lock(&isx031_mutex);
 
 	/* Active low gpio reset, set 0 to power on sensor,
-	 * sensor must on back before start resume
+	 * sensor must be on before resume
 	 */
-	if (isx031->reset_gpio != NULL) {
-		do {
+	if (isx031->reset_gpio) {
+		for (count = 0; count < ISX031_PM_RETRY_TIMEOUT; count++) {
 			gpiod_set_value_cansleep(isx031->reset_gpio, 0);
-			ret = gpiod_get_value_cansleep(isx031->reset_gpio);
-			usleep_range(200 * 1000, 200 * 1000 + 500);
+			msleep(ISX031_REG_SLEEP_200MS);
 
-			if (++count >= 20) {
-				dev_err(&client->dev,
-					"%s: failed to power on reset gpio, reset gpio is %d",
-					__func__, ret);
+			ret = gpiod_get_value_cansleep(isx031->reset_gpio);
+			if (ret == 0)
 				break;
-			}
-		} while (ret != 0);
+		}
+
+		if (ret != 0) {
+			dev_err(&client->dev,
+				"Failed to power on sensor in pm resume\n");
+			mutex_unlock(&isx031_mutex);
+			return -ETIMEDOUT;
+		}
 	}
 
-	ret = isx031_identify_module(isx031->client);
+	ret = isx031_identify_module(client);
 	if (ret) {
-		dev_err(&client->dev, "isx031 identify module failed");
-		goto err_unlock;
+		dev_err(&client->dev, "Failed to identify sensor module: %d\n", ret);
+		goto unlock;
 	}
 
 	ret = isx031_initialize_module(isx031);
-	if (ret == 0) {
-		reg_list = &isx031->cur_mode->reg_list;
-		ret = isx031_write_reg_list(isx031, reg_list, true);
-		if (ret) {
-			dev_err(&client->dev, "resume: failed to apply cur mode");
-			goto err_unlock;
-		}
-	} else {
-		dev_err(&client->dev, "isx031 resume initialization failed");
-		goto err_unlock;
+	if (ret) {
+		dev_err(&client->dev,
+			"Failed to initialize sensor module: %d\n", ret);
+		goto unlock;
 	}
+
+	reg_list = &isx031->cur_mode->reg_list;
+	ret = isx031_write_reg_list(client, reg_list, true);
+	if (ret) {
+		dev_err(&client->dev,
+			"Failed to apply cur mode in resume: %d\n", ret);
+		goto unlock;
+	}
+
 	if (isx031->streaming) {
 		ret = isx031_start_streaming(isx031);
 		if (ret) {
 			isx031->streaming = false;
 			isx031_stop_streaming(isx031);
-			goto err_unlock;
+			goto unlock;
 		}
 	}
 
-err_unlock:
+unlock:
 	mutex_unlock(&isx031_mutex);
 
 	return ret;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
-static int isx031_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
+static int isx031_get_frame_desc(struct v4l2_subdev *sd,
+				 unsigned int pad,
 				 struct v4l2_mbus_frame_desc *desc)
 {
 	struct isx031 *isx031 = to_isx031(sd);
@@ -777,7 +794,8 @@ static int isx031_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 }
 #else
 static int isx031_get_frame_desc(struct v4l2_subdev *sd,
-	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
+				 unsigned int pad,
+				 struct v4l2_mbus_frame_desc *desc)
 {
 	unsigned int i;
 
@@ -802,34 +820,38 @@ static int isx031_set_format(struct v4l2_subdev *sd,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct isx031 *isx031 = to_isx031(sd);
-	const struct isx031_mode *mode;
-	int i;
+	const struct isx031_mode *mode = NULL;
+	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(supported_modes); i++)
+	mutex_lock(&isx031_mutex);
+
+	/* Find the best matching mode */
+	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
 		if (supported_modes[i].code == fmt->format.code &&
 		    supported_modes[i].width == fmt->format.width &&
 		    supported_modes[i].height == fmt->format.height) {
 			mode = &supported_modes[i];
 			break;
 		}
+	}
 
-	if (i >= ARRAY_SIZE(supported_modes))
+	/* If no exact match, use the default mode */
+	if (!mode)
 		mode = &supported_modes[0];
 
-	mutex_lock(&isx031_mutex);
-
 	isx031_update_pad_format(mode, &fmt->format);
-	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
-		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) =
+		    fmt->format;
 #else
 		*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
 #endif
-	} else {
+	else
 		isx031->cur_mode = mode;
-	}
 
 	mutex_unlock(&isx031_mutex);
 
@@ -847,6 +869,7 @@ static int isx031_get_format(struct v4l2_subdev *sd,
 	struct isx031 *isx031 = to_isx031(sd);
 
 	mutex_lock(&isx031_mutex);
+
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 		fmt->format = *v4l2_subdev_get_try_format(&isx031->sd, cfg,
@@ -855,8 +878,7 @@ static int isx031_get_format(struct v4l2_subdev *sd,
 		fmt->format = *v4l2_subdev_get_try_format(&isx031->sd, sd_state,
 							  fmt->pad);
 #else
-		fmt->format = *v4l2_subdev_state_get_format(sd_state,
-							  fmt->pad);
+		fmt->format = *v4l2_subdev_state_get_format(sd_state, fmt->pad);
 #endif
 	else
 		isx031_update_pad_format(isx031->cur_mode, &fmt->format);
@@ -869,6 +891,7 @@ static int isx031_get_format(struct v4l2_subdev *sd,
 static int isx031_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	mutex_lock(&isx031_mutex);
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	isx031_update_pad_format(&supported_modes[0],
 				 v4l2_subdev_get_try_format(sd, fh->pad, 0));
@@ -879,6 +902,7 @@ static int isx031_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	isx031_update_pad_format(&supported_modes[0],
 				 v4l2_subdev_state_get_format(fh->state, 0));
 #endif
+
 	mutex_unlock(&isx031_mutex);
 
 	return 0;
@@ -920,22 +944,28 @@ static const struct v4l2_ctrl_ops isx031_ctrl_ops = {
 
 static int isx031_ctrls_init(struct isx031 *sensor)
 {
-	int ret = 0;
 	struct v4l2_ctrl *ctrl;
+	struct v4l2_ctrl_handler *hdl = &sensor->ctrls;
 
-	v4l2_ctrl_handler_init(&sensor->ctrls, 10);
+	v4l2_ctrl_handler_init(hdl, 10);
 
 	/* There's a need to set the link frequency because IPU6 dictates it. */
-	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrls, &isx031_ctrl_ops,
+	ctrl = v4l2_ctrl_new_int_menu(hdl, &isx031_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
-				      ARRAY_SIZE(isx031_link_frequencies) - 1, 0,
-				      isx031_link_frequencies);
+				      ARRAY_SIZE(isx031_link_frequencies) - 1,
+				      0, isx031_link_frequencies);
+
+	if (hdl->error) {
+		v4l2_ctrl_handler_free(hdl);
+		return hdl->error;
+	}
 
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	sensor->sd.ctrl_handler = &sensor->ctrls;
-	return ret;
+	sensor->sd.ctrl_handler = hdl;
+
+	return 0;
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
@@ -959,7 +989,6 @@ static int isx031_probe(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd;
 	struct isx031 *isx031;
-	const struct isx031_info *info;
 	const struct isx031_reg_list *reg_list;
 	int ret;
 
@@ -969,40 +998,44 @@ static int isx031_probe(struct i2c_client *client)
 
 	isx031->client = client;
 	isx031->platform_data = client->dev.platform_data;
-	if (isx031->platform_data == NULL)
-		dev_warn(&client->dev, "no platform data provided\n");
+	if (!isx031->platform_data)
+		dev_warn(&client->dev, "No platform data provided\n");
 
 	isx031->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
 						     GPIOD_OUT_LOW);
 
 	if (IS_ERR(isx031->reset_gpio))
 		return -EPROBE_DEFER;
-	else if (isx031->reset_gpio == NULL)
-		dev_warn(&client->dev, "Reset GPIO not found");
+	if (isx031->reset_gpio)
+		dev_info(&client->dev, "Reset gpio found\n");
 	else
-		dev_dbg(&client->dev, "Reset GPIO found");
+		dev_warn(&client->dev, "Reset gpio not found\n");
+
+	isx031->fsin_gpio = devm_gpiod_get_optional(&client->dev, "fsin",
+						    GPIOD_OUT_LOW);
+
+	if (IS_ERR(isx031->fsin_gpio))
+		return -EPROBE_DEFER;
+	if (isx031->fsin_gpio)
+		dev_info(&client->dev, "Fsin gpio found\n");
+	else
+		dev_warn(&client->dev, "Fsin gpio not found\n");
 
 	ret = isx031_identify_module(client);
 	if (ret) {
-		dev_err(&client->dev, "isx031 identify module failed");
+		dev_err(&client->dev,
+			"failed to find sensor: %d (I2C addr 0x%02x, bus %d)",
+			ret, client->addr, client->adapter->nr);
 		return ret;
 	}
 
-	info = device_get_match_data(&client->dev);
-	if (info)
-		isx031->is_direct = info->is_direct;
-	else
-		isx031->is_direct = false;
-
-	/* initialize subdevice */
+	/* Initialize subdevice */
 	sd = &isx031->sd;
 	v4l2_i2c_subdev_init(sd, client, &isx031_subdev_ops);
-	if (isx031->is_direct) {
-		ret = isx031_ctrls_init(isx031);
-		if (ret) {
-			dev_err(&client->dev, "failed to init sensor ctrls: %d", ret);
-			return ret;
-		}
+	ret = isx031_ctrls_init(isx031);
+	if (ret) {
+		dev_err(&client->dev, "Failed to init sensor ctrls: %d\n", ret);
+		return ret;
 	}
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
@@ -1016,15 +1049,12 @@ static int isx031_probe(struct i2c_client *client)
 	/* initialize subdev media pad */
 	isx031->pad.flags = MEDIA_PAD_FL_SOURCE;
 	ret = media_entity_pads_init(&sd->entity, 1, &isx031->pad);
-	if (ret < 0) {
-		dev_err(&client->dev, "failed to init entity pads: %d", ret);
-		goto probe_error_v4l2_ctrl_handler_free;
+	if (ret) {
+		dev_err(&client->dev, "Failed to init entity pads: %d\n", ret);
+		goto err_ctrl_free;
 	}
 
-	if (isx031->is_direct) {
-		isx031->sd.state_lock = isx031->sd.ctrl_handler->lock;
-		v4l2_subdev_init_finalize(&isx031->sd);
-	}
+	isx031->sd.state_lock = isx031->sd.ctrl_handler->lock;
 
 	if (isx031->platform_data && isx031->platform_data->suffix[0])
 		snprintf(isx031->sd.name, sizeof(isx031->sd.name), "isx031 %s",
@@ -1032,13 +1062,13 @@ static int isx031_probe(struct i2c_client *client)
 
 	if (isx031->platform_data && isx031->platform_data->lanes)
 		isx031->lanes = isx031->platform_data->lanes;
-
-	if (isx031->is_direct) {
-		/* mipi sensor read info from fwnode entrypoint bus cfg */
-		ret = isx031_get_mipi_lane(isx031, &client->dev);
+	else {
+		/* Read info from fwnode entrypoint bus cfg if no platform data */
+		ret = isx031_get_mipi_lanes_count(isx031, &client->dev);
 		if (ret) {
-			dev_err(&client->dev, "failed to get MIPI lane configuration");
-			return ret;
+			dev_err(&client->dev,
+				"Failed to get mipi lane configuration\n");
+			goto err_media_cleanup;
 		}
 	}
 
@@ -1047,16 +1077,23 @@ static int isx031_probe(struct i2c_client *client)
 	isx031->cur_mode = &supported_modes[0];
 	ret = isx031_initialize_module(isx031);
 	if (ret) {
-		dev_err(&client->dev, "failed to initialize sensor: %d", ret);
-		return ret;
+		dev_err(&client->dev, "Failed to initialize sensor: %d\n", ret);
+		goto err_media_cleanup;
 	}
+
 	reg_list = &isx031->cur_mode->reg_list;
-	ret = isx031_write_reg_list(isx031, reg_list, true);
+	ret = isx031_write_reg_list(client, reg_list, true);
 	if (ret) {
-		dev_err(&client->dev, "failed to apply preset mode");
-		goto probe_error_media_entity_cleanup;
+		dev_err(&client->dev, "Failed to apply preset mode\n");
+		goto err_media_cleanup;
 	}
 	isx031->pre_mode = isx031->cur_mode;
+
+	ret = v4l2_subdev_init_finalize(&isx031->sd);
+	if (ret) {
+		dev_err(&client->dev, "Failed to init subdev finalize: %d\n", ret);
+		goto err_media_cleanup;
+	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0)
 	ret = v4l2_async_register_subdev_sensor_common(&isx031->sd);
@@ -1066,7 +1103,7 @@ static int isx031_probe(struct i2c_client *client)
 	if (ret < 0) {
 		dev_err(&client->dev, "failed to register V4L2 subdev: %d",
 			ret);
-		goto probe_error_media_entity_cleanup;
+		goto err_subdev_cleanup;
 	}
 
 	/*
@@ -1079,10 +1116,13 @@ static int isx031_probe(struct i2c_client *client)
 
 	return 0;
 
-probe_error_media_entity_cleanup:
+err_subdev_cleanup:
+	v4l2_subdev_cleanup(&isx031->sd);
+
+err_media_cleanup:
 	media_entity_cleanup(&isx031->sd.entity);
 
-probe_error_v4l2_ctrl_handler_free:
+err_ctrl_free:
 	v4l2_ctrl_handler_free(isx031->sd.ctrl_handler);
 
 	return ret;
@@ -1094,27 +1134,24 @@ static const struct dev_pm_ops isx031_pm_ops = {
 
 static const struct i2c_device_id isx031_id_table[] = {
 	{ "isx031", 0 },
-	{},
+	{ }
 };
+
 MODULE_DEVICE_TABLE(i2c, isx031_id_table);
 
-static const struct isx031_info isx031_mipi_info = {
-	.is_direct = true,
-};
-
 static const struct acpi_device_id isx031_acpi_ids[] = {
-	{ "INTC3031", (kernel_ulong_t)&isx031_mipi_info },
-	{}
+	{ "INTC113C" },
+	{ }
 };
 
 MODULE_DEVICE_TABLE(acpi, isx031_acpi_ids);
 
 static struct i2c_driver isx031_i2c_driver = {
 	.driver = {
-		.name = "isx031",
-		.acpi_match_table = ACPI_PTR(isx031_acpi_ids),
-		.pm = &isx031_pm_ops,
-	},
+		   .name = "isx031",
+		   .acpi_match_table = ACPI_PTR(isx031_acpi_ids),
+		   .pm = &isx031_pm_ops,
+		    },
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 	.probe_new = isx031_probe,
 #else

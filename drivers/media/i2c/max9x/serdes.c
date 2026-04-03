@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 
 #include <linux/kernel.h>
 #include <linux/i2c.h>
@@ -29,9 +29,12 @@
 #include <linux/slab.h>
 #include <linux/pm.h>
 #include <linux/of_gpio.h>
+#include <linux/overflow.h>
 
 #include "serdes.h"
 #include "regmap-retry.h"
+
+#include <media/ipu-acpi-pdata.h>
 
 static const s64 max9x_op_sys_clock[] =  {
 	MAX9X_LINK_FREQ_MBPS_TO_HZ(2500),
@@ -208,7 +211,7 @@ static int max9x_disable_translations(struct max9x_common *common);
 })
 
 static struct max9x_pdata *pdata_ser(struct device *dev, struct max9x_subdev_pdata *sdinfo, const char *name,
-				     unsigned int phys_addr, unsigned int virt_addr)
+				     unsigned int phys_addr, unsigned int virt_addr, struct gpiod_lookup *ser_gpio)
 {
 	struct max9x_pdata *pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 
@@ -218,6 +221,7 @@ static struct max9x_pdata *pdata_ser(struct device *dev, struct max9x_subdev_pda
 	strscpy(sdinfo->board_info.type, name, I2C_NAME_SIZE);
 	sdinfo->board_info.addr = virt_addr;
 	sdinfo->phys_addr = pdata->phys_addr = phys_addr;
+	sdinfo->gpio = ser_gpio;
 
 	return pdata;
 }
@@ -237,9 +241,9 @@ static struct max9x_pdata *pdata_sensor(struct device *dev, struct max9x_subdev_
 static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_name, char *suffix,
 					   unsigned int ser_nlanes, unsigned int phys_addr,
 					   unsigned int virt_addr, struct max9x_subdev_pdata *ser_sdinfo,
-					   unsigned int sensor_dt)
+					   unsigned int sensor_dt, struct gpiod_lookup *ser_gpio)
 {
-	struct max9x_pdata *ser_pdata = pdata_ser(dev, ser_sdinfo, ser_name, phys_addr, virt_addr);
+	struct max9x_pdata *ser_pdata = pdata_ser(dev, ser_sdinfo, ser_name, phys_addr, virt_addr, ser_gpio);
 	struct max9x_serial_link_pdata *ser_serial_link;
 	struct max9x_video_pipe_pdata *ser_video_pipe;
 
@@ -288,13 +292,16 @@ static void parse_sensor_pdata(struct device *dev, const char *sensor_name, char
 	ser_pdata->subdevs = devm_kzalloc(dev, ser_pdata->num_subdevs * sizeof(*ser_pdata->subdevs), GFP_KERNEL);
 	pdata_sensor(dev, &ser_pdata->subdevs[0], sensor_name, phys_addr, virt_addr);
 
+	/* Copy GPIO configuration from serializer to sensor subdev */
+	ser_pdata->subdevs[0].gpio = ser_sdinfo->gpio;
+
 	/* NOTE: i2c_dev_set_name() will prepend "i2c-" to this name */
 	char *dev_name = devm_kzalloc(dev, I2C_NAME_SIZE, GFP_KERNEL);
 
 	snprintf(dev_name, I2C_NAME_SIZE, "%s %s", sensor_name, suffix);
 	ser_pdata->subdevs[0].board_info.dev_name = dev_name;
 
-	struct isx031_platform_data *sen_pdata = devm_kzalloc(dev, sizeof(*sen_pdata), GFP_KERNEL);
+	struct sensor_platform_data *sen_pdata = devm_kzalloc(dev, sizeof(*sen_pdata), GFP_KERNEL);
 
 	if (!sen_pdata)
 		return;
@@ -344,6 +351,7 @@ static void *parse_serdes_pdata(struct device *dev)
 		unsigned int sensor_phys_addr = serdes_sdinfo->phy_i2c_addr;
 		unsigned int lanes = serdes_pdata->ser_nlanes;
 		unsigned int dt = serdes_sdinfo->sensor_dt;
+		struct gpiod_lookup *ser_gpio = serdes_sdinfo->ser_gpio;
 
 		serial_link->link_id = serial_link_id;
 		serial_link->link_type = MAX9X_LINK_TYPE_GMSL2;
@@ -364,7 +372,7 @@ static void *parse_serdes_pdata(struct device *dev)
 		SET_CSI_MAP(des_video_pipe->maps, 2, 0, dt, video_pipe_id, dt, csi_port); /* YUV422 8-bit */
 
 		struct max9x_pdata *ser_pdata = parse_ser_pdata(dev, ser_name, serdes_sdinfo->suffix, lanes,
-								ser_phys_addr, ser_alias, ser_sdinfo, dt);
+								ser_phys_addr, ser_alias, ser_sdinfo, dt, ser_gpio);
 
 		parse_sensor_pdata(dev, sensor_name, serdes_sdinfo->suffix, lanes, sensor_phys_addr, sensor_alias,
 				   ser_sdinfo, ser_pdata);
@@ -467,7 +475,7 @@ static int max9x_remap_serializers_resume(struct max9x_common *common, unsigned 
 
 	dev_info(dev, "Remap serializer from 0x%02x to 0x%02x", phys_addr, virt_addr);
 
-	phys_client = i2c_new_dummy_device(common->client->adapter, phys_addr);
+	phys_client = i2c_new_dummy_device(serial_link->remote.client->adapter, phys_addr);
 	if (IS_ERR_OR_NULL(phys_client)) {
 		dev_err(dev, "Failed to create dummy client for phys_addr 0x%x", phys_addr);
 		ret = PTR_ERR(phys_client);
@@ -1040,17 +1048,16 @@ int max9x_disable(struct max9x_common *common)
 	return 0;
 }
 
-static int max9x_get_chip_type(unsigned int dev_id)
+static int max9x_find_chip_index(unsigned int dev_id)
 {
-	unsigned int des_num = sizeof(max9x_chips) / sizeof(struct max9x_desc);
-	unsigned int i = 0;
+	unsigned int i;
 
-	for (i = 0; i < des_num; i++) {
+	for (i = 0; i < ARRAY_SIZE(max9x_chips); i++) {
 		if (dev_id == max9x_chips[i].dev_id)
 			return i;
 	}
 
-	return -1;
+	return -ENODEV;
 }
 
 int max9x_verify_devid(struct max9x_common *common)
@@ -1058,7 +1065,8 @@ int max9x_verify_devid(struct max9x_common *common)
 	struct device *dev = common->dev;
 	struct regmap *map = common->map;
 	struct regmap *phys_map = common->phys_map;
-	unsigned int dev_id, dev_rev, chip_type;
+	unsigned int dev_id, dev_rev;
+	int chip_type;
 	int ret;
 
 	/*
@@ -1078,10 +1086,10 @@ int max9x_verify_devid(struct max9x_common *common)
 			return ret;
 	}
 
-	chip_type = max9x_get_chip_type(dev_id);
-	if (chip_type == -1) {
+	chip_type = max9x_find_chip_index(dev_id);
+	if (chip_type < 0) {
 		dev_warn(dev, "Unknown chip ID 0x%x", dev_id);
-		return -1;
+		return -ENODEV;
 	}
 	common->des = &max9x_chips[chip_type];
 	common->type = common->des->serdes_type;
@@ -1822,26 +1830,36 @@ static int max9x_registered(struct v4l2_subdev *sd)
 					dev_dbg(dev, "Registering sensor %s (%s)...",
 						subdev_pdata->board_info.type, dev_id);
 
-					static struct gpiod_lookup_table sensor_gpios = {
-						.dev_id = "",
-						.table = {
-							GPIO_LOOKUP("", 0, "reset",
-								    GPIO_ACTIVE_LOW),
-							{}
-						},
-					};
+					static struct gpiod_lookup_table *sensor_gpios = NULL;
 
-					sensor_gpios.dev_id = dev_id;
-					sensor_gpios.table[0].key = common->gpio_chip.label;
+					sensor_gpios =
+						devm_kzalloc(dev,
+							     struct_size(sensor_gpios, table,
+									 MAX_SER_GPIO_NUM + 1),
+							     GFP_KERNEL);
 
-					gpiod_add_lookup_table(&sensor_gpios);
+					sensor_gpios->dev_id = dev_id;
+
+					for (int line = 0; line < MAX_SER_GPIO_NUM; line++) {
+						if (subdev_pdata->gpio &&
+						    subdev_pdata->gpio[line].con_id != NULL) {
+							sensor_gpios->table[line] =
+								subdev_pdata->gpio[line];
+							sensor_gpios->table[line].key =
+								common->gpio_chip.label;
+							dev_dbg(dev, " Adding line %d as %s", line,
+								subdev_pdata->gpio[line].con_id);
+						}
+					}
+
+					gpiod_add_lookup_table(sensor_gpios);
 
 					struct v4l2_subdev *subdev =
 						v4l2_i2c_new_subdev_board(sd->v4l2_dev,
 									  common->muxc->adapter[link_id],
 									  &subdev_pdata->board_info, NULL);
 
-					gpiod_remove_lookup_table(&sensor_gpios);
+					gpiod_remove_lookup_table(sensor_gpios);
 
 					if (IS_ERR_OR_NULL(subdev)) {
 						dev_err(dev,

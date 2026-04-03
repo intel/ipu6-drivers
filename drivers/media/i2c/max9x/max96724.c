@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2025 Intel Corporation.
+// Copyright (c) 2025-2026 Intel Corporation.
 
 #include <linux/delay.h>
 #include <linux/init.h>
@@ -153,6 +153,33 @@ static int max96724_set_initial_deskew(struct max9x_common *common, unsigned int
 	}
 
 	return regmap_write(map, MAX96724_MIPI_TX_DESKEW_INIT(csi_id), val);
+}
+
+static int max96724_set_periodic_deskew(struct max9x_common *common, unsigned int csi_id, bool enable, unsigned int width, unsigned int interval)
+{
+	struct device *dev = common->dev;
+	struct regmap *map = common->map;
+	unsigned int val;
+
+	val = MAX9X_FIELD_PREP(MAX96724_MIPI_TX_DESKEW_PERIODIC_EN, enable);
+
+	if (enable) {
+		if (width > MAX96724_PERIODIC_DESKEW_WIDTH_MAX) {
+			dev_err(dev, "Unsupported periodic deskew width!");
+			return -EINVAL;
+		}
+		val |= MAX9X_FIELD_PREP(MAX96724_MIPI_TX_DESKEW_PERIODIC_WIDTH_FIELD, width);
+
+		if (interval > MAX96724_PERIODIC_DESKEW_MAXFRAME) {
+			dev_err(dev, "Unsupported periodic deskew interval!");
+			return -EINVAL;
+		}
+		val |= MAX9X_FIELD_PREP(MAX96724_MIPI_TX_DESKEW_PERIODIC_INTERVAL_FIELD, interval);
+
+		dev_dbg(dev, "CSI link %d: Periodic deskew width: 0x%x, interval: 0x%x", csi_id, width, interval);
+	}
+
+	return regmap_write(map, MAX96724_MIPI_TX_DESKEW_PERIODIC(csi_id), val);
 }
 
 static int max96724_set_mipi_lane_cnt(struct max9x_common *common,
@@ -316,6 +343,15 @@ static int max96724_configure_csi_dphy(struct max9x_common *common)
 
 		ret = max96724_set_initial_deskew(common, csi_id,
 						  common->csi_link[csi_id].config.auto_init_deskew_enabled);
+		if (ret)
+			return ret;
+
+		ret = max96724_set_periodic_deskew(
+				 common, csi_id,
+				 common->csi_link[csi_id]
+					 .config.auto_init_deskew_enabled,
+				 MAX96724_PERIODIC_DESKEW_8x1KUI,
+				 MAX96724_PERIODIC_DESKEW_1FRAME);
 		if (ret)
 			return ret;
 

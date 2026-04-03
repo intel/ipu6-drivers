@@ -84,6 +84,10 @@ struct lt6911gxd {
 	struct regmap *regmap;
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *irq_gpio;
+#ifdef POLLING_MODE
+	struct task_struct *poll_task;
+	u32 thread_run;
+#endif
 };
 
 static const struct v4l2_event lt6911gxd_ev_source_change = {
@@ -178,13 +182,20 @@ static int lt6911gxd_status_update(struct lt6911gxd *lt6911gxd)
 			return -EINVAL;
 		}
 
-		lt6911gxd->cur_mode.height = height;
-		lt6911gxd->cur_mode.width = width;
-		lt6911gxd->cur_mode.fps = fps;
-		/* MIPI Clock Rate = ByteClock × 4, defined in lt6911gxd spec */
-		lt6911gxd->cur_mode.link_freq = byte_clk * 4;
-		v4l2_subdev_notify_event(&lt6911gxd->sd,
-					 &lt6911gxd_ev_source_change);
+		if (lt6911gxd->cur_mode.width != width ||
+		    lt6911gxd->cur_mode.height != height ||
+		    lt6911gxd->cur_mode.fps != fps) {
+			lt6911gxd->cur_mode.height = height;
+			lt6911gxd->cur_mode.width = width;
+			lt6911gxd->cur_mode.fps = fps;
+			/* MIPI Clock Rate = ByteClock × 4, defined in lt6911gxd spec */
+			lt6911gxd->cur_mode.link_freq = byte_clk * 4;
+			v4l2_subdev_notify_event(&lt6911gxd->sd,
+						 &lt6911gxd_ev_source_change);
+			dev_dbg(&client->dev,
+			"notify new resolution or fps: %llux%llu@%llufps\n",
+			width, height, fps);
+		}
 		break;
 
 	case INT_VIDEO_DISAPPEAR:
@@ -195,6 +206,7 @@ static int lt6911gxd_status_update(struct lt6911gxd *lt6911gxd)
 		lt6911gxd->cur_mode.link_freq = 0;
 		v4l2_subdev_notify_event(&lt6911gxd->sd,
 					 &lt6911gxd_ev_stream_end);
+		dev_dbg(&client->dev, "notify video disappear\n");
 		break;
 
 	default:
@@ -502,7 +514,16 @@ static void lt6911gxd_remove(struct i2c_client *client)
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct lt6911gxd *lt6911gxd = to_lt6911gxd(sd);
 
+#ifdef POLLING_MODE
+	if (lt6911gxd->poll_task) {
+		lt6911gxd->thread_run = 0;
+		kthread_stop(lt6911gxd->poll_task);
+		lt6911gxd->poll_task = NULL;
+	}
+#else
 	free_irq(gpiod_to_irq(lt6911gxd->irq_gpio), lt6911gxd);
+#endif
+
 	v4l2_async_unregister_subdev(sd);
 	v4l2_subdev_cleanup(sd);
 	media_entity_cleanup(&sd->entity);
@@ -510,6 +531,26 @@ static void lt6911gxd_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	pm_runtime_set_suspended(&client->dev);
 }
+
+#ifdef POLLING_MODE
+static int lt6911gxd_detect_thread(void *data)
+{
+	struct lt6911gxd *lt6911gxd = (struct lt6911gxd *)data;
+	struct i2c_client *client = v4l2_get_subdevdata(&lt6911gxd->sd);
+	int ret = 0;
+
+	if (!lt6911gxd) {
+		dev_err(&client->dev,  "Invalid argument\n");
+		return -EINVAL;
+	}
+
+	while (lt6911gxd->thread_run) {
+		lt6911gxd_status_update(lt6911gxd);
+		usleep_range(2000000, 2050000);
+	}
+	return 0;
+}
+#endif
 
 static int lt6911gxd_probe(struct i2c_client *client)
 {
@@ -578,7 +619,18 @@ static int lt6911gxd_probe(struct i2c_client *client)
 		dev_err(dev, "failed to init v4l2 subdev: %d\n", ret);
 		goto err_media_entity_cleanup;
 	}
-
+#ifdef POLLING_MODE
+	lt6911gxd->poll_task = kthread_create(lt6911gxd_detect_thread,
+		lt6911gxd, "lt6911gxd polling thread");
+	if (lt6911gxd->poll_task == NULL) {
+		dev_err(&client->dev, "create lt6911gxd polling thread failed.\n");
+		goto err_media_entity_cleanup;
+	} else {
+		lt6911gxd->thread_run = 1;
+		wake_up_process(lt6911gxd->poll_task);
+		dev_info(&client->dev, "Started lt6911gxd polling thread.\n");
+	}
+#else
 	lt6911gxd->irq_gpio = devm_gpiod_get(dev, "hpd", GPIOD_IN);
 	if (IS_ERR(lt6911gxd->irq_gpio))
 		return dev_err_probe(dev, PTR_ERR(lt6911gxd->irq_gpio),
@@ -596,6 +648,7 @@ static int lt6911gxd_probe(struct i2c_client *client)
 		dev_err(dev, "failed to request IRQ: %d\n", ret);
 		goto err_subdev_cleanup;
 	}
+#endif
 
 	ret = v4l2_async_register_subdev_sensor(&lt6911gxd->sd);
 	if (ret) {
