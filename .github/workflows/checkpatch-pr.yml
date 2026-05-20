@@ -11,7 +11,15 @@ jobs:
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         fetch-depth: ${{ env.PR_FETCH_DEPTH }}
+    - name: Download latest checkpatch.pl from kernel tree
+      run: |
+        curl -sSL https://raw.githubusercontent.com/torvalds/linux/master/scripts/checkpatch.pl \
+          -o $GITHUB_WORKSPACE/checkpatch.pl
+        curl -sSL https://raw.githubusercontent.com/torvalds/linux/master/scripts/spelling.txt \
+          -o $GITHUB_WORKSPACE/spelling.txt
+        chmod +x $GITHUB_WORKSPACE/checkpatch.pl
     - name: Run checkpatch review
       uses: webispy/checkpatch-action@v9
       env:
         GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        CHECKPATCH_COMMAND: ./checkpatch.pl --no-tree
