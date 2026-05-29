@@ -1,0 +1,111 @@
+From 9b3629a18c8243155300b88962de8e53e0c3ce8d Mon Sep 17 00:00:00 2001
+From: Serin Yeh <serin.yeh@intel.com>
+Date: Fri, 29 May 2026 12:57:51 +0800
+Subject: [PATCH] Remove OV8856 acpi_node check flow
+
+Remove OV8856 acpi_node check process to ensure power management
+process can be executed properly
+---
+ drivers/media/i2c/ov8856.c | 61 ++++++++++++++++++--------------------
+ 1 file changed, 29 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/media/i2c/ov8856.c b/drivers/media/i2c/ov8856.c
+index 4b6874d2a104..8a51344fd2bd 100644
+--- a/drivers/media/i2c/ov8856.c
++++ b/drivers/media/i2c/ov8856.c
+@@ -2069,9 +2069,6 @@ static int ov8856_power_on(struct device *dev)
+ 	struct ov8856 *ov8856 = to_ov8856(sd);
+ 	int ret;
+ 
+-	if (is_acpi_node(dev_fwnode(dev)))
+-		return 0;
+-
+ 	ret = clk_prepare_enable(ov8856->xvclk);
+ 	if (ret < 0) {
+ 		dev_err(dev, "failed to enable xvclk\n");
+@@ -2107,9 +2104,6 @@ static int ov8856_power_off(struct device *dev)
+ 	struct v4l2_subdev *sd = dev_get_drvdata(dev);
+ 	struct ov8856 *ov8856 = to_ov8856(sd);
+ 
+-	if (is_acpi_node(dev_fwnode(dev)))
+-		return 0;
+-
+ 	gpiod_set_value_cansleep(ov8856->reset_gpio, 1);
+ 	regulator_bulk_disable(ARRAY_SIZE(ov8856_supply_names),
+ 			       ov8856->supplies);
+@@ -2273,35 +2267,38 @@ static int ov8856_get_hwcfg(struct ov8856 *ov8856, struct device *dev)
+ 	if (ret)
+ 		return ret;
+ 
+-	if (!is_acpi_node(fwnode)) {
+-		ov8856->xvclk = devm_clk_get(dev, "xvclk");
+-		if (IS_ERR(ov8856->xvclk)) {
+-			dev_err_probe(dev, PTR_ERR(ov8856->xvclk),
+-				      "could not get xvclk clock\n");
+-			return PTR_ERR(ov8856->xvclk);
+-		}
+-
+-		clk_set_rate(ov8856->xvclk, xvclk_rate);
+-		xvclk_rate = clk_get_rate(ov8856->xvclk);
+-
+-		ov8856->reset_gpio = devm_gpiod_get_optional(dev, "reset",
+-							     GPIOD_OUT_LOW);
+-		if (IS_ERR(ov8856->reset_gpio))
+-			return PTR_ERR(ov8856->reset_gpio);
+-
+-		for (i = 0; i < ARRAY_SIZE(ov8856_supply_names); i++)
+-			ov8856->supplies[i].supply = ov8856_supply_names[i];
+-
+-		ret = devm_regulator_bulk_get(dev,
+-					      ARRAY_SIZE(ov8856_supply_names),
+-					      ov8856->supplies);
+-		if (ret)
+-			return ret;
++	ov8856->xvclk = devm_clk_get(dev, "xvclk");
++	if (IS_ERR(ov8856->xvclk)) {
++		ret = dev_err_probe(dev, PTR_ERR(ov8856->xvclk),
++				    "could not get xvclk clock\n");
++		goto check_hwcfg_error;
+ 	}
+ 
+-	if (xvclk_rate != OV8856_XVCLK_19_2)
++	clk_set_rate(ov8856->xvclk, xvclk_rate);
++	xvclk_rate = clk_get_rate(ov8856->xvclk);
++	if (xvclk_rate != OV8856_XVCLK_19_2) {
+ 		dev_warn(dev, "external clock rate %u is unsupported",
+ 			 xvclk_rate);
++		ret = -EINVAL;
++		goto check_hwcfg_error;
++	}
++
++	ov8856->reset_gpio = devm_gpiod_get_optional(dev, "reset",
++						     GPIOD_OUT_LOW);
++	if (IS_ERR(ov8856->reset_gpio)) {
++		ret = dev_err_probe(dev, PTR_ERR(ov8856->reset_gpio),
++				    "getting reset GPIO\n");
++		goto check_hwcfg_error;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(ov8856_supply_names); i++)
++		ov8856->supplies[i].supply = ov8856_supply_names[i];
++
++	ret = devm_regulator_bulk_get(dev,
++				      ARRAY_SIZE(ov8856_supply_names),
++				      ov8856->supplies);
++	if (ret)
++		goto check_hwcfg_error;
+ 
+ 	ep = fwnode_graph_get_next_endpoint(fwnode, NULL);
+ 	if (!ep)
+@@ -2321,7 +2318,7 @@ static int ov8856_get_hwcfg(struct ov8856 *ov8856, struct device *dev)
+ 		goto check_hwcfg_error;
+ 	}
+ 
+-	dev_dbg(dev, "Using %u data lanes\n", ov8856->cur_mode->data_lanes);
++	dev_dbg(dev, "Using %u data lanes\n", bus_cfg.bus.mipi_csi2.num_data_lanes);
+ 
+ 	if (bus_cfg.bus.mipi_csi2.num_data_lanes == 2)
+ 		ov8856->priv_lane = &lane_cfg_2;
+-- 
+2.25.1
+
