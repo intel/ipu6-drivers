@@ -983,9 +983,6 @@ int max9x_enable(struct max9x_common *common)
 		}
 	}
 
-	dev_info(dev, "sleep for startup after soft reset");
-	usleep_range(100000, 100050);
-
 	if (phys_addr != virt_addr) {
 		/* Device is now reset, but requires remap */
 		ret = max9x_remap_addr(common);
@@ -1698,11 +1695,10 @@ static int max9x_init_state(struct v4l2_subdev *sd,
 
 	struct v4l2_subdev_route des_routes[] = {
 		{
-			.sink_pad = 5,
+			.sink_pad = 4,
 			.sink_stream = 0,
 			.source_pad = 0,
 			.source_stream = 0,
-			.flags = V4L2_SUBDEV_ROUTE_FL_ACTIVE,
 		},
 	};
 	struct v4l2_subdev_route ser_routes[] = {
@@ -1711,7 +1707,6 @@ static int max9x_init_state(struct v4l2_subdev *sd,
 			.sink_stream = 0,
 			.source_pad = 2,
 			.source_stream = 0,
-			.flags = V4L2_SUBDEV_ROUTE_FL_ACTIVE,
 		},
 	};
 	struct v4l2_subdev_krouting des_routing = {
