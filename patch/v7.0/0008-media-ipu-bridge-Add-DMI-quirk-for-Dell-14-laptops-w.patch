@@ -1,4 +1,4 @@
-From 59e285bba789062de197f731f474848852a830ea Mon Sep 17 00:00:00 2001
+From 411cb37a65048c7afd0e7defcd9e4ffad46a18ba Mon Sep 17 00:00:00 2001
 From: Jimmy Su <jimmy.su@intel.com>
 Date: Tue, 24 Mar 2026 14:25:32 +0800
 Subject: [PATCH] media: ipu-bridge: Add DMI quirk for Dell 14 laptops with
@@ -17,7 +17,7 @@ Signed-off-by: You-Sheng Yang <vicamo.yang@canonical.com>
  1 file changed, 71 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
-index d6769f6679998..321337e3a8459 100644
+index e222aed4a37f0..4288d6226c3f3 100644
 --- a/drivers/media/pci/intel/ipu-bridge.c
 +++ b/drivers/media/pci/intel/ipu-bridge.c
 @@ -36,6 +36,14 @@
@@ -35,8 +35,8 @@ index d6769f6679998..321337e3a8459 100644
  /*
   * Extend this array with ACPI Hardware IDs of devices known to be working
   * plus the number of link-frequencies expected by their drivers, along with
-@@ -98,6 +106,17 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
- 	IPU_SENSOR_CONFIG("TBE20A0" , 1, 200000000),
+@@ -99,6 +107,17 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("XMCC0003", 1, 321468000),
  };
  
 +enum upside_down_match_type {
@@ -53,7 +53,7 @@ index d6769f6679998..321337e3a8459 100644
  /*
   * DMI matches for laptops which have their sensor mounted upside-down
   * without reporting a rotation of 180° in neither the SSDB nor the _PLD.
-@@ -108,21 +127,41 @@ static const struct dmi_system_id upside_down_sensor_dmi_ids[] = {
+@@ -109,21 +128,41 @@ static const struct dmi_system_id upside_down_sensor_dmi_ids[] = {
  			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
  			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XPS 13 9350"),
  		},
@@ -98,7 +98,7 @@ index d6769f6679998..321337e3a8459 100644
  	},
  	{} /* Terminating entry */
  };
-@@ -280,8 +319,35 @@ static u32 ipu_bridge_parse_rotation(struct acpi_device *adev,
+@@ -281,8 +320,35 @@ static u32 ipu_bridge_parse_rotation(struct acpi_device *adev,
  	const struct dmi_system_id *dmi_id;
  
  	dmi_id = dmi_first_match(upside_down_sensor_dmi_ids);
