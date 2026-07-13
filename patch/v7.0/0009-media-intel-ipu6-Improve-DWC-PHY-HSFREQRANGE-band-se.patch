@@ -1,0 +1,85 @@
+From ddd7db1e90338e374ca1cc72cf8449b48e335b46 Mon Sep 17 00:00:00 2001
+From: Marco Nenciarini <mnencia@kcore.it>
+Date: Wed, 25 Mar 2026 10:32:41 +0100
+Subject: [PATCH] media: intel/ipu6: Improve DWC PHY HSFREQRANGE band selection
+ for overlapping ranges
+
+The get_hsfreq_by_mbps() function searches the freqranges[] table
+backward (from highest to lowest index). Because adjacent frequency
+bands overlap, a data rate that falls in the overlap region always
+lands on the higher-indexed band.
+
+For data rates up to 1500 Mbps (index 42) every band uses
+osc_freq_target 335. Starting at index 43 (1461-1640 Mbps) the
+osc_freq_target drops to 208. A sensor running at 1498 Mbps sits in
+the overlap between index 42 (1414-1588, osc 335) and index 43
+(1461-1640, osc 208). The backward search picks index 43, programming
+the lower osc_freq_target of 208 instead of the optimal 335.
+
+This causes DDL lock instability and CSI-2 CRC errors on affected
+configurations, such as the OmniVision OV08X40 sensor on Intel Arrow
+Lake platforms (Dell Pro Max 16).
+
+Rewrite get_hsfreq_by_mbps() to select the optimal band:
+
+1. Prefer an exact default_mbps match (returned immediately).
+2. Among bands whose min/max range covers the data rate, prefer
+   the one with the higher osc_freq_target.
+3. If osc_freq_target is equal, prefer the band whose default_mbps
+   is closest to the requested rate.
+
+For 1498 Mbps this now correctly selects index 42 (osc_freq_target
+335, range 1414-1588) instead of index 43 (osc_freq_target 208,
+range 1461-1640).
+
+Fixes: 1e7eeb301696 ("media: intel/ipu6: add the CSI2 DPHY implementation")
+Change-Id: I3e51ea9346b830ff3d951e218dede12d82c82753
+Cc: stable@vger.kernel.org
+Cc: Sakari Ailus <sakari.ailus@linux.intel.com>
+Cc: Bingbu Cao <bingbu.cao@intel.com>
+Signed-off-by: Marco Nenciarini <mnencia@kcore.it>
+Signed-off-by: Avinash Kumar <avinash3.kumar@intel.com>
+---
+ .../media/pci/intel/ipu6/ipu6-isys-dwc-phy.c  | 22 ++++++++++++++-----
+ 1 file changed, 17 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-dwc-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-dwc-phy.c
+index db2874843453..4c9e50c040c3 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-dwc-phy.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-dwc-phy.c
+@@ -288,15 +288,27 @@ static const struct dwc_dphy_freq_range freqranges[DPHY_FREQ_RANGE_NUM] = {
+ 
+ static u16 get_hsfreq_by_mbps(u32 mbps)
+ {
+-	unsigned int i = DPHY_FREQ_RANGE_NUM;
++	int best = DPHY_FREQ_RANGE_INVALID_INDEX;
++	unsigned int i;
+ 
+-	while (i--) {
+-		if (freqranges[i].default_mbps == mbps ||
+-		    (mbps >= freqranges[i].min && mbps <= freqranges[i].max))
++	for (i = 0; i < DPHY_FREQ_RANGE_NUM; i++) {
++		if (freqranges[i].default_mbps == mbps)
+ 			return i;
++
++		if (mbps < freqranges[i].min || mbps > freqranges[i].max)
++			continue;
++
++		if (best == DPHY_FREQ_RANGE_INVALID_INDEX ||
++		    freqranges[i].osc_freq_target >
++		    freqranges[best].osc_freq_target ||
++		    (freqranges[i].osc_freq_target ==
++		     freqranges[best].osc_freq_target &&
++		     abs((int)mbps - (int)freqranges[i].default_mbps) <
++		     abs((int)mbps - (int)freqranges[best].default_mbps)))
++			best = i;
+ 	}
+ 
+-	return DPHY_FREQ_RANGE_INVALID_INDEX;
++	return best;
+ }
+ 
+ static int ipu6_isys_dwc_phy_config(struct ipu6_isys *isys,
+-- 
+2.34.1
+
