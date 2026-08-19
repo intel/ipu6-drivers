@@ -90,11 +90,24 @@ struct ov05c10_mode {
 static const struct cci_reg_sequence ov05c10_soft_standby[] = {
 	{ REG_PAGE_FLAG, PAGE_0 },
 	{ CCI_REG8(0xa0), 0x00 },
+	{ REG_PAGE_FLAG, PAGE_0 },
+	{ CCI_REG8(0x20), 0x5b },
 	{ REG_PAGE_FLAG, PAGE_1 },
+	{ CCI_REG8(0x33), 0x02 },
+	{ CCI_REG8(0x01), 0x02 },
+	{ CCI_REG8(0x01), 0x02 },
 	{ CCI_REG8(0x01), 0x02 },
 };
 
 static const struct cci_reg_sequence ov05c10_streaming[] = {
+	{ REG_PAGE_FLAG, PAGE_1 },
+	{ CCI_REG8(0x33), 0x03 },
+	{ CCI_REG8(0x01), 0x02 },
+	{ CCI_REG8(0x01), 0x02 },
+	{ CCI_REG8(0x01), 0x02 },
+	{ REG_PAGE_FLAG, PAGE_0 },
+	{ CCI_REG8(0x20), 0x1f },
+	{ REG_PAGE_FLAG, PAGE_1 },
 	{ REG_PAGE_FLAG, PAGE_0 },
 	{ CCI_REG8(0xa0), 0x01 },
 	{ REG_PAGE_FLAG, PAGE_1 },
@@ -423,8 +436,8 @@ static const struct ov05c10_mode supported_modes[] = {
 		.width = 2888,
 		.height = 1808,
 		.hts = 1608,
-		.vts_def = 3720,
-		.vts_min = 3720,
+		.vts_def = 3640,
+		.vts_min = 3640,
 		.code = MEDIA_BUS_FMT_SGRBG10_1X10,
 		.fps = 30,
 		.reg_list = {
@@ -508,23 +521,24 @@ static int ov05c10_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	/* Propagate change of current control to all related controls */
 	if (ctrl->id == V4L2_CID_VBLANK) {
+		ret = cci_write(ov05c10->regmap, REG_PAGE_FLAG, PAGE_1, NULL);
+		if (ret) {
+			dev_err(&client->dev, "failed to set page\n");
+			goto err;
+		}
+
+		ret = cci_read(ov05c10->regmap, REG_TIMING_VTS, &vts, NULL);
+		if (ret) {
+			dev_err(&client->dev, "failed to read VTS\n");
+			goto err;
+		}
+
 		/* Update max exposure while meeting expected vblanking */
-		exposure_max =
-			format->height + ctrl->val - OV05C10_EXPOSURE_MARGIN;
+		exposure_max = vts - OV05C10_EXPOSURE_MARGIN;
 		__v4l2_ctrl_modify_range(ov05c10->exposure,
 			ov05c10->exposure->minimum, exposure_max,
 			ov05c10->exposure->step,
 			ov05c10->cur_mode->height - OV05C10_EXPOSURE_MARGIN);
-
-		/*
-		 * REG_TIMING_VTS is read-only and increased by writing to
-		 * REG_DUMMY_LINE in ov05c10. The calculation formula is
-		 * required VTS = dummyline + current VTS.
-		 * Here get the current VTS and calculate the required dummyline.
-		 */
-		cci_read(ov05c10->regmap, REG_TIMING_VTS, &vts, NULL);
-		ctrl->val += format->height;
-		ctrl->val = (ctrl->val > vts) ? ctrl->val - vts : 0;
 	}
 	/* V4L2 controls values will be applied only when power is already up */
 	if (!pm_runtime_get_if_in_use(&client->dev))
