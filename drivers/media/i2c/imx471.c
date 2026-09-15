@@ -11,6 +11,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/property.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
@@ -157,6 +158,9 @@ struct imx471 {
 
 	/* True if the device has been identified */
 	bool identified;
+
+	/* Pre-streaming settle delay (us) for external MIPI retimer HS-lock */
+	u32 settle_delay_us;
 };
 
 static const struct imx471_reg imx471_global_regs[] = {
@@ -772,7 +776,7 @@ static int imx471_start_streaming(struct imx471 *imx471)
 	 * retimer (if present) has time to complete HS-lock, avoiding
 	 * short-packet corruption on the first frame after reopen.
 	 */
-	usleep_range(30000, 50000);
+	usleep_range(imx471->settle_delay_us, imx471->settle_delay_us + 20000);
 
 	return imx471_write_reg(imx471, IMX471_REG_MODE_SELECT,
 				1, IMX471_MODE_STREAMING);
@@ -981,6 +985,16 @@ static int imx471_get_pm_resources(struct device *dev)
 	if (IS_ERR(imx471->img_clk))
 		return dev_err_probe(dev, PTR_ERR(imx471->img_clk),
 						     "failed to get imaging clock\n");
+
+	/*
+	 * Default settle delay before entering streaming mode, sized for an
+	 * external MIPI retimer's HS-lock time. Board/platform can override
+	 * via the "intel,retimer-settle-delay-us" firmware property, mirroring
+	 * the per-module registry override used by the Windows sensor driver.
+	 */
+	imx471->settle_delay_us = 40000;
+	fwnode_property_read_u32(dev_fwnode(dev), "intel,retimer-settle-delay-us",
+				 &imx471->settle_delay_us);
 
 	return 0;
 }
