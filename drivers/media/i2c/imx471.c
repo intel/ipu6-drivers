@@ -767,6 +767,13 @@ static int imx471_start_streaming(struct imx471 *imx471)
 	if (ret)
 		return ret;
 
+	/*
+	 * Settle window before entering streaming mode so an external MIPI
+	 * retimer (if present) has time to complete HS-lock, avoiding
+	 * short-packet corruption on the first frame after reopen.
+	 */
+	usleep_range(30000, 50000);
+
 	return imx471_write_reg(imx471, IMX471_REG_MODE_SELECT,
 				1, IMX471_MODE_STREAMING);
 }
