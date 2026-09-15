@@ -695,8 +695,11 @@ static int imx471_power_off(struct device *dev)
 
 	dev_info(dev, "imx471 power off");
 
-	clk_disable_unprepare(imx471->img_clk);
+	/* Assert hardware reset (XCLR Low) while clock is still active */
 	gpiod_set_value_cansleep(imx471->reset_gpio, 1);
+	usleep_range(1000, 2000);
+
+	clk_disable_unprepare(imx471->img_clk);
 	if (imx471->avdd)
 		regulator_disable(imx471->avdd);
 
@@ -710,6 +713,9 @@ static int imx471_power_on(struct device *dev)
 	int ret;
 
 	dev_info(dev, "start to power on");
+
+	/* Ensure hardware reset is held active LOW during power ramp */
+	gpiod_set_value_cansleep(imx471->reset_gpio, 1);
 
 	if (imx471->avdd) {
 		ret = regulator_enable(imx471->avdd);
@@ -725,9 +731,14 @@ static int imx471_power_on(struct device *dev)
 		return ret;
 	}
 
+	/* Hold reset low for >= 20ms after power supplies and MCLK stabilize */
+	msleep(20);
+
+	/* Release hardware reset (XCLR High) */
 	gpiod_set_value_cansleep(imx471->reset_gpio, 0);
 
-	usleep_range(10000, 15000);
+	/* Allow Sony IMX471 internal PLL and I2C core to stabilize */
+	msleep(30);
 
 	return 0;
 }
