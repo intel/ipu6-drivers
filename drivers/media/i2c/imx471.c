@@ -23,6 +23,9 @@
 #define IMX471_MODE_STANDBY		0x00
 #define IMX471_MODE_STREAMING		0x01
 
+/* Software reset */
+#define IMX471_REG_SW_RESET		0x0103
+
 /* Chip ID */
 #define IMX471_REG_CHIP_ID		0x0016
 #define IMX471_CHIP_ID			0x0471
@@ -751,6 +754,18 @@ static int imx471_start_streaming(struct imx471 *imx471)
 	int ret;
 
 	dev_info(&client->dev, "Start streaming\n");
+
+	/* Software reset, then hold in standby before applying settings */
+	ret = imx471_write_reg(imx471, IMX471_REG_SW_RESET, 1, 1);
+	if (ret)
+		return ret;
+	/* 10-15ms settle window required after SW reset before register access */
+	usleep_range(10000, 15000);
+
+	ret = imx471_write_reg(imx471, IMX471_REG_MODE_SELECT, 1,
+				IMX471_MODE_STANDBY);
+	if (ret)
+		return ret;
 
 	ret = imx471_identify_module(imx471);
 	if (ret)
