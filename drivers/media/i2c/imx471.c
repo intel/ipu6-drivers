@@ -11,6 +11,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/property.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
@@ -21,6 +22,9 @@
 #define IMX471_REG_MODE_SELECT		0x0100
 #define IMX471_MODE_STANDBY		0x00
 #define IMX471_MODE_STREAMING		0x01
+
+/* Software reset */
+#define IMX471_REG_SW_RESET		0x0103
 
 /* Chip ID */
 #define IMX471_REG_CHIP_ID		0x0016
@@ -157,6 +161,9 @@ struct imx471 {
 
 	/* True if the device has been identified */
 	bool identified;
+
+	/* Pre-streaming settle delay (us) for external MIPI retimer HS-lock */
+	u32 settle_delay_us;
 };
 
 static const struct imx471_reg imx471_global_regs[] = {
@@ -691,8 +698,11 @@ static int imx471_power_off(struct device *dev)
 
 	dev_info(dev, "imx471 power off");
 
-	clk_disable_unprepare(imx471->img_clk);
+	/* Assert hardware reset (XCLR Low) while clock is still active */
 	gpiod_set_value_cansleep(imx471->reset_gpio, 1);
+	usleep_range(1000, 2000);
+
+	clk_disable_unprepare(imx471->img_clk);
 	if (imx471->avdd)
 		regulator_disable(imx471->avdd);
 
@@ -706,6 +716,9 @@ static int imx471_power_on(struct device *dev)
 	int ret;
 
 	dev_info(dev, "start to power on");
+
+	/* Ensure hardware reset is held active LOW during power ramp */
+	gpiod_set_value_cansleep(imx471->reset_gpio, 1);
 
 	if (imx471->avdd) {
 		ret = regulator_enable(imx471->avdd);
@@ -721,9 +734,14 @@ static int imx471_power_on(struct device *dev)
 		return ret;
 	}
 
+	/* Hold reset low for >= 20ms after power supplies and MCLK stabilize */
+	msleep(20);
+
+	/* Release hardware reset (XCLR High) */
 	gpiod_set_value_cansleep(imx471->reset_gpio, 0);
 
-	usleep_range(10000, 15000);
+	/* Allow Sony IMX471 internal PLL and I2C core to stabilize */
+	msleep(30);
 
 	return 0;
 }
@@ -736,6 +754,18 @@ static int imx471_start_streaming(struct imx471 *imx471)
 	int ret;
 
 	dev_info(&client->dev, "Start streaming\n");
+
+	/* Software reset, then hold in standby before applying settings */
+	ret = imx471_write_reg(imx471, IMX471_REG_SW_RESET, 1, 1);
+	if (ret)
+		return ret;
+	/* 10-15ms settle window required after SW reset before register access */
+	usleep_range(10000, 15000);
+
+	ret = imx471_write_reg(imx471, IMX471_REG_MODE_SELECT, 1,
+				IMX471_MODE_STANDBY);
+	if (ret)
+		return ret;
 
 	ret = imx471_identify_module(imx471);
 	if (ret)
@@ -766,6 +796,13 @@ static int imx471_start_streaming(struct imx471 *imx471)
 	ret =  __v4l2_ctrl_handler_setup(imx471->sd.ctrl_handler);
 	if (ret)
 		return ret;
+
+	/*
+	 * Settle window before entering streaming mode so an external MIPI
+	 * retimer (if present) has time to complete HS-lock, avoiding
+	 * short-packet corruption on the first frame after reopen.
+	 */
+	usleep_range(imx471->settle_delay_us, imx471->settle_delay_us + 20000);
 
 	return imx471_write_reg(imx471, IMX471_REG_MODE_SELECT,
 				1, IMX471_MODE_STREAMING);
@@ -974,6 +1011,16 @@ static int imx471_get_pm_resources(struct device *dev)
 	if (IS_ERR(imx471->img_clk))
 		return dev_err_probe(dev, PTR_ERR(imx471->img_clk),
 						     "failed to get imaging clock\n");
+
+	/*
+	 * Default settle delay before entering streaming mode, sized for an
+	 * external MIPI retimer's HS-lock time. Board/platform can override
+	 * via the "intel,retimer-settle-delay-us" firmware property, mirroring
+	 * the per-module registry override used by the Windows sensor driver.
+	 */
+	imx471->settle_delay_us = 40000;
+	fwnode_property_read_u32(dev_fwnode(dev), "intel,retimer-settle-delay-us",
+				 &imx471->settle_delay_us);
 
 	return 0;
 }
