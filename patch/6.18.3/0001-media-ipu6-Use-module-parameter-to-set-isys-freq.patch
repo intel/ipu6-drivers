@@ -1,7 +1,7 @@
-From b61cfd2a794a9da108380a0e518bbe76e4549e83 Mon Sep 17 00:00:00 2001
+From 43e7f3b6dc35a5485a05aa9b301a13e3392f85d7 Mon Sep 17 00:00:00 2001
 From: Dongcheng Yan <dongcheng.yan@intel.com>
 Date: Tue, 30 Jul 2024 11:03:10 +0800
-Subject: [PATCH 01/29] media: ipu6: Use module parameter to set isys freq
+Subject: [PATCH 01/28] media: ipu6: Use module parameter to set isys freq
 
 Signed-off-by: Hongju Wang <hongju.wang@intel.com>
 Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
@@ -11,7 +11,7 @@ Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
  1 file changed, 12 insertions(+)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
-index 1f4f20b9c94d..0311fe71cb01 100644
+index 1f4f20b9c9..0311fe71cb 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6.c
 @@ -33,6 +33,10 @@
@@ -41,5 +41,5 @@ index 1f4f20b9c94d..0311fe71cb01 100644
  					       IPU6_ISYS_NAME);
  	if (IS_ERR(isys_adev)) {
 -- 
-2.43.0
+2.53.0
 

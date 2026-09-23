@@ -1,7 +1,7 @@
-From a12e088629db04d878181a808bb439ddd642c07f Mon Sep 17 00:00:00 2001
+From 8a78ab8a192106eeb9233bf34c0801dd4794c2ab Mon Sep 17 00:00:00 2001
 From: zouxiaoh <xiaohong.zou@intel.com>
 Date: Tue, 27 May 2025 13:31:55 +0800
-Subject: [PATCH 23/29] media: pci: align params for non MIPI split and split
+Subject: [PATCH 18/28] media: pci: align params for non MIPI split and split
  cases
 
 fix build error
@@ -12,7 +12,7 @@ Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
-index 29aba3647fd4..6fb1bc7cace9 100644
+index 6fd0dab8e1..32b767f735 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
 @@ -277,7 +277,8 @@ static int isys_register_ext_subdev(struct ipu6_isys *isys,
@@ -26,5 +26,5 @@ index 29aba3647fd4..6fb1bc7cace9 100644
  skip_put_adapter:
  	i2c_put_adapter(adapter);
 -- 
-2.43.0
+2.53.0
 

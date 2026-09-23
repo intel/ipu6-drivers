@@ -1,7 +1,7 @@
-From 8aceaf2c88b44d8a8e4c36e9082e25ad96e658ba Mon Sep 17 00:00:00 2001
+From c9f3dd29bcfb83e097aab084d62af35b9851793f Mon Sep 17 00:00:00 2001
 From: linya14x <linx.yang@intel.com>
 Date: Mon, 9 Feb 2026 16:15:11 +0800
-Subject: [PATCH 09/29] platform: x86: enable ADL&RPL int3472 control logic
+Subject: [PATCH 08/28] platform: x86: enable ADL&RPL int3472 control logic
  type 5
 
 ---
@@ -9,7 +9,7 @@ Subject: [PATCH 09/29] platform: x86: enable ADL&RPL int3472 control logic
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/drivers/platform/x86/intel/int3472/discrete.c b/drivers/platform/x86/intel/int3472/discrete.c
-index 1505fc3ef7a8..bad41d4d5ba1 100644
+index 1505fc3ef7..bad41d4d5b 100644
 --- a/drivers/platform/x86/intel/int3472/discrete.c
 +++ b/drivers/platform/x86/intel/int3472/discrete.c
 @@ -454,7 +454,7 @@ static int skl_int3472_discrete_probe(struct platform_device *pdev)
@@ -22,5 +22,5 @@ index 1505fc3ef7a8..bad41d4d5ba1 100644
  			cldb.control_logic_type);
  		return -EINVAL;
 -- 
-2.43.0
+2.53.0
 

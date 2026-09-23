@@ -1,10 +1,11 @@
-From 57f69a9aed9f39004f7f5afa3f986baaa602db45 Mon Sep 17 00:00:00 2001
-From: hepengpx <pengpengx.he@intel.com>
-Date: Thu, 5 Jun 2025 18:10:35 +0800
-Subject: [PATCH 27/29] kernel: align ACPI PDATA and ACPI fwnode build for ECG
+From 358d0c2c851ee775535bd55b90662a1aa8997021 Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Tue, 14 Apr 2026 11:41:26 +0800
+Subject: [PATCH 20/28] kernel: align ACPI PDATA and ACPI fwnode build for ECG
 
 Signed-off-by: hepengpx <pengpengx.he@intel.com>
 Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: linya14x <linx.yang@intel.com>
 ---
  .../media/pci/intel/ipu6/ipu6-isys-mcd-phy.c  | 196 ++++++++----------
  drivers/media/pci/intel/ipu6/ipu6-isys.c      |  31 ++-
@@ -13,7 +14,7 @@ Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
  4 files changed, 110 insertions(+), 135 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
-index 5b390f042a70..c8a9bf0f7cde 100644
+index 5b390f042a..c8a9bf0f7c 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
 @@ -567,49 +567,46 @@ static int ipu6_isys_mcd_phy_ready(struct ipu6_isys *isys, u8 id)
@@ -252,7 +253,7 @@ index 5b390f042a70..c8a9bf0f7cde 100644
  #define CSI_MCD_PHY_NUM		2
  static refcount_t phy_power_ref_count[CSI_MCD_PHY_NUM];
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
-index 96bb151e3bac..defdb9273fc7 100644
+index d73f10a428..063f80d440 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
 @@ -28,14 +28,12 @@
@@ -284,9 +285,9 @@ index 96bb151e3bac..defdb9273fc7 100644
  }
 -#endif
  
- static int isys_register_devices(struct ipu6_isys *isys)
- {
-@@ -1137,17 +1133,19 @@ static int isys_register_devices(struct ipu6_isys *isys)
+ #ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
+ static void isys_v4l2_notify(struct v4l2_subdev *sd, unsigned int notification,
+@@ -1175,17 +1171,19 @@ static int isys_register_devices(struct ipu6_isys *isys)
  	if (ret)
  		goto out_isys_unregister_subdevices;
  
@@ -316,7 +317,7 @@ index 96bb151e3bac..defdb9273fc7 100644
  #endif
  	return 0;
  #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
-@@ -1177,7 +1175,8 @@ static void isys_unregister_devices(struct ipu6_isys *isys)
+@@ -1215,7 +1213,8 @@ static void isys_unregister_devices(struct ipu6_isys *isys)
  	isys_unregister_video_devices(isys);
  	isys_csi2_unregister_subdevices(isys);
  #if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
@@ -326,7 +327,7 @@ index 96bb151e3bac..defdb9273fc7 100644
  #endif
  	v4l2_device_unregister(&isys->v4l2_dev);
  	media_device_unregister(&isys->media_dev);
-@@ -1548,9 +1547,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
+@@ -1586,9 +1585,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
  	free_fw_msg_bufs(isys);
  
  	isys_unregister_devices(isys);
@@ -337,10 +338,10 @@ index 96bb151e3bac..defdb9273fc7 100644
  	cpu_latency_qos_remove_request(&isys->pm_qos);
  
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.h b/drivers/media/pci/intel/ipu6/ipu6-isys.h
-index 4ca167682128..a5987bbfe3bb 100644
+index dfa393e0f5..d1b3bd8eb4 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.h
-@@ -168,9 +168,7 @@ struct ipu6_isys {
+@@ -167,9 +167,7 @@ struct ipu6_isys {
  	spinlock_t listlock;	/* Protect framebuflist */
  	struct list_head framebuflist;
  	struct list_head framebuflist_fw;
@@ -354,13 +355,13 @@ index 4ca167682128..a5987bbfe3bb 100644
  	int i2c_adapter_id;
  	char i2c_adapter_bdf[32];
  };
--#endif
--#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
- #define IPU_SPDATA_GPIO_NUM 	4
- #define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
+-#define IPU_SPDATA_GPIO_NUM 	4
+-#define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
  #endif
+ 
+ struct ipu_isys_subdev_info {
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
-index 68c17cdd82df..5b3d3429c31b 100644
+index 9708d32cdd..e51868210e 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6.c
 @@ -404,11 +404,11 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
@@ -392,5 +393,5 @@ index 68c17cdd82df..5b3d3429c31b 100644
  		dev_dbg(&pdev->dev, "Subdevice info found");
  		ret = ipu_get_acpi_devices(isys_adev, &isys_adev->auxdev.dev, (void **)&acpi_pdata, (void **)&spdata,
 -- 
-2.43.0
+2.53.0
 

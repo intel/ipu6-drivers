@@ -1,55 +1,64 @@
-From 580d22d89422b7a05c372501ad8204b1e9dc2fbc Mon Sep 17 00:00:00 2001
-From: Yuling Liang <yuling.liang@intel.com>
-Date: Thu, 5 Feb 2026 14:58:38 +0800
-Subject: [PATCH 26/29] Apply IPU6 patch 0055: refine PDATA related config
+From 20b367fb5d2cf87b42afc30d51803a87f0f7c0ab Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Tue, 14 Apr 2026 17:11:10 +0800
+Subject: [PATCH 19/28] Refine PDATA related config
 
+Signed-off-by: linya14x <linx.yang@intel.com>
 ---
- drivers/media/pci/intel/ipu6/ipu6-buttress.c  |  4 +-
- drivers/media/pci/intel/ipu6/ipu6-buttress.h  |  2 +-
+ drivers/media/pci/intel/ipu6/ipu6-buttress.c  |  5 +-
+ drivers/media/pci/intel/ipu6/ipu6-buttress.h  |  2 +
  .../media/pci/intel/ipu6/ipu6-isys-mcd-phy.c  |  6 +-
- drivers/media/pci/intel/ipu6/ipu6-isys.c      | 38 +++++-----
- drivers/media/pci/intel/ipu6/ipu6-isys.h      | 60 ++-------------
+ drivers/media/pci/intel/ipu6/ipu6-isys.c      | 42 +++++------
+ drivers/media/pci/intel/ipu6/ipu6-isys.h      | 63 ++--------------
  drivers/media/pci/intel/ipu6/ipu6.c           | 74 +------------------
  drivers/media/pci/intel/ipu6/ipu6.h           | 13 +---
- 7 files changed, 34 insertions(+), 163 deletions(-)
+ 7 files changed, 41 insertions(+), 164 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-buttress.c b/drivers/media/pci/intel/ipu6/ipu6-buttress.c
-index cc43b2dc0158..0271d31d730e 100644
+index 9523cc612d..0271d31d73 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-buttress.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-buttress.c
-@@ -21,7 +21,7 @@
+@@ -21,8 +21,9 @@
  #include <linux/scatterlist.h>
  #include <linux/slab.h>
  #include <linux/time64.h>
--#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  #include <linux/i2c.h>
- #endif
+-
++#endif
  #include "ipu6.h"
-@@ -776,7 +776,7 @@ int ipu6_buttress_start_tsc_sync(struct ipu6_device *isp)
+ #include "ipu6-bus.h"
+ #include "ipu6-dma.h"
+@@ -775,6 +776,7 @@ int ipu6_buttress_start_tsc_sync(struct ipu6_device *isp)
  }
  EXPORT_SYMBOL_NS_GPL(ipu6_buttress_start_tsc_sync, "INTEL_IPU6");
  
--#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  /*
   * The dev_id was hard code in platform data, as i2c bus number
   * may change dynamiclly, we need to update this bus id
+@@ -815,6 +817,7 @@ int ipu6_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len)
+ 	return -1;
+ }
+ EXPORT_SYMBOL_NS_GPL(ipu6_get_i2c_bus_id, "INTEL_IPU6");
++#endif
+ 
+ void ipu6_buttress_tsc_read(struct ipu6_device *isp, u64 *val)
+ {
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-buttress.h b/drivers/media/pci/intel/ipu6/ipu6-buttress.h
-index d6884c75a8e2..1f4cd3cc4356 100644
+index 6fed522ffe..1f4cd3cc43 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-buttress.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-buttress.h
-@@ -82,7 +82,7 @@ void ipu6_buttress_exit(struct ipu6_device *isp);
+@@ -82,5 +82,7 @@ void ipu6_buttress_exit(struct ipu6_device *isp);
  void ipu6_buttress_csi_port_config(struct ipu6_device *isp,
  				   u32 legacy, u32 combo);
  void ipu6_buttress_restore(struct ipu6_device *isp);
--#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  int ipu6_get_i2c_bus_id(int adapter_id, char *adapter_bdf, int bdf_len);
- #endif
++#endif
  #endif /* IPU6_BUTTRESS_H */
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
-index 7ab02b72e1b0..5b390f042a70 100644
+index 7ab02b72e1..5b390f042a 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
 @@ -567,7 +567,7 @@ static int ipu6_isys_mcd_phy_ready(struct ipu6_isys *isys, u8 id)
@@ -80,7 +89,7 @@ index 7ab02b72e1b0..5b390f042a70 100644
  		ret = ipu6_isys_mcd_phy_config(isys, cfg);
  #else
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
-index f934d78da184..96bb151e3bac 100644
+index 32b767f735..d73f10a428 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
 @@ -28,7 +28,7 @@
@@ -210,7 +219,7 @@ index f934d78da184..96bb151e3bac 100644
  /* The .bound() notifier callback when a match is found */
  static int isys_notifier_bound(struct v4l2_async_notifier *notifier,
  			       struct v4l2_subdev *sd,
-@@ -1139,20 +1137,20 @@ static int isys_register_devices(struct ipu6_isys *isys)
+@@ -1177,23 +1175,23 @@ static int isys_register_devices(struct ipu6_isys *isys)
  	if (ret)
  		goto out_isys_unregister_subdevices;
  
@@ -222,19 +231,24 @@ index f934d78da184..96bb151e3bac 100644
  #else
  	isys_register_ext_subdevs(isys);
  #endif
--#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  	ret = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
  	if (ret)
  		goto out_isys_unregister_ext_subdevs;
- #endif
+-
++#endif
  	return 0;
--#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  out_isys_unregister_ext_subdevs:
  	isys_unregister_ext_subdevs(isys);
- #endif
-@@ -1178,7 +1176,7 @@ static void isys_unregister_devices(struct ipu6_isys *isys)
+-
++#endif
+ out_isys_unregister_subdevices:
+ 	isys_csi2_unregister_subdevices(isys);
+ 
+@@ -1216,7 +1214,7 @@ static void isys_unregister_devices(struct ipu6_isys *isys)
  {
  	isys_unregister_video_devices(isys);
  	isys_csi2_unregister_subdevices(isys);
@@ -243,7 +257,7 @@ index f934d78da184..96bb151e3bac 100644
  	isys_unregister_ext_subdevs(isys);
  #endif
  	v4l2_device_unregister(&isys->v4l2_dev);
-@@ -1550,7 +1548,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
+@@ -1588,7 +1586,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
  	free_fw_msg_bufs(isys);
  
  	isys_unregister_devices(isys);
@@ -253,19 +267,21 @@ index f934d78da184..96bb151e3bac 100644
  #endif
  
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.h b/drivers/media/pci/intel/ipu6/ipu6-isys.h
-index 795e8bdc7c1f..4ca167682128 100644
+index 2912e2ce13..dfa393e0f5 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.h
-@@ -10,7 +10,7 @@
+@@ -10,8 +10,9 @@
  #include <linux/pm_qos.h>
  #include <linux/spinlock_types.h>
  #include <linux/types.h>
--#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  #include <linux/clkdev.h>
- #endif
+-
++#endif
  #include <media/media-device.h>
-@@ -62,11 +62,7 @@ struct ipu6_bus_device;
+ #include <media/v4l2-async.h>
+ #include <media/v4l2-device.h>
+@@ -61,11 +62,7 @@ struct ipu6_bus_device;
  #define IPU6EP_MTL_LTR_VALUE			1023
  #define IPU6EP_MTL_MIN_MEMOPEN_TH		0xc
  
@@ -278,7 +294,7 @@ index 795e8bdc7c1f..4ca167682128 100644
  #define IPU_SPDATA_GPIO_NUM 	4
  #define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
  #endif
-@@ -172,7 +168,7 @@ struct ipu6_isys {
+@@ -170,7 +167,7 @@ struct ipu6_isys {
  	spinlock_t listlock;	/* Protect framebuflist */
  	struct list_head framebuflist;
  	struct list_head framebuflist_fw;
@@ -287,24 +303,23 @@ index 795e8bdc7c1f..4ca167682128 100644
  	struct v4l2_async_notifier notifier;
  #endif
  	struct isys_iwake_watermark iwake_watermark;
-@@ -192,66 +188,22 @@ struct isys_fw_msgs {
+@@ -191,72 +188,28 @@ struct isys_fw_msgs {
  	struct list_head head;
  	dma_addr_t dma_addr;
  };
--#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
+-
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  struct ipu6_isys_subdev_i2c_info {
  	struct i2c_board_info board_info;
  	int i2c_adapter_id;
  	char i2c_adapter_bdf[32];
  };
- #endif
+-
 -#if (IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA) \
 -	&& IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)) \
 -	|| IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
 -#define IPU_SPDATA_NAME_LEN	20
 -#define IPU_SPDATA_BDF_LEN	32
-+#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
  #define IPU_SPDATA_GPIO_NUM 	4
  #define IPU_SPDATA_IRQ_PIN_NAME_LEN 16
  #endif
@@ -357,17 +372,25 @@ index 795e8bdc7c1f..4ca167682128 100644
  	char *acpi_hid;
  #endif
  };
+ 
+ struct ipu_isys_clk_mapping {
++#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
+ 	struct clk_lookup clkdev_data;
++#endif
+ 	char *platform_clock_name;
+ };
+ 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
-index f50abadfb052..68c17cdd82df 100644
+index 8ae2ec8de4..9708d32cdd 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6.c
 @@ -391,7 +391,7 @@ static struct ipu6_bus_device *
  ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
  	       struct ipu6_buttress_ctrl *ctrl, void __iomem *base,
- 	       const struct ipu6_isys_internal_pdata *ipdata,
+ 	       const struct ipu6_isys_internal_pdata *ipdata
 -#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
- 	       struct ipu_isys_subdev_pdata *spdata
+ 	       , struct ipu_isys_subdev_pdata *spdata
  #endif
  			)
 @@ -416,7 +416,7 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
@@ -379,7 +402,7 @@ index f50abadfb052..68c17cdd82df 100644
  	pdata->spdata = spdata;
  #endif
  	/* Override the isys freq */
-@@ -588,59 +588,6 @@ static void ipu6_configure_vc_mechanism(struct ipu6_device *isp)
+@@ -589,59 +589,6 @@ static void ipu6_configure_vc_mechanism(struct ipu6_device *isp)
  	writel(val, isp->base + BUTTRESS_REG_BTRS_CTRL);
  }
  
@@ -439,7 +462,7 @@ index f50abadfb052..68c17cdd82df 100644
  static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
  {
  	struct ipu6_buttress_ctrl *isys_ctrl = NULL, *psys_ctrl = NULL;
-@@ -744,16 +691,6 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+@@ -745,16 +692,6 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
  		goto out_ipu6_bus_del_devices;
  	}
  
@@ -456,16 +479,16 @@ index f50abadfb052..68c17cdd82df 100644
  	isys_ctrl = devm_kmemdup(dev, &isys_buttress_ctrl,
  				 sizeof(isys_buttress_ctrl), GFP_KERNEL);
  	if (!isys_ctrl) {
-@@ -763,7 +700,7 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+@@ -764,7 +701,7 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
  
  	isp->isys = ipu6_isys_init(pdev, dev, isys_ctrl, isys_base,
- 				   &isys_ipdata,
+ 				   &isys_ipdata
 -#if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 +#if IS_ENABLED(CONFIG_INTEL_IPU_ACPI)
- 				  pdev->dev.platform_data
+ 				  , pdev->dev.platform_data
  #endif
  					);
-@@ -865,11 +802,6 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+@@ -866,11 +803,6 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
  		ipu6_mmu_cleanup(isp->isys->mmu);
  	ipu6_bus_del_devices(pdev);
  	release_firmware(isp->cpd_fw);
@@ -478,7 +501,7 @@ index f50abadfb052..68c17cdd82df 100644
  	ipu6_buttress_exit(isp);
  
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.h b/drivers/media/pci/intel/ipu6/ipu6.h
-index 786494df1cd7..baad7f8512e6 100644
+index 786494df1c..baad7f8512 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6.h
 @@ -23,12 +23,6 @@ struct ipu6_bus_device;
@@ -516,5 +539,5 @@ index 786494df1cd7..baad7f8512e6 100644
  #endif
  };
 -- 
-2.43.0
+2.53.0
 

@@ -1,0 +1,64 @@
+From f5483b42ffef863462ab5e569c0169c5381705cb Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Mon, 30 Mar 2026 15:49:11 +0800
+Subject: [PATCH 06/28] media: i2c: add ar0234 support
+
+Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
+Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: linya14x <linx.yang@intel.com>
+---
+ drivers/media/i2c/Kconfig            | 11 +++++++++++
+ drivers/media/i2c/Makefile           |  1 +
+ drivers/media/pci/intel/ipu-bridge.c |  2 ++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index cdd7ba5da0..3510b27f54 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -51,6 +51,17 @@ config VIDEO_ALVIUM_CSI2
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called alvium-csi2.
+ 
++config VIDEO_AR0234
++        tristate "ON Semiconductor AR0234 sensor support"
++        depends on ACPI || COMPILE_TEST
++        select V4L2_CCI_I2C
++        help
++          This is a Video4Linux2 sensor driver for the ON Semiconductor
++          AR0234 camera.
++
++          To compile this driver as a module, choose M here: the
++          module will be called ar0234.
++
+ config VIDEO_AR0521
+ 	tristate "ON Semiconductor AR0521 sensor support"
+ 	help
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 57cdd8dc96..48b293a303 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -19,6 +19,7 @@ obj-$(CONFIG_VIDEO_AK7375) += ak7375.o
+ obj-$(CONFIG_VIDEO_AK881X) += ak881x.o
+ obj-$(CONFIG_VIDEO_ALVIUM_CSI2) += alvium-csi2.o
+ obj-$(CONFIG_VIDEO_APTINA_PLL) += aptina-pll.o
++obj-$(CONFIG_VIDEO_AR0234) += ar0234.o
+ obj-$(CONFIG_VIDEO_AR0521) += ar0521.o
+ obj-$(CONFIG_VIDEO_BT819) += bt819.o
+ obj-$(CONFIG_VIDEO_BT856) += bt856.o
+diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
+index 4e579352ab..b1a7c7dcbf 100644
+--- a/drivers/media/pci/intel/ipu-bridge.c
++++ b/drivers/media/pci/intel/ipu-bridge.c
+@@ -92,6 +92,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("OVTI8856", 3, 180000000, 360000000, 720000000),
+ 	/* Toshiba T4KA3 */
+ 	IPU_SENSOR_CONFIG("XMCC0003", 1, 321468000),
++	/* OnSemiconductor ar0234 */
++	IPU_SENSOR_CONFIG("INTC10C0", 1, 360000000),
+ };
+ 
+ static const struct ipu_property_names prop_names = {
+-- 
+2.53.0
+

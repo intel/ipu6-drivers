@@ -1,7 +1,7 @@
-From 53a88f42691ec4d540c39e87447de43c74c34769 Mon Sep 17 00:00:00 2001
+From 9119173a1bb58059b0ac0e321edfeaf15ef8d7e1 Mon Sep 17 00:00:00 2001
 From: hepengpx <pengpengx.he@intel.com>
 Date: Fri, 25 Apr 2025 09:44:01 +0800
-Subject: [PATCH 11/29] Support IPU6 PSYS FW trace dump for upstream driver
+Subject: [PATCH 10/28] Support IPU6 PSYS FW trace dump for upstream driver
 
 Signed-off-by: hepengpx <pengpengx.he@intel.com>
 ---
@@ -11,7 +11,7 @@ Signed-off-by: hepengpx <pengpengx.he@intel.com>
  3 files changed, 50 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-trace.c b/drivers/media/pci/intel/ipu6/ipu6-trace.c
-index adcee205ad95..077f140921cb 100644
+index adcee205ad..077f140921 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-trace.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-trace.c
 @@ -891,6 +891,12 @@ int ipu_trace_buffer_dma_handle(struct device *dev, dma_addr_t *dma_handle)
@@ -28,7 +28,7 @@ index adcee205ad95..077f140921cb 100644
  MODULE_LICENSE("GPL");
  MODULE_DESCRIPTION("Intel ipu trace support");
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-trace.h b/drivers/media/pci/intel/ipu6/ipu6-trace.h
-index f66d8898b1db..fe89d1b203b6 100644
+index f66d8898b1..fe89d1b203 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-trace.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-trace.h
 @@ -144,4 +144,5 @@ void ipu_trace_restore(struct device *dev);
@@ -38,7 +38,7 @@ index f66d8898b1db..fe89d1b203b6 100644
 +bool is_ipu_trace_enable(void);
  #endif
 diff --git a/drivers/media/pci/intel/ipu6/psys/ipu-psys.c b/drivers/media/pci/intel/ipu6/psys/ipu-psys.c
-index 20b368ea881c..2e6f3175271a 100644
+index b8f0c1b854..8ca7bfd414 100644
 --- a/drivers/media/pci/intel/ipu6/psys/ipu-psys.c
 +++ b/drivers/media/pci/intel/ipu6/psys/ipu-psys.c
 @@ -31,6 +31,7 @@
@@ -49,7 +49,7 @@ index 20b368ea881c..2e6f3175271a 100644
  
  static bool async_fw_init;
  module_param(async_fw_init, bool, 0664);
-@@ -1202,6 +1203,8 @@ static int ipu_psys_sched_cmd(void *ptr)
+@@ -1204,6 +1205,8 @@ static int ipu_psys_sched_cmd(void *ptr)
  	return 0;
  }
  
@@ -58,7 +58,7 @@ index 20b368ea881c..2e6f3175271a 100644
  static void start_sp(struct ipu6_bus_device *adev)
  {
  	struct ipu_psys *psys = ipu6_bus_get_drvdata(adev);
-@@ -1212,7 +1215,7 @@ static void start_sp(struct ipu6_bus_device *adev)
+@@ -1214,7 +1217,7 @@ static void start_sp(struct ipu6_bus_device *adev)
  	val |= IPU6_PSYS_SPC_STATUS_START |
  	    IPU6_PSYS_SPC_STATUS_RUN |
  	    IPU6_PSYS_SPC_STATUS_CTRL_ICACHE_INVALIDATE;
@@ -67,7 +67,7 @@ index 20b368ea881c..2e6f3175271a 100644
  	    IPU6_PSYS_SPC_STATUS_ICACHE_PREFETCH : 0;
  	writel(val, spc_regs_base + IPU6_PSYS_REG_SPC_STATUS_CTRL);
  }
-@@ -1305,6 +1308,40 @@ static void run_fw_init_work(struct work_struct *work)
+@@ -1307,6 +1310,40 @@ static void run_fw_init_work(struct work_struct *work)
  	}
  }
  
@@ -108,7 +108,7 @@ index 20b368ea881c..2e6f3175271a 100644
  static int ipu6_psys_probe(struct auxiliary_device *auxdev,
  			   const struct auxiliary_device_id *auxdev_id)
  {
-@@ -1443,6 +1480,9 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
+@@ -1445,6 +1482,9 @@ static int ipu6_psys_probe(struct auxiliary_device *auxdev,
  	strscpy(psys->caps.dev_model, IPU6_MEDIA_DEV_MODEL_NAME,
  		sizeof(psys->caps.dev_model));
  
@@ -118,7 +118,7 @@ index 20b368ea881c..2e6f3175271a 100644
  	mutex_unlock(&ipu_psys_mutex);
  
  	dev_info(dev, "psys probe minor: %d\n", minor);
-@@ -1504,6 +1544,8 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
+@@ -1506,6 +1546,8 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
  
  	clear_bit(MINOR(psys->cdev.dev), ipu_psys_devices);
  
@@ -128,5 +128,5 @@ index 20b368ea881c..2e6f3175271a 100644
  
  	mutex_destroy(&psys->mutex);
 -- 
-2.43.0
+2.53.0
 

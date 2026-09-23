@@ -1,7 +1,7 @@
-From 229bf38f8d8cd09358a5d087f705907682371b91 Mon Sep 17 00:00:00 2001
-From: zouxiaoh <xiaohong.zou@intel.com>
-Date: Fri, 16 May 2025 14:40:46 +0800
-Subject: [PATCH 12/29] media: pci: The order of return buffers should be FIFO.
+From 4239db0b5e882248278145df6393d38b44c178ec Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Fri, 3 Apr 2026 16:28:36 +0800
+Subject: [PATCH 11/28] media: pci: The order of return buffers should be FIFO.
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -27,10 +27,10 @@ Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
  1 file changed, 18 insertions(+), 17 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
-index b771dfd39783..3b80c87ade53 100644
+index 2f7c038ff4..6cbf0beb52 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
-@@ -518,19 +518,6 @@ static void return_buffers(struct ipu6_isys_queue *aq,
+@@ -517,19 +517,6 @@ static void return_buffers(struct ipu6_isys_queue *aq,
  	unsigned long flags;
  
  	spin_lock_irqsave(&aq->lock, flags);
@@ -50,7 +50,7 @@ index b771dfd39783..3b80c87ade53 100644
  
  	/*
  	 * Something went wrong (FW crash / HW hang / not all buffers
-@@ -540,8 +527,8 @@ static void return_buffers(struct ipu6_isys_queue *aq,
+@@ -539,8 +526,8 @@ static void return_buffers(struct ipu6_isys_queue *aq,
  	while (!list_empty(&aq->active)) {
  		struct vb2_buffer *vb;
  
@@ -61,8 +61,8 @@ index b771dfd39783..3b80c87ade53 100644
  		vb = ipu6_isys_buffer_to_vb2_buffer(ib);
  
  		list_del(&ib->head);
-@@ -553,6 +540,20 @@ static void return_buffers(struct ipu6_isys_queue *aq,
- 		need_reset = true;
+@@ -551,6 +538,20 @@ static void return_buffers(struct ipu6_isys_queue *aq,
+ 		spin_lock_irqsave(&aq->lock, flags);
  	}
  
 +	while (!list_empty(&aq->incoming)) {
@@ -80,9 +80,9 @@ index b771dfd39783..3b80c87ade53 100644
 +	}
 +
  	spin_unlock_irqrestore(&aq->lock, flags);
+ }
  
- 	if (need_reset) {
-@@ -698,8 +699,8 @@ static int reset_start_streaming(struct ipu6_isys_video *av)
+@@ -690,8 +691,8 @@ static int reset_start_streaming(struct ipu6_isys_video *av)
  
  	spin_lock_irqsave(&aq->lock, flags);
  	while (!list_empty(&aq->active)) {
@@ -94,5 +94,5 @@ index b771dfd39783..3b80c87ade53 100644
  		list_del(&ib->head);
  		list_add_tail(&ib->head, &aq->incoming);
 -- 
-2.43.0
+2.53.0
 

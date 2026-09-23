@@ -1,0 +1,27 @@
+From ce88e0e2fbbadad5725e02920cb5e1a09b206846 Mon Sep 17 00:00:00 2001
+From: Hao Yao <hao.yao@intel.com>
+Date: Thu, 9 Apr 2026 17:42:04 +0800
+Subject: [PATCH 23/28] media: ipu6: Remove dead code
+
+Signed-off-by: Hao Yao <hao.yao@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+index c8a9bf0f7c..4a2e314e7b 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
+@@ -631,9 +631,6 @@ static int ipu6_isys_driver_port_to_phy_port(struct ipu6_isys_csi2_config *cfg)
+ 	/* check validity per lane configuration */
+ 	if (cfg->nlanes == 4 && !(phy_port == 0 || phy_port == 2))
+ 		ret = -EINVAL;
+-	else if ((cfg->nlanes == 2 || cfg->nlanes == 1) &&
+-		 !(phy_port >= 0 && phy_port <= 3))
+-		ret = -EINVAL;
+ 
+ 	return ret;
+ }
+-- 
+2.53.0
+

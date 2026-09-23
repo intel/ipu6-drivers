@@ -1,7 +1,7 @@
-From 0d67777cd3c022e863d034052e068f809f61a79e Mon Sep 17 00:00:00 2001
+From 1d4dad64bc4ec16cd01b430facd9e3adeff1f583 Mon Sep 17 00:00:00 2001
 From: Hongju Wang <hongju.wang@intel.com>
 Date: Mon, 14 Oct 2024 16:36:26 +0800
-Subject: [PATCH 16/29] media: pci: Set the correct SOF for different stream
+Subject: [PATCH 13/28] media: pci: Set the correct SOF for different stream
 
 [Changes]
 Distinguish SOF according to VC for streams.
@@ -13,7 +13,7 @@ Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
-index 437ec2e40d07..d24b9a01163a 100644
+index 437ec2e40d..d24b9a0116 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
 @@ -605,6 +605,7 @@ void ipu6_isys_csi2_sof_event_by_stream(struct ipu6_isys_stream *stream)
@@ -25,5 +25,5 @@ index 437ec2e40d07..d24b9a01163a 100644
  	v4l2_event_queue(vdev, &ev);
  
 -- 
-2.43.0
+2.53.0
 
