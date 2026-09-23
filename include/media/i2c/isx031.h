@@ -5,7 +5,6 @@
 #define _ISX031_H_
 
 #include <linux/types.h>
-#include <media/ipu-acpi-pdata.h>
 
 #define ISX031_NAME "isx031"
 

@@ -1,7 +1,7 @@
-From c0a6e51e377397a4bc3c3389b0bbc91fff30fb96 Mon Sep 17 00:00:00 2001
+From 733fdb6901187b1276c3b8499e9774203ea41d8c Mon Sep 17 00:00:00 2001
 From: linya14x <linx.yang@intel.com>
 Date: Wed, 23 Apr 2025 11:30:56 +0800
-Subject: [PATCH 05/29] media: ipu6: Use DMA sync in buffer_prepare callback
+Subject: [PATCH 05/28] media: ipu6: Use DMA sync in buffer_prepare callback
 
 IPU6 is not DMA coherent so ipu6_dma_sync_sgtable() should be called.
 
@@ -12,7 +12,7 @@ Signed-off-by: Bingbu Cao <bingbu.cao@intel.com>
  1 file changed, 5 insertions(+)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
-index 18c70d3234e6..b771dfd39783 100644
+index ad79f47f37..2f7c038ff4 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-queue.c
 @@ -84,7 +84,9 @@ static int ipu6_isys_queue_setup(struct vb2_queue *q, unsigned int *num_buffers,
@@ -36,5 +36,5 @@ index 18c70d3234e6..b771dfd39783 100644
  }
  
 -- 
-2.43.0
+2.53.0
 
