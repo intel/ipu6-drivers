@@ -1,0 +1,35 @@
+From 3c1562f3a5b8e74632bc74083ecd5460ffe36386 Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Mon, 6 Jul 2026 13:46:15 +0800
+Subject: [PATCH 24/28] media: ipu6-isys: let v4l2 set default colorspace
+
+Forcing f->fmt.pix.colorspace to V4L2_COLORSPACE_RAW in
+__ipu6_isys_vidioc_try_fmt_vid_cap() overrides the colorspace propagated
+from the connected sensor sub-device. For non-Bayer sensors this causes
+v4l2src and other userspace clients to reject the negotiated format
+because the round-tripped colorimetry does not match what they requested.
+
+Drop the hardcoded assignment so the colorspace value supplied by
+userspace (or already present on the buffer) is preserved.
+
+Signed-off-by: Florent Pirou <florent.pirou@intel.com>
+Signed-off-by: Ng, Khai Wen <khai.wen.ng@intel.com>
+---
+ drivers/media/pci/intel/ipu6/ipu6-isys-video.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
+index 1d7d8bbb66..fb4742a6aa 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
+@@ -289,7 +289,6 @@ static void __ipu6_isys_vidioc_try_fmt_vid_cap(struct ipu6_isys_video *av,
+ 			      &f->fmt.pix.bytesperline, &f->fmt.pix.sizeimage);
+ 
+ 	f->fmt.pix.field = V4L2_FIELD_NONE;
+-	f->fmt.pix.colorspace = V4L2_COLORSPACE_RAW;
+ 	f->fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
+ 	f->fmt.pix.quantization = V4L2_QUANTIZATION_DEFAULT;
+ 	f->fmt.pix.xfer_func = V4L2_XFER_FUNC_DEFAULT;
+-- 
+2.53.0
+

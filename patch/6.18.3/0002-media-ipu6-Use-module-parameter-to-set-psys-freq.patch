@@ -1,16 +1,56 @@
-From b7e9c5d15dc2a6688e27307593a07b1c8b2a7b35 Mon Sep 17 00:00:00 2001
-From: Dongcheng Yan <dongcheng.yan@intel.com>
-Date: Tue, 30 Jul 2024 16:50:07 +0800
-Subject: [PATCH 02/29] media: ipu6: Use module parameter to set psys freq
+From 1620af19681f41275d15253cb107d5c8759e6936 Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Mon, 13 Apr 2026 17:41:00 +0800
+Subject: [PATCH 02/28] media: ipu6: Use module parameter to set psys freq
+
+And struct ipu6_buttress_ctrl remove const
 
 Signed-off-by: Dongcheng Yan <dongcheng.yan@intel.com>
 Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
+Signed-off-by: linya14x <linx.yang@intel.com>
 ---
- drivers/media/pci/intel/ipu6/ipu6.c | 13 +++++++++++++
- 1 file changed, 13 insertions(+)
+ drivers/media/pci/intel/ipu6/ipu6-bus.c |  2 +-
+ drivers/media/pci/intel/ipu6/ipu6-bus.h |  4 ++--
+ drivers/media/pci/intel/ipu6/ipu6.c     | 13 +++++++++++++
+ 3 files changed, 16 insertions(+), 3 deletions(-)
 
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-bus.c b/drivers/media/pci/intel/ipu6/ipu6-bus.c
+index 5cee274898..37d88ddb6e 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-bus.c
++++ b/drivers/media/pci/intel/ipu6/ipu6-bus.c
+@@ -82,7 +82,7 @@ static void ipu6_bus_release(struct device *dev)
+ 
+ struct ipu6_bus_device *
+ ipu6_bus_initialize_device(struct pci_dev *pdev, struct device *parent,
+-			   void *pdata, const struct ipu6_buttress_ctrl *ctrl,
++			   void *pdata, struct ipu6_buttress_ctrl *ctrl,
+ 			   char *name)
+ {
+ 	struct auxiliary_device *auxdev;
+diff --git a/drivers/media/pci/intel/ipu6/ipu6-bus.h b/drivers/media/pci/intel/ipu6/ipu6-bus.h
+index a08c5468d5..95c7a84df8 100644
+--- a/drivers/media/pci/intel/ipu6/ipu6-bus.h
++++ b/drivers/media/pci/intel/ipu6/ipu6-bus.h
+@@ -25,7 +25,7 @@ struct ipu6_bus_device {
+ 	void *pdata;
+ 	struct ipu6_mmu *mmu;
+ 	struct ipu6_device *isp;
+-	const struct ipu6_buttress_ctrl *ctrl;
++	struct ipu6_buttress_ctrl *ctrl;
+ 	const struct firmware *fw;
+ 	struct sg_table fw_sgt;
+ 	u64 *pkg_dir;
+@@ -47,7 +47,7 @@ struct ipu6_auxdrv_data {
+ 
+ struct ipu6_bus_device *
+ ipu6_bus_initialize_device(struct pci_dev *pdev, struct device *parent,
+-			   void *pdata, const struct ipu6_buttress_ctrl *ctrl,
++			   void *pdata, struct ipu6_buttress_ctrl *ctrl,
+ 			   char *name);
+ int ipu6_bus_add_device(struct ipu6_bus_device *adev);
+ void ipu6_bus_del_devices(struct pci_dev *pdev);
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
-index 0311fe71cb01..f09657a38e9e 100644
+index 0311fe71cb..f09657a38e 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6.c
 @@ -37,6 +37,10 @@ static unsigned int isys_freq_override;
@@ -41,5 +81,5 @@ index 0311fe71cb01..f09657a38e9e 100644
  					       IPU6_PSYS_NAME);
  	if (IS_ERR(psys_adev)) {
 -- 
-2.43.0
+2.53.0
 

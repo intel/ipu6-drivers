@@ -1,7 +1,7 @@
-From 8dc7745c653fb2d3999e5f2dbb90d21ba9809d80 Mon Sep 17 00:00:00 2001
+From 9792aef460be73b0888567cd5e3824962e4a510d Mon Sep 17 00:00:00 2001
 From: Dongcheng Yan <dongcheng.yan@intel.com>
 Date: Mon, 28 Apr 2025 12:30:33 +0800
-Subject: [PATCH 19/29] mv ipu-acpi module to linux-drivers
+Subject: [PATCH 15/28] mv ipu-acpi module to linux-drivers
 
 The ipu-acpi module is responsible for obtaining ACPI device platform
 data (pdata) and is universally applicable to both IPU6/7 and
@@ -23,12 +23,12 @@ Signed-off-by: zouxiaoh <xiaohong.zou@intel.com>
  .../media/pci/intel/ipu6/ipu6-isys-mcd-phy.c  |  4 +--
  drivers/media/pci/intel/ipu6/ipu6-isys.c      | 26 +++++++++----------
  drivers/media/pci/intel/ipu6/ipu6-isys.h      | 26 +++++++++----------
- drivers/media/pci/intel/ipu6/ipu6.c           | 10 +++----
+ drivers/media/pci/intel/ipu6/ipu6.c           | 12 ++++-----
  drivers/media/pci/intel/ipu6/ipu6.h           |  2 +-
- 5 files changed, 34 insertions(+), 34 deletions(-)
+ 5 files changed, 35 insertions(+), 35 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
-index ff291305ca3a..7ab02b72e1b0 100644
+index ff291305ca..7ab02b72e1 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-mcd-phy.c
 @@ -651,8 +651,8 @@ static int ipu6_isys_mcd_phy_config(struct ipu6_isys *isys, struct ipu6_isys_csi
@@ -43,7 +43,7 @@ index ff291305ca3a..7ab02b72e1b0 100644
  
  	if (!spdata) {
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
-index 528f97ba9570..be0aa6ee0e67 100644
+index e1a556ca03..6fd0dab8e1 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
 @@ -141,7 +141,7 @@ static int isys_i2c_test(struct device *dev, void *priv)
@@ -129,7 +129,7 @@ index 528f97ba9570..be0aa6ee0e67 100644
  #endif
  	unsigned int i, j;
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.h b/drivers/media/pci/intel/ipu6/ipu6-isys.h
-index a1172a3c7e1c..22a3c73d220b 100644
+index da0862eb5c..2912e2ce13 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.h
 @@ -64,10 +64,10 @@ struct ipu6_bus_device;
@@ -191,15 +191,18 @@ index a1172a3c7e1c..22a3c73d220b 100644
  
  struct isys_fw_msgs *ipu6_get_fw_msg_buf(struct ipu6_isys_stream *stream);
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
-index 94d214b561c0..cd84534ba1b2 100644
+index 130ba879e7..8ae2ec8de4 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6.c
-@@ -392,7 +392,7 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
+@@ -390,9 +390,9 @@ static void ipu6_internal_pdata_init(struct ipu6_device *isp)
+ static struct ipu6_bus_device *
+ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
  	       struct ipu6_buttress_ctrl *ctrl, void __iomem *base,
- 	       const struct ipu6_isys_internal_pdata *ipdata,
+-	       const struct ipu6_isys_internal_pdata *ipdata,
++	       const struct ipu6_isys_internal_pdata *ipdata
  #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
 -	       struct ipu6_isys_subdev_pdata *spdata
-+	       struct ipu_isys_subdev_pdata *spdata
++	       , struct ipu_isys_subdev_pdata *spdata
  #endif
  			)
  {
@@ -212,7 +215,7 @@ index 94d214b561c0..cd84534ba1b2 100644
  #endif
  	int ret;
  
-@@ -589,7 +589,7 @@ static void ipu6_configure_vc_mechanism(struct ipu6_device *isp)
+@@ -591,7 +591,7 @@ static void ipu6_configure_vc_mechanism(struct ipu6_device *isp)
  
  #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_USE_PLATFORMDATA)
  #if IS_ENABLED(CONFIG_VIDEO_INTEL_IPU_PDATA_DYNAMIC_LOADING)
@@ -221,7 +224,7 @@ index 94d214b561c0..cd84534ba1b2 100644
  			const struct ipu6_spdata_rep *rep)
  {
  	if (strcmp(sd->i2c.board_info.type, rep->name))
-@@ -608,10 +608,10 @@ static inline int match_spdata(struct ipu6_isys_subdev_info *sd,
+@@ -610,10 +610,10 @@ static inline int match_spdata(struct ipu6_isys_subdev_info *sd,
  }
  
  static void fixup_spdata(const void *spdata_rep,
@@ -235,7 +238,7 @@ index 94d214b561c0..cd84534ba1b2 100644
  	if (!spdata)
  		return;
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.h b/drivers/media/pci/intel/ipu6/ipu6.h
-index 71d8cdf0fe49..786494df1cd7 100644
+index 71d8cdf0fe..786494df1c 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6.h
 @@ -339,7 +339,7 @@ struct ipu6_isys_pdata {
@@ -248,5 +251,5 @@ index 71d8cdf0fe49..786494df1cd7 100644
  };
  
 -- 
-2.43.0
+2.53.0
 

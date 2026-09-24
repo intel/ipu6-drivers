@@ -1,16 +1,19 @@
-From f76ea35ba883a0fb19d463f430760a85b8b6ae9f Mon Sep 17 00:00:00 2001
+From 0366062bdae7602425ed216ed5241d797a4d4697 Mon Sep 17 00:00:00 2001
 From: linya14x <linx.yang@intel.com>
-Date: Fri, 13 Feb 2026 11:07:37 +0800
-Subject: [PATCH 15/29] Modify enable/disable stream in CSI2
+Date: Tue, 14 Apr 2026 17:09:07 +0800
+Subject: [PATCH 12/28] Modify enable/disable stream in CSI2
 
+Removing unused static function in ipu6-isys-video.c.
+
+Signed-off-by: linya14x <linx.yang@intel.com>
 ---
  drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c | 109 ++++++++++++------
  drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h |   4 +-
- .../media/pci/intel/ipu6/ipu6-isys-video.c    |  51 ++++----
- 3 files changed, 97 insertions(+), 67 deletions(-)
+ .../media/pci/intel/ipu6/ipu6-isys-video.c    |  68 ++++-------
+ 3 files changed, 97 insertions(+), 84 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
-index caccf2a8749c..437ec2e40d07 100644
+index caccf2a874..437ec2e40d 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.c
 @@ -339,6 +339,12 @@ static int ipu6_isys_csi2_set_stream(struct v4l2_subdev *sd,
@@ -166,7 +169,7 @@ index caccf2a8749c..437ec2e40d07 100644
  	csi2->is_multiple = true;
  	dev_dbg(dev, "set csi2->is_multiple is true.\n");
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h
-index be5585ebc8a2..7d751e5dd413 100644
+index be5585ebc8..7d751e5dd4 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-csi2.h
 @@ -43,6 +43,7 @@ struct ipu6_isys_csi2 {
@@ -187,10 +190,30 @@ index be5585ebc8a2..7d751e5dd413 100644
  
  #endif /* IPU6_ISYS_CSI2_H */
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
-index 120fd5f40556..6eb17d8d369e 100644
+index 1112ec272c..1d7d8bbb66 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys-video.c
-@@ -1068,15 +1068,11 @@ static u64 get_stream_mask_by_pipeline(struct ipu6_isys_video *__av)
+@@ -1050,35 +1050,14 @@ ipu6_isys_query_stream_by_source(struct ipu6_isys *isys, int source, u8 vc)
+ 	return stream;
+ }
+ 
+-static u64 get_stream_mask_by_pipeline(struct ipu6_isys_video *__av)
+-{
+-	struct media_pipeline *pipeline =
+-		media_entity_pipeline(&__av->vdev.entity);
+-	unsigned int i;
+-	u64 stream_mask = 0;
+-
+-	for (i = 0; i < NR_OF_CSI2_SRC_PADS; i++) {
+-		struct ipu6_isys_video *av = &__av->csi2->av[i];
+-
+-		if (pipeline == media_entity_pipeline(&av->vdev.entity))
+-			stream_mask |= BIT_ULL(av->source_stream);
+-	}
+-
+-	return stream_mask;
+-}
+-
  int ipu6_isys_video_set_streaming(struct ipu6_isys_video *av, int state,
  				  struct ipu6_isys_buffer_list *bl)
  {
@@ -207,7 +230,7 @@ index 120fd5f40556..6eb17d8d369e 100644
  	int ret = 0;
  
  	dev_dbg(dev, "set stream: %d\n", state);
-@@ -1086,31 +1082,22 @@ int ipu6_isys_video_set_streaming(struct ipu6_isys_video *av, int state,
+@@ -1088,31 +1067,22 @@ int ipu6_isys_video_set_streaming(struct ipu6_isys_video *av, int state,
  
  	sd = &stream->asd->sd;
  	r_pad = media_pad_remote_pad_first(&av->pad);
@@ -247,7 +270,7 @@ index 120fd5f40556..6eb17d8d369e 100644
  		close_streaming_firmware(av);
  	} else {
  		ret = start_stream_firmware(av, bl);
-@@ -1120,12 +1107,14 @@ int ipu6_isys_video_set_streaming(struct ipu6_isys_video *av, int state,
+@@ -1122,12 +1092,14 @@ int ipu6_isys_video_set_streaming(struct ipu6_isys_video *av, int state,
  		}
  
  		/* start sub-device which connects with video */
@@ -267,7 +290,7 @@ index 120fd5f40556..6eb17d8d369e 100644
  			goto out_media_entity_stop_streaming_firmware;
  		}
  	}
-@@ -1289,8 +1278,6 @@ int ipu6_isys_setup_video(struct ipu6_isys_video *av,
+@@ -1289,8 +1261,6 @@ int ipu6_isys_setup_video(struct ipu6_isys_video *av,
  	/* Find the root */
  	state = v4l2_subdev_lock_and_get_active_state(remote_sd);
  	for_each_active_route(&state->routing, r) {
@@ -276,7 +299,7 @@ index 120fd5f40556..6eb17d8d369e 100644
  		if (r->source_pad == remote_pad->index)
  			route = r;
  	}
-@@ -1305,11 +1292,13 @@ int ipu6_isys_setup_video(struct ipu6_isys_video *av,
+@@ -1305,11 +1275,13 @@ int ipu6_isys_setup_video(struct ipu6_isys_video *av,
  
  	ret = ipu6_isys_csi2_get_remote_desc(av->source_stream,
  					     to_ipu6_isys_csi2(asd),
@@ -293,5 +316,5 @@ index 120fd5f40556..6eb17d8d369e 100644
  			entry.stream, entry.length, entry.bus.csi2.vc,
  			entry.bus.csi2.dt);
 -- 
-2.43.0
+2.53.0
 

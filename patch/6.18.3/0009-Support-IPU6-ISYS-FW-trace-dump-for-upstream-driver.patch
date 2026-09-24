@@ -1,7 +1,7 @@
-From dc47d10bd4e52f93cfba5637d06aee779fbb4029 Mon Sep 17 00:00:00 2001
-From: hepengpx <pengpengx.he@intel.com>
-Date: Fri, 25 Apr 2025 09:43:04 +0800
-Subject: [PATCH 10/29] Support IPU6 ISYS FW trace dump for upstream driver
+From befb7323e957f945fd5aff5114c17b48ec7df49d Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Tue, 14 Apr 2026 17:06:24 +0800
+Subject: [PATCH 09/28] Support IPU6 ISYS FW trace dump for upstream driver
 
 Signed-off-by: hepengpx <pengpengx.he@intel.com>
 ---
@@ -19,7 +19,7 @@ Signed-off-by: hepengpx <pengpengx.he@intel.com>
  create mode 100644 drivers/media/pci/intel/ipu6/ipu6-trace.h
 
 diff --git a/drivers/media/pci/intel/ipu6/Makefile b/drivers/media/pci/intel/ipu6/Makefile
-index a821b0a1567f..e1e123b6e749 100644
+index a821b0a156..e1e123b6e7 100644
 --- a/drivers/media/pci/intel/ipu6/Makefile
 +++ b/drivers/media/pci/intel/ipu6/Makefile
 @@ -6,7 +6,8 @@ intel-ipu6-y			:= ipu6.o \
@@ -33,7 +33,7 @@ index a821b0a1567f..e1e123b6e749 100644
  obj-$(CONFIG_VIDEO_INTEL_IPU6)	+= intel-ipu6.o
  
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-bus.h b/drivers/media/pci/intel/ipu6/ipu6-bus.h
-index a08c5468d536..16be93230b14 100644
+index 95c7a84df8..73dcf7349d 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-bus.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-bus.h
 @@ -16,6 +16,7 @@ struct firmware;
@@ -49,11 +49,11 @@ index a08c5468d536..16be93230b14 100644
  	struct ipu6_mmu *mmu;
  	struct ipu6_device *isp;
 +	struct ipu_subsystem_trace_config *trace_cfg;
- 	const struct ipu6_buttress_ctrl *ctrl;
+ 	struct ipu6_buttress_ctrl *ctrl;
  	const struct firmware *fw;
  	struct sg_table fw_sgt;
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-fw-com.c b/drivers/media/pci/intel/ipu6/ipu6-fw-com.c
-index 40d8ce138a67..9f530e0344c8 100644
+index 40d8ce138a..9f530e0344 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-fw-com.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-fw-com.c
 @@ -14,6 +14,7 @@
@@ -83,7 +83,7 @@ index 40d8ce138a67..9f530e0344c8 100644
  	if (!ctx->cell_ready(ctx->adev))
  		return -EIO;
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
-index c755f02720ed..45061316cb0c 100644
+index 72af4b485d..9164b2c463 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
 @@ -41,6 +41,7 @@
@@ -114,7 +114,7 @@ index c755f02720ed..45061316cb0c 100644
  	return IRQ_HANDLED;
  }
  
-@@ -1054,6 +1058,46 @@ void ipu6_put_fw_msg_buf(struct ipu6_isys *isys, uintptr_t data)
+@@ -1092,6 +1096,46 @@ void ipu6_put_fw_msg_buf(struct ipu6_isys *isys, uintptr_t data)
  	spin_unlock_irqrestore(&isys->listlock, flags);
  }
  
@@ -161,7 +161,7 @@ index c755f02720ed..45061316cb0c 100644
  static int isys_probe(struct auxiliary_device *auxdev,
  		      const struct auxiliary_device_id *auxdev_id)
  {
-@@ -1124,6 +1168,8 @@ static int isys_probe(struct auxiliary_device *auxdev,
+@@ -1162,6 +1206,8 @@ static int isys_probe(struct auxiliary_device *auxdev,
  			goto remove_shared_buffer;
  	}
  
@@ -170,7 +170,7 @@ index c755f02720ed..45061316cb0c 100644
  	cpu_latency_qos_add_request(&isys->pm_qos, PM_QOS_DEFAULT_VALUE);
  
  	ret = alloc_fw_msg_bufs(isys, 20);
-@@ -1153,6 +1199,7 @@ static int isys_probe(struct auxiliary_device *auxdev,
+@@ -1191,6 +1237,7 @@ static int isys_probe(struct auxiliary_device *auxdev,
  free_fw_msg_bufs:
  	free_fw_msg_bufs(isys);
  out_remove_pkg_dir_shared_buffer:
@@ -178,7 +178,7 @@ index c755f02720ed..45061316cb0c 100644
  	cpu_latency_qos_remove_request(&isys->pm_qos);
  	if (!isp->secure_mode)
  		ipu6_cpd_free_pkg_dir(adev);
-@@ -1198,6 +1245,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
+@@ -1236,6 +1283,7 @@ static void isys_remove(struct auxiliary_device *auxdev)
  		mutex_destroy(&isys->streams[i].mutex);
  
  	isys_iwake_watermark_cleanup(isys);
@@ -186,7 +186,7 @@ index c755f02720ed..45061316cb0c 100644
  	mutex_destroy(&isys->stream_mutex);
  	mutex_destroy(&isys->mutex);
  #ifdef CONFIG_VIDEO_INTEL_IPU6_ISYS_RESET
-@@ -1250,12 +1298,17 @@ static int isys_isr_one(struct ipu6_bus_device *adev)
+@@ -1288,12 +1336,17 @@ static int isys_isr_one(struct ipu6_bus_device *adev)
  	u32 index;
  	u64 ts;
  
@@ -206,7 +206,7 @@ index c755f02720ed..45061316cb0c 100644
  
  	ts = (u64)resp->timestamp[1] << 32 | resp->timestamp[0];
  
-@@ -1363,6 +1416,7 @@ static int isys_isr_one(struct ipu6_bus_device *adev)
+@@ -1401,6 +1454,7 @@ static int isys_isr_one(struct ipu6_bus_device *adev)
  	ipu6_isys_put_stream(stream);
  leave:
  	ipu6_fw_isys_put_resp(isys->fwcom, IPU6_BASE_MSG_RECV_QUEUES);
@@ -215,7 +215,7 @@ index c755f02720ed..45061316cb0c 100644
  }
  
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-platform-regs.h b/drivers/media/pci/intel/ipu6/ipu6-platform-regs.h
-index b883385adb44..a1744d2434f4 100644
+index b883385adb..a1744d2434 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-platform-regs.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6-platform-regs.h
 @@ -176,4 +176,44 @@ enum nci_ab_access_mode {
@@ -265,7 +265,7 @@ index b883385adb44..a1744d2434f4 100644
  #endif /* IPU6_PLATFORM_REGS_H */
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-trace.c b/drivers/media/pci/intel/ipu6/ipu6-trace.c
 new file mode 100644
-index 000000000000..adcee205ad95
+index 0000000000..adcee205ad
 --- /dev/null
 +++ b/drivers/media/pci/intel/ipu6/ipu6-trace.c
 @@ -0,0 +1,896 @@
@@ -1167,7 +1167,7 @@ index 000000000000..adcee205ad95
 +MODULE_DESCRIPTION("Intel ipu trace support");
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-trace.h b/drivers/media/pci/intel/ipu6/ipu6-trace.h
 new file mode 100644
-index 000000000000..f66d8898b1db
+index 0000000000..f66d8898b1
 --- /dev/null
 +++ b/drivers/media/pci/intel/ipu6/ipu6-trace.h
 @@ -0,0 +1,147 @@
@@ -1319,7 +1319,7 @@ index 000000000000..f66d8898b1db
 +int ipu_trace_buffer_dma_handle(struct device *dev, dma_addr_t *dma_handle);
 +#endif
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.c b/drivers/media/pci/intel/ipu6/ipu6.c
-index f09657a38e9e..42990cc6e4fc 100644
+index f09657a38e..42990cc6e4 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6.c
 @@ -32,6 +32,7 @@
@@ -1406,7 +1406,7 @@ index f09657a38e9e..42990cc6e4fc 100644
  	ipu6_cpd_free_pkg_dir(isp->psys);
  
 diff --git a/drivers/media/pci/intel/ipu6/ipu6.h b/drivers/media/pci/intel/ipu6/ipu6.h
-index 92e3c3414c91..d91a78ef28b5 100644
+index 92e3c3414c..d91a78ef28 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6.h
 +++ b/drivers/media/pci/intel/ipu6/ipu6.h
 @@ -82,10 +82,15 @@ struct ipu6_device {
@@ -1426,5 +1426,5 @@ index 92e3c3414c91..d91a78ef28b5 100644
  
  #define IPU6_ISYS_NAME "isys"
 -- 
-2.43.0
+2.53.0
 

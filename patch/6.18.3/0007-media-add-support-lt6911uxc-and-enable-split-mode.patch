@@ -1,8 +1,9 @@
-From 513b2db374ff4f5efe61cff93a33f2d6de59c36c Mon Sep 17 00:00:00 2001
-From: Chen Meng J <meng.j.chen@intel.com>
-Date: Thu, 26 Dec 2024 17:41:32 +0800
-Subject: [PATCH 08/29] media: lt6911: 2 pads linked to ipu 2 ports for split
- mode
+From 24b6dc12a2c80e36b8ce6ebe4b5c44e51b582e43 Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Fri, 17 Apr 2026 14:58:31 +0800
+Subject: [PATCH 07/28] media: add support lt6911uxc and enable split mode
+
+2 pads linked to ipu 2 ports for split mode
 
 single camera in bios setting, pprval for dummy port.
 create software node and link connection in ipu-brige.
@@ -10,42 +11,53 @@ match the connection and port num in v4l2-async.
 finally create the media links.
 
 Signed-off-by: Chen Meng J <meng.j.chen@intel.com>
+Signed-off-by: linya14x <linx.yang@intel.com>
 ---
- drivers/media/i2c/lt6911uxc.c            |  7 +-
- drivers/media/pci/intel/ipu-bridge.c     | 94 ++++++++++++++++++++----
+ drivers/media/i2c/Kconfig                | 11 +++
+ drivers/media/i2c/Makefile               |  1 +
+ drivers/media/pci/intel/ipu-bridge.c     | 96 ++++++++++++++++++++----
  drivers/media/pci/intel/ipu6/ipu6-isys.c | 16 +++-
  drivers/media/v4l2-core/v4l2-async.c     | 16 +++-
- include/media/ipu-bridge.h               |  8 +-
+ include/media/ipu-bridge.h               |  9 ++-
  include/media/v4l2-async.h               |  2 +
- 6 files changed, 124 insertions(+), 19 deletions(-)
+ 7 files changed, 135 insertions(+), 16 deletions(-)
 
-diff --git a/drivers/media/i2c/lt6911uxc.c b/drivers/media/i2c/lt6911uxc.c
-index 09bc5ce2d659..b391e2c76bbf 100644
---- a/drivers/media/i2c/lt6911uxc.c
-+++ b/drivers/media/i2c/lt6911uxc.c
-@@ -95,7 +95,7 @@ struct lt6911uxc_mode {
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 3510b27f54..fe8b7345ce 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -1220,6 +1220,17 @@ config VIDEO_ISL7998X
+ 	  Support for Intersil ISL7998x analog to MIPI-CSI2 or
+ 	  BT.656 decoder.
  
- struct lt6911uxc {
- 	struct v4l2_subdev sd;
--	struct media_pad pad;
-+	struct media_pad pad[2];
- 	struct v4l2_ctrl_handler ctrl_handler;
- 
- 	struct v4l2_ctrl *pixel_rate;
-@@ -628,8 +628,9 @@ static int lt6911uxc_probe(struct i2c_client *client)
- 			       V4L2_SUBDEV_FL_HAS_EVENTS;
- 	lt6911uxc->sd.entity.ops = &lt6911uxc_subdev_entity_ops;
- 	lt6911uxc->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
--	lt6911uxc->pad.flags = MEDIA_PAD_FL_SOURCE;
--	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 1, &lt6911uxc->pad);
-+	lt6911uxc->pad[0].flags = MEDIA_PAD_FL_SOURCE;
-+	lt6911uxc->pad[1].flags = MEDIA_PAD_FL_SOURCE;
-+	ret = media_entity_pads_init(&lt6911uxc->sd.entity, 2, lt6911uxc->pad);
- 	if (ret) {
- 		dev_err(&client->dev, "Init entity pads failed:%d\n", ret);
- 		goto err_v4l2_ctrl_handler_free;
++config VIDEO_LT6911UXC
++	tristate "Lontium LT6911UXC decoder"
++	depends on ACPI || COMPILE_TEST
++	select V4L2_CCI_I2C
++	help
++	  This is a Video4Linux2 sensor-level driver for the Lontium
++	  LT6911UXC HDMI to MIPI CSI-2 bridge.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called lt6911uxc.
++
+ config VIDEO_LT6911UXE
+ 	tristate "Lontium LT6911UXE decoder"
+ 	depends on ACPI && VIDEO_DEV && I2C
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 48b293a303..ace24bfabb 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -66,6 +66,7 @@ obj-$(CONFIG_VIDEO_ISL7998X) += isl7998x.o
+ obj-$(CONFIG_VIDEO_KS0127) += ks0127.o
+ obj-$(CONFIG_VIDEO_LM3560) += lm3560.o
+ obj-$(CONFIG_VIDEO_LM3646) += lm3646.o
++obj-$(CONFIG_VIDEO_LT6911UXE) += lt6911uxc.o
+ obj-$(CONFIG_VIDEO_LT6911UXE) += lt6911uxe.o
+ obj-$(CONFIG_VIDEO_M52790) += m52790.o
+ obj-$(CONFIG_VIDEO_MAX9271_LIB) += max9271.o
 diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
-index aa5e7c4d0ec7..d0c5df30aa4e 100644
+index b1a7c7dcbf..d0c5df30aa 100644
 --- a/drivers/media/pci/intel/ipu-bridge.c
 +++ b/drivers/media/pci/intel/ipu-bridge.c
 @@ -35,6 +35,11 @@
@@ -60,7 +72,16 @@ index aa5e7c4d0ec7..d0c5df30aa4e 100644
  /*
   * Extend this array with ACPI Hardware IDs of devices known to be working
   * plus the number of link-frequencies expected by their drivers, along with
-@@ -315,6 +320,7 @@ int ipu_bridge_parse_ssdb(struct acpi_device *adev, struct ipu_sensor *sensor)
+@@ -72,6 +77,8 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("INT3537", 1, 437000000),
+ 	/* Lontium lt6911uxe */
+ 	IPU_SENSOR_CONFIG("INTC10C5", 0),
++	/* Lontium LT6911UXC */
++	IPU_SENSOR_CONFIG("INTC10B1", 0),
+ 	/* Omnivision OV01A10 / OV01A1S */
+ 	IPU_SENSOR_CONFIG("OVTI01A0", 1, 400000000),
+ 	IPU_SENSOR_CONFIG("OVTI01AS", 1, 400000000),
+@@ -313,6 +320,7 @@ int ipu_bridge_parse_ssdb(struct acpi_device *adev, struct ipu_sensor *sensor)
  	}
  
  	sensor->link = ssdb.link;
@@ -68,7 +89,7 @@ index aa5e7c4d0ec7..d0c5df30aa4e 100644
  	sensor->lanes = ssdb.lanes;
  	sensor->mclkspeed = ssdb.mclkspeed;
  	sensor->rotation = ipu_bridge_parse_rotation(adev, &ssdb);
-@@ -474,18 +480,49 @@ static void ipu_bridge_init_swnode_group(struct ipu_sensor *sensor)
+@@ -472,18 +480,49 @@ static void ipu_bridge_init_swnode_group(struct ipu_sensor *sensor)
  	}
  }
  
@@ -123,7 +144,7 @@ index aa5e7c4d0ec7..d0c5df30aa4e 100644
  	nodes[SWNODE_SENSOR_ENDPOINT] = NODE_ENDPOINT(
  						sensor->node_names.endpoint,
  						&nodes[SWNODE_SENSOR_PORT],
-@@ -664,7 +701,7 @@ static void ipu_bridge_unregister_sensors(struct ipu_bridge *bridge)
+@@ -662,7 +701,7 @@ static void ipu_bridge_unregister_sensors(struct ipu_bridge *bridge)
  }
  
  static int ipu_bridge_connect_sensor(const struct ipu_sensor_config *cfg,
@@ -132,7 +153,7 @@ index aa5e7c4d0ec7..d0c5df30aa4e 100644
  {
  	struct fwnode_handle *fwnode, *primary;
  	struct ipu_sensor *sensor;
-@@ -687,31 +724,53 @@ static int ipu_bridge_connect_sensor(const struct ipu_sensor_config *cfg,
+@@ -685,31 +724,53 @@ static int ipu_bridge_connect_sensor(const struct ipu_sensor_config *cfg,
  		if (ret)
  			goto err_put_adev;
  
@@ -192,7 +213,7 @@ index aa5e7c4d0ec7..d0c5df30aa4e 100644
  
  		ret = ipu_bridge_instantiate_ivsc(sensor);
  		if (ret)
-@@ -744,7 +803,16 @@ static int ipu_bridge_connect_sensors(struct ipu_bridge *bridge)
+@@ -742,7 +803,16 @@ static int ipu_bridge_connect_sensors(struct ipu_bridge *bridge)
  		const struct ipu_sensor_config *cfg =
  			&ipu_supported_sensors[i];
  
@@ -211,7 +232,7 @@ index aa5e7c4d0ec7..d0c5df30aa4e 100644
  			goto err_unregister_sensors;
  	}
 diff --git a/drivers/media/pci/intel/ipu6/ipu6-isys.c b/drivers/media/pci/intel/ipu6/ipu6-isys.c
-index 3a7ffcab2c2c..c755f02720ed 100644
+index 48420e14df..72af4b485d 100644
 --- a/drivers/media/pci/intel/ipu6/ipu6-isys.c
 +++ b/drivers/media/pci/intel/ipu6/ipu6-isys.c
 @@ -105,6 +105,7 @@ static int isys_isr_one(struct ipu6_bus_device *adev);
@@ -252,7 +273,7 @@ index 3a7ffcab2c2c..c755f02720ed 100644
  		return ret;
  
 diff --git a/drivers/media/v4l2-core/v4l2-async.c b/drivers/media/v4l2-core/v4l2-async.c
-index ee884a8221fb..57701be10556 100644
+index ee884a8221..57701be105 100644
 --- a/drivers/media/v4l2-core/v4l2-async.c
 +++ b/drivers/media/v4l2-core/v4l2-async.c
 @@ -123,6 +123,18 @@ match_fwnode_one(struct v4l2_async_notifier *notifier,
@@ -287,10 +308,10 @@ index ee884a8221fb..57701be10556 100644
  
  	return NULL;
 diff --git a/include/media/ipu-bridge.h b/include/media/ipu-bridge.h
-index 16fac765456e..176b55ab69c6 100644
+index 16fac76545..42799f13d4 100644
 --- a/include/media/ipu-bridge.h
 +++ b/include/media/ipu-bridge.h
-@@ -91,7 +91,12 @@ struct ipu_sensor_ssdb {
+@@ -91,7 +91,13 @@ struct ipu_sensor_ssdb {
  	u8 controllogicid;
  	u8 reserved1[3];
  	u8 mclkport;
@@ -300,11 +321,12 @@ index 16fac765456e..176b55ab69c6 100644
 +	u8 pprval;
 +	u8 pprunit;
 +	u8 flashid;
-+	u8 reserved2[8];
++	u8 phyconfig;
++	u8 reserved2[7];
  } __packed;
  
  struct ipu_property_names {
-@@ -134,6 +139,7 @@ struct ipu_sensor {
+@@ -134,6 +140,7 @@ struct ipu_sensor {
  	struct ipu_node_names node_names;
  
  	u8 link;
@@ -313,7 +335,7 @@ index 16fac765456e..176b55ab69c6 100644
  	u32 mclkspeed;
  	u32 rotation;
 diff --git a/include/media/v4l2-async.h b/include/media/v4l2-async.h
-index f26c323e9c96..3d1573a7bfab 100644
+index f26c323e9c..3d1573a7bf 100644
 --- a/include/media/v4l2-async.h
 +++ b/include/media/v4l2-async.h
 @@ -59,6 +59,7 @@ struct v4l2_async_match_desc {
@@ -333,5 +355,5 @@ index f26c323e9c96..3d1573a7bfab 100644
  
  /**
 -- 
-2.43.0
+2.53.0
 
