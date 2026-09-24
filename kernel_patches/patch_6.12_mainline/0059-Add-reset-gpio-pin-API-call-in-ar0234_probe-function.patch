@@ -1,0 +1,57 @@
+From f07f33ccdce85cf3f0fdb3b1098d1aeb5bcc4350 Mon Sep 17 00:00:00 2001
+From: "Shahidan, Muhammad Shahmil" <muhammad.shahmil.shahidan@intel.com>
+Date: Tue, 26 Aug 2025 09:55:44 +0800
+Subject: [PATCH] Add reset gpio pin API call in ar0234_probe function.
+
+Including reset GPIO API call during sensor probe to fix
+sensor probing issue when GPIO reset pin is in ACTIVE_LOW.
+
+Signed-off-by: Shahidan, Muhammad Shahmil<muhammad.shahmil.shahidan@intel.com>
+---
+ drivers/media/i2c/ar0234.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/media/i2c/ar0234.c b/drivers/media/i2c/ar0234.c
+index c610ee6c689c..79b1760f63cf 100644
+--- a/drivers/media/i2c/ar0234.c
++++ b/drivers/media/i2c/ar0234.c
+@@ -4,6 +4,7 @@
+ #include <linux/acpi.h>
+ #include <linux/clk.h>
+ #include <linux/delay.h>
++#include <linux/gpio/consumer.h>
+ #include <linux/i2c.h>
+ #include <linux/module.h>
+ #include <linux/pm_runtime.h>
+@@ -450,6 +451,8 @@ struct ar0234 {
+ 	struct regmap *regmap;
+ 	unsigned long link_freq_bitmap;
+ 	const struct ar0234_mode *cur_mode;
++	/*GPIO call*/
++	struct gpio_desc *reset_gpio;
+ };
+ 
+ static int ar0234_set_ctrl(struct v4l2_ctrl *ctrl)
+@@ -928,6 +931,7 @@ static int ar0234_identify_module(struct ar0234 *ar0234)
+ 	int ret;
+ 	u64 val;
+ 
++	usleep_range(100000, 200000);
+ 	ret = cci_read(ar0234->regmap, AR0234_REG_CHIP_ID, &val, NULL);
+ 	if (ret)
+ 		return ret;
+@@ -990,6 +994,11 @@ static int ar0234_probe(struct i2c_client *client)
+ 		return -EINVAL;
+ 	}
+ 
++	ar0234->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
++	if (IS_ERR(ar0234->reset_gpio))
++		return dev_err_probe(dev, PTR_ERR(ar0234->reset_gpio),
++				     "failed to get reset gpio\n");
++
+ 	/* Check module identity */
+ 	ret = ar0234_identify_module(ar0234);
+ 	dev_dbg(dev, "ar0234 reset pin state: %d\n", ret);
+-- 
+2.34.1
+
