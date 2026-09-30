@@ -11,6 +11,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/property.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
@@ -21,6 +22,12 @@
 #define IMX471_REG_MODE_SELECT		0x0100
 #define IMX471_MODE_STANDBY		0x00
 #define IMX471_MODE_STREAMING		0x01
+
+/* Software reset */
+#define IMX471_REG_SW_RESET		0x0103
+
+/* Grouped parameter hold */
+#define IMX471_REG_PARAM_HOLD		0x0104
 
 /* Chip ID */
 #define IMX471_REG_CHIP_ID		0x0016
@@ -157,6 +164,9 @@ struct imx471 {
 
 	/* True if the device has been identified */
 	bool identified;
+
+	/* Pre-streaming settle delay (us) for external MIPI retimer HS-lock */
+	u32 settle_delay_us;
 };
 
 static const struct imx471_reg imx471_global_regs[] = {
@@ -230,8 +240,8 @@ static const struct imx471_reg mode_1928x1088_regs[] = {
 	{0x0114, 0x03},
 	{0x0342, 0x0a},
 	{0x0343, 0x00},
-	{0x0340, 0x13},
-	{0x0341, 0xb0},
+	{0x0340, 0x05},
+	{0x0341, 0x1c},
 	{0x0344, 0x00},
 	{0x0345, 0x00},
 	{0x0346, 0x01},
@@ -271,8 +281,8 @@ static const struct imx471_reg mode_1928x1088_regs[] = {
 	{0x030e, 0x00},
 	{0x030f, 0x53},
 	{0x0310, 0x01},
-	{0x0202, 0x13},
-	{0x0203, 0x9e},
+	{0x0202, 0x04},
+	{0x0203, 0xf6},
 	{0x0204, 0x00},
 	{0x0205, 0x00},
 	{0x020e, 0x01},
@@ -282,6 +292,10 @@ static const struct imx471_reg mode_1928x1088_regs[] = {
 	{0x3ffe, 0x00},
 	{0x3fff, 0x8a},
 	{0x5f0a, 0xb6},
+	/* Manual Tclk-post for Synopsys CSI host (460ns for 400 Mbps) */
+	{0x4802, 0x20},
+	{0x4820, 0x01},
+	{0x4821, 0xcc},
 };
 
 static const char * const imx471_test_pattern_menu[] = {
@@ -489,23 +503,46 @@ static int imx471_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_ANALOGUE_GAIN:
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 1);
 		/* Analog gain = 1024/(1024 - ctrl->val) times */
 		ret = imx471_write_reg(imx471, IMX471_REG_ANALOG_GAIN, 2,
 				       ctrl->val);
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 0);
 		break;
 	case V4L2_CID_DIGITAL_GAIN:
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 1);
 		ret = imx471_write_reg(imx471, IMX471_REG_DIG_GAIN_GLOBAL, 2,
 				       ctrl->val);
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 0);
 		break;
-	case V4L2_CID_EXPOSURE:
+	case V4L2_CID_EXPOSURE: {
+		u32 fll = imx471->cur_mode->height + imx471->vblank->val;
+		u32 exp_val = ctrl->val;
+
+		if (fll > 18 && exp_val > fll - 18)
+			exp_val = fll - 18;
+
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 1);
 		ret = imx471_write_reg(imx471, IMX471_REG_EXPOSURE, 2,
-				       ctrl->val);
+				       exp_val);
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 0);
 		break;
-	case V4L2_CID_VBLANK:
+	}
+	case V4L2_CID_VBLANK: {
+		u32 fll = imx471->cur_mode->height + ctrl->val;
+		u32 cur_exp = imx471->exposure->val;
+
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 1);
 		/* Update FLL that meets expected vertical blanking */
-		ret = imx471_write_reg(imx471, IMX471_REG_FLL, 2,
-				       imx471->cur_mode->height + ctrl->val);
+		ret = imx471_write_reg(imx471, IMX471_REG_FLL, 2, fll);
+		if (fll > 18 && cur_exp > fll - 18) {
+			cur_exp = fll - 18;
+			imx471_write_reg(imx471, IMX471_REG_EXPOSURE, 2,
+					 cur_exp);
+		}
+		imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 0);
 		break;
+	}
 	case V4L2_CID_TEST_PATTERN:
 		ret = imx471_write_reg(imx471, IMX471_REG_TEST_PATTERN,
 				       2, ctrl->val);
@@ -691,8 +728,11 @@ static int imx471_power_off(struct device *dev)
 
 	dev_info(dev, "imx471 power off");
 
-	clk_disable_unprepare(imx471->img_clk);
+	/* Assert hardware reset (XCLR Low) while clock is still active */
 	gpiod_set_value_cansleep(imx471->reset_gpio, 1);
+	usleep_range(1000, 2000);
+
+	clk_disable_unprepare(imx471->img_clk);
 	if (imx471->avdd)
 		regulator_disable(imx471->avdd);
 
@@ -706,6 +746,9 @@ static int imx471_power_on(struct device *dev)
 	int ret;
 
 	dev_info(dev, "start to power on");
+
+	/* Ensure hardware reset is held active LOW during power ramp */
+	gpiod_set_value_cansleep(imx471->reset_gpio, 1);
 
 	if (imx471->avdd) {
 		ret = regulator_enable(imx471->avdd);
@@ -721,9 +764,14 @@ static int imx471_power_on(struct device *dev)
 		return ret;
 	}
 
+	/* Hold reset low for >= 20ms after power supplies and MCLK stabilize */
+	msleep(20);
+
+	/* Release hardware reset (XCLR High) */
 	gpiod_set_value_cansleep(imx471->reset_gpio, 0);
 
-	usleep_range(10000, 15000);
+	/* Allow Sony IMX471 internal PLL and I2C core to stabilize */
+	msleep(30);
 
 	return 0;
 }
@@ -736,6 +784,18 @@ static int imx471_start_streaming(struct imx471 *imx471)
 	int ret;
 
 	dev_info(&client->dev, "Start streaming\n");
+
+	/* Software reset, then hold in standby before applying settings */
+	ret = imx471_write_reg(imx471, IMX471_REG_SW_RESET, 1, 1);
+	if (ret)
+		return ret;
+	/* 10-15ms settle window required after SW reset before register access */
+	usleep_range(10000, 15000);
+
+	ret = imx471_write_reg(imx471, IMX471_REG_MODE_SELECT, 1,
+				IMX471_MODE_STANDBY);
+	if (ret)
+		return ret;
 
 	ret = imx471_identify_module(imx471);
 	if (ret)
@@ -762,10 +822,19 @@ static int imx471_start_streaming(struct imx471 *imx471)
 	if (ret)
 		return ret;
 
-	/* Apply customized values from user */
-	ret =  __v4l2_ctrl_handler_setup(imx471->sd.ctrl_handler);
+	/* Apply customized values from user under parameter hold */
+	imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 1);
+	ret = __v4l2_ctrl_handler_setup(imx471->sd.ctrl_handler);
+	imx471_write_reg(imx471, IMX471_REG_PARAM_HOLD, 1, 0);
 	if (ret)
 		return ret;
+
+	/*
+	 * Settle window before entering streaming mode so an external MIPI
+	 * retimer (if present) has time to complete HS-lock, avoiding
+	 * short-packet corruption on the first frame after reopen.
+	 */
+	usleep_range(imx471->settle_delay_us, imx471->settle_delay_us + 20000);
 
 	return imx471_write_reg(imx471, IMX471_REG_MODE_SELECT,
 				1, IMX471_MODE_STREAMING);
@@ -974,6 +1043,16 @@ static int imx471_get_pm_resources(struct device *dev)
 	if (IS_ERR(imx471->img_clk))
 		return dev_err_probe(dev, PTR_ERR(imx471->img_clk),
 						     "failed to get imaging clock\n");
+
+	/*
+	 * Default settle delay before entering streaming mode, sized for an
+	 * external MIPI retimer's HS-lock time. Board/platform can override
+	 * via the "intel,retimer-settle-delay-us" firmware property, mirroring
+	 * the per-module registry override used by the Windows sensor driver.
+	 */
+	imx471->settle_delay_us = 75000;
+	fwnode_property_read_u32(dev_fwnode(dev), "intel,retimer-settle-delay-us",
+				 &imx471->settle_delay_us);
 
 	return 0;
 }
