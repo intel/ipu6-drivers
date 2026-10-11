@@ -559,7 +559,6 @@ static int ov05c10_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct v4l2_subdev_state *state;
 	const struct v4l2_mbus_framefmt *format;
 	s64 exposure_max;
-	u64 vts;
 	int ret;
 
 	state = v4l2_subdev_get_locked_active_state(&ov05c10->sd);
@@ -567,20 +566,18 @@ static int ov05c10_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	/* Propagate change of current control to all related controls */
 	if (ctrl->id == V4L2_CID_VBLANK) {
-		ret = cci_write(ov05c10->regmap, REG_PAGE_FLAG, PAGE_1, NULL);
-		if (ret) {
-			dev_err(&client->dev, "failed to set page\n");
-			goto err;
-		}
-
-		ret = cci_read(ov05c10->regmap, REG_TIMING_VTS, &vts, NULL);
-		if (ret) {
-			dev_err(&client->dev, "failed to read VTS\n");
-			goto err;
-		}
-
-		/* Update max exposure while meeting expected vblanking */
-		exposure_max = vts - OV05C10_EXPOSURE_MARGIN;
+		/*
+		 * Compute VTS as height + vblank instead of reading
+		 * REG_TIMING_VTS over I2C.  That read happened before
+		 * pm_runtime_get_if_in_use(), i.e. potentially on a
+		 * runtime-suspended sensor, where it timed out with -110 and
+		 * its "goto err" ran pm_runtime_put() without a matching get,
+		 * producing "Runtime PM usage count underflow!".  The read
+		 * was also wrong on its own terms: the register still held
+		 * the previous VTS, as the new value had not been written.
+		 */
+		exposure_max = format->height + ctrl->val -
+			       OV05C10_EXPOSURE_MARGIN;
 		__v4l2_ctrl_modify_range(ov05c10->exposure,
 			ov05c10->exposure->minimum, exposure_max,
 			ov05c10->exposure->step,
