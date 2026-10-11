@@ -15,7 +15,9 @@
 #else
 #include <linux/unaligned.h>
 #endif
+#include <linux/bitops.h>
 #include <media/v4l2-cci.h>
+#include <media/v4l2-common.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-device.h>
@@ -486,6 +488,50 @@ struct ov05c10 {
 	struct mutex mutex;
 };
 
+static bool ov05c10_mode_enabled(const struct ov05c10 *ov05c10,
+				 const struct ov05c10_mode *mode)
+{
+	return test_bit(mode->link_freq_index, &ov05c10->link_freq_bitmap);
+}
+
+static const struct ov05c10_mode *
+ov05c10_first_enabled_mode(const struct ov05c10 *ov05c10)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(supported_modes); i++)
+		if (ov05c10_mode_enabled(ov05c10, &supported_modes[i]))
+			return &supported_modes[i];
+
+	return NULL;
+}
+
+static const struct ov05c10_mode *
+ov05c10_find_enabled_mode(const struct ov05c10 *ov05c10, u32 width, u32 height)
+{
+	const struct ov05c10_mode *best = NULL;
+	u64 want = (u64)width * height;
+	u64 best_err = U64_MAX;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
+		const struct ov05c10_mode *mode = &supported_modes[i];
+		u64 area, err;
+
+		if (!ov05c10_mode_enabled(ov05c10, mode))
+			continue;
+
+		area = (u64)mode->width * mode->height;
+		err = area > want ? area - want : want - area;
+		if (err < best_err) {
+			best_err = err;
+			best = mode;
+		}
+	}
+
+	return best;
+}
+
 static int ov05c10_test_pattern(struct ov05c10 *ov05c10, u32 pattern)
 {
 	int ret;
@@ -606,7 +652,8 @@ static int ov05c10_init_controls(struct ov05c10 *ov05c10)
 
 	ov05c10->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr,
 		&ov05c10_ctrl_ops, V4L2_CID_LINK_FREQ,
-		ARRAY_SIZE(ov05c10_link_freq_menu_items) - 1, 0,
+		ARRAY_SIZE(ov05c10_link_freq_menu_items) - 1,
+		__ffs(ov05c10->link_freq_bitmap),
 		ov05c10_link_freq_menu_items);
 	if (ov05c10->link_freq)
 		ov05c10->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
@@ -752,11 +799,10 @@ static int ov05c10_set_format(struct v4l2_subdev *sd,
 	s64 hblank, exposure_max;
 	int ret;
 
-	mode = v4l2_find_nearest_size(supported_modes,
-				ARRAY_SIZE(supported_modes),
-				width, height,
-				fmt->format.width,
-				fmt->format.height);
+	mode = ov05c10_find_enabled_mode(ov05c10, fmt->format.width,
+					 fmt->format.height);
+	if (!mode)
+		return -EINVAL;
 
 	ov05c10_update_pad_format(mode, &fmt->format);
 	*v4l2_subdev_state_get_format(sd_state, fmt->pad) = fmt->format;
@@ -821,17 +867,30 @@ static int ov05c10_enum_frame_size(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_frame_size_enum *fse)
 {
-	if (fse->index >= ARRAY_SIZE(supported_modes))
-		return -EINVAL;
+	struct ov05c10 *ov05c10 = to_ov05c10(sd);
+	unsigned int i, n = 0;
+
 	if (fse->code != MEDIA_BUS_FMT_SGRBG10_1X10)
 		return -EINVAL;
 
-	fse->min_width = supported_modes[fse->index].width;
-	fse->max_width = fse->min_width;
-	fse->min_height = supported_modes[fse->index].height;
-	fse->max_height = fse->min_height;
+	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
+		const struct ov05c10_mode *mode = &supported_modes[i];
 
-	return 0;
+		if (!ov05c10_mode_enabled(ov05c10, mode))
+			continue;
+
+		if (n++ != fse->index)
+			continue;
+
+		fse->min_width = mode->width;
+		fse->max_width = fse->min_width;
+		fse->min_height = mode->height;
+		fse->max_height = fse->min_height;
+
+		return 0;
+	}
+
+	return -EINVAL;
 }
 
 static int ov05c10_get_selection(struct v4l2_subdev *sd,
@@ -906,7 +965,6 @@ static int ov05c10_parse_fwnode(struct ov05c10 *ov05c10, struct device *dev)
 		.bus_type = V4L2_MBUS_CSI2_DPHY,
 	};
 	int ret;
-	unsigned int i, j;
 
 	if (!fwnode)
 		return -ENXIO;
@@ -924,26 +982,18 @@ static int ov05c10_parse_fwnode(struct ov05c10 *ov05c10, struct device *dev)
 		goto out_err;
 	}
 
-	if (!bus_cfg.nr_of_link_frequencies) {
-		dev_err(dev, "no link frequencies defined");
-		ret = -EINVAL;
-		goto out_err;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(ov05c10_link_freq_menu_items); i++) {
-		for (j = 0; j < bus_cfg.nr_of_link_frequencies; j++) {
-			if (ov05c10_link_freq_menu_items[i] ==
-				bus_cfg.link_frequencies[j])
-				break;
-		}
-
-		if (j == bus_cfg.nr_of_link_frequencies) {
-			dev_err(dev, "no link frequency %lld supported",
-				ov05c10_link_freq_menu_items[i]);
-			ret = -EINVAL;
-			goto out_err;
-		}
-	}
+	/*
+	 * Accept firmware that lists only a subset of the driver's link
+	 * frequency menu.  ipu-bridge advertises a single frequency for
+	 * OVTI05C1, IPU_SENSOR_CONFIG("OVTI05C1", 1, 480000000), so
+	 * requiring every menu entry to be present made probe fail with
+	 * -EINVAL on at least the Dell Pro 14 Plus PB14250.
+	 */
+	ret = v4l2_link_freq_to_bitmap(dev, bus_cfg.link_frequencies,
+				       bus_cfg.nr_of_link_frequencies,
+				       ov05c10_link_freq_menu_items,
+				       ARRAY_SIZE(ov05c10_link_freq_menu_items),
+				       &ov05c10->link_freq_bitmap);
 
 out_err:
 	v4l2_fwnode_endpoint_free(&bus_cfg);
@@ -1119,7 +1169,12 @@ static int ov05c10_probe(struct i2c_client *client)
 		}
 	}
 
-	ov05c10->cur_mode = &supported_modes[0];
+	ov05c10->cur_mode = ov05c10_first_enabled_mode(ov05c10);
+	if (!ov05c10->cur_mode) {
+		dev_err(dev, "no usable mode for firmware link frequencies\n");
+		ret = -EINVAL;
+		goto error_power_off;
+	}
 	ret = ov05c10_init_controls(ov05c10);
 	if (ret) {
 		dev_err(&client->dev, "failed to init controls: %d", ret);
