@@ -1752,6 +1752,7 @@ static int hm2172_probe(struct i2c_client *client)
 	if (!hm217)
 		return -ENOMEM;
 
+	mutex_init(&hm217->mutex);
 	/* Initialize subdev */
 	v4l2_i2c_subdev_init(&hm217->sd, client, &hm2172_subdev_ops);
 	hm2172_get_pm_resources(&client->dev);
