@@ -272,6 +272,7 @@ int ipu_psys_ppg_start(struct ipu_psys_ppg *kppg)
 	ret = ipu_psys_allocate_resources(&psys->adev->dev,
 					  kcmd->kpg->pg,
 					  kcmd->pg_manifest,
+					  kcmd->pg_manifest_size,
 					  &kcmd->kpg->resource_alloc,
 					  &psys->res_pool_running);
 	if (ret) {
@@ -303,6 +304,7 @@ error:
 	ipu_psys_reset_process_cell(&psys->adev->dev,
 				    kcmd->kpg->pg,
 				    kcmd->pg_manifest,
+				    kcmd->pg_manifest_size,
 				    kcmd->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
 				&psys->res_pool_running);
@@ -328,6 +330,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 		ret = ipu_psys_allocate_resources(&psys->adev->dev,
 						  kppg->kpg->pg,
 						  kppg->manifest,
+						  kppg->manifest_size,
 						  &kppg->kpg->resource_alloc,
 						  &psys->res_pool_running);
 		if (ret) {
@@ -351,6 +354,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 		ret = ipu_psys_allocate_resources(&psys->adev->dev,
 						  kppg->kpg->pg,
 						  kppg->manifest,
+						  kppg->manifest_size,
 						  &kppg->kpg->resource_alloc,
 						  &psys->res_pool_running);
 		if (ret) {
@@ -374,6 +378,7 @@ error:
 	ipu_psys_reset_process_cell(&psys->adev->dev,
 				    kppg->kpg->pg,
 				    kppg->manifest,
+				    kppg->manifest_size,
 				    kppg->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
 				&psys->res_pool_running);
@@ -592,6 +597,7 @@ int ipu_psys_ppg_start(struct ipu_psys_ppg *kppg)
 	}
 
 	ret = ipu_psys_allocate_resources(dev, kcmd->kpg->pg, kcmd->pg_manifest,
+					  kcmd->pg_manifest_size,
 					  &kcmd->kpg->resource_alloc,
 					  &psys->res_pool_running);
 	if (ret) {
@@ -621,6 +627,7 @@ int ipu_psys_ppg_start(struct ipu_psys_ppg *kppg)
 error:
 	pm_runtime_put_noidle(dev);
 	ipu_psys_reset_process_cell(dev, kcmd->kpg->pg, kcmd->pg_manifest,
+				    kcmd->pg_manifest_size,
 				    kcmd->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
 				&psys->res_pool_running);
@@ -646,6 +653,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 	if (enable_suspend_resume) {
 		ret = ipu_psys_allocate_resources(dev, kppg->kpg->pg,
 						  kppg->manifest,
+						  kppg->manifest_size,
 						  &kppg->kpg->resource_alloc,
 						  &psys->res_pool_running);
 		if (ret) {
@@ -668,6 +676,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 
 		ret = ipu_psys_allocate_resources(dev, kppg->kpg->pg,
 						  kppg->manifest,
+						  kppg->manifest_size,
 						  &kppg->kpg->resource_alloc,
 						  &psys->res_pool_running);
 		if (ret) {
@@ -689,6 +698,7 @@ int ipu_psys_ppg_resume(struct ipu_psys_ppg *kppg)
 
 error:
 	ipu_psys_reset_process_cell(dev, kppg->kpg->pg, kppg->manifest,
+				    kppg->manifest_size,
 				    kppg->kpg->pg->process_count);
 	ipu_psys_free_resources(&kppg->kpg->resource_alloc,
 				&psys->res_pool_running);

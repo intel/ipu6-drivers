@@ -49,6 +49,7 @@ struct ipu_psys_ppg {
 	struct list_head sched_list;
 	u64 token;
 	void *manifest;
+	size_t manifest_size;
 	struct mutex mutex;     /* Protects kcmd and ppg state field */
 	struct list_head kcmds_new_list;
 	struct list_head kcmds_processing_list;

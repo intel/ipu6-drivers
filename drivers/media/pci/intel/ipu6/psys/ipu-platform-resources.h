@@ -63,9 +63,12 @@ struct ipu_fw_psys_program_manifest {
 struct ipu_psys_resource_pool;
 struct ipu_psys_resource_alloc;
 struct ipu_fw_psys_process_group;
+int ipu_psys_pg_validate(const struct device *dev,
+			 struct ipu_fw_psys_process_group *pg, size_t pg_size);
 int ipu_psys_allocate_resources(const struct device *dev,
 				struct ipu_fw_psys_process_group *pg,
 				void *pg_manifest,
+				size_t manifest_size,
 				struct ipu_psys_resource_alloc *alloc,
 				struct ipu_psys_resource_pool *pool);
 int ipu_psys_move_resources(const struct device *dev,
@@ -79,11 +82,13 @@ void ipu_psys_resource_copy(struct ipu_psys_resource_pool *src,
 int ipu_psys_try_allocate_resources(struct device *dev,
 				    struct ipu_fw_psys_process_group *pg,
 				    void *pg_manifest,
+				    size_t manifest_size,
 				    struct ipu_psys_resource_pool *pool);
 
 void ipu_psys_reset_process_cell(const struct device *dev,
 				 struct ipu_fw_psys_process_group *pg,
 				 void *pg_manifest,
+				 size_t manifest_size,
 				 int process_count);
 void ipu_psys_free_resources(struct ipu_psys_resource_alloc *alloc,
 			     struct ipu_psys_resource_pool *pool);
