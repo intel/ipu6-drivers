@@ -1162,6 +1162,7 @@ static int ov02e10_probe(struct i2c_client *client)
 	if (!ov02e)
 		return -ENOMEM;
 
+	mutex_init(&ov02e->mutex);
 	/* Initialize subdev */
 	v4l2_i2c_subdev_init(&ov02e->sd, client, &ov02e10_subdev_ops);
 	ov02e10_get_pm_resources(&client->dev);

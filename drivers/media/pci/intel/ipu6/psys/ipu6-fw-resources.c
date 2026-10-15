@@ -482,6 +482,7 @@ int ipu6_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
 
 static struct ipu_fw_psys_program_manifest *
 get_program_manifest(const struct ipu_fw_psys_pgm *manifest,
+		     size_t manifest_size,
 		     const unsigned int program_index)
 {
 	struct ipu_fw_psys_program_manifest *prg_manifest_base;
@@ -491,14 +492,30 @@ get_program_manifest(const struct ipu_fw_psys_pgm *manifest,
 
 	program_count = manifest->program_count;
 
+	if (manifest_size < sizeof(*prg_manifest_base) ||
+	    manifest->program_manifest_offset >
+	    manifest_size - sizeof(*prg_manifest_base))
+		return NULL;
+
 	prg_manifest_base = (struct ipu_fw_psys_program_manifest *)
 		((char *)manifest + manifest->program_manifest_offset);
 	if (program_index < program_count) {
 		program_manifest = (u8 *)prg_manifest_base;
-		for (i = 0; i < program_index; i++)
-			program_manifest +=
-				((struct ipu_fw_psys_program_manifest *)
-				 program_manifest)->size;
+		for (i = 0; i < program_index; i++) {
+			struct ipu_fw_psys_program_manifest *pm_i =
+				(struct ipu_fw_psys_program_manifest *)
+				program_manifest;
+			size_t used = (size_t)(program_manifest -
+					       (u8 *)manifest);
+
+			if (pm_i->size < sizeof(*pm_i) ||
+			    (size_t)pm_i->size > manifest_size - used)
+				return NULL;
+			program_manifest += pm_i->size;
+		}
+		if ((size_t)(program_manifest - (u8 *)manifest) >
+		    manifest_size - sizeof(*prg_manifest_base))
+			return NULL;
 	}
 
 	return (struct ipu_fw_psys_program_manifest *)program_manifest;
@@ -507,18 +524,25 @@ get_program_manifest(const struct ipu_fw_psys_pgm *manifest,
 int
 ipu6_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
 				const struct ipu_fw_psys_pgm *pg_manifest,
+				size_t manifest_size,
 				struct ipu_fw_psys_process *process)
 {
 	u32 program_id = process->program_idx;
 	struct ipu_fw_psys_program_manifest *pm;
 	struct ipu6_fw_psys_program_manifest_ext *pm_ext;
 
-	pm = get_program_manifest(pg_manifest, program_id);
+	pm = get_program_manifest(pg_manifest, manifest_size, program_id);
 
 	if (!pm)
 		return -ENOENT;
 
 	if (pm->program_extension_offset) {
+		size_t pm_off = (size_t)((u8 *)pm - (u8 *)pg_manifest);
+
+		if (manifest_size < pm_off + (size_t)pm->program_extension_offset +
+		    sizeof(*pm_ext))
+			return -ERANGE;
+
 		pm_ext = (struct ipu6_fw_psys_program_manifest_ext *)
 			((u8 *)pm + pm->program_extension_offset);
 

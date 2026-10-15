@@ -449,9 +449,73 @@ void ipu_psys_free_cmd_queue_res(struct ipu_psys_resource_pool *pool,
 	spin_unlock(&pool->queues_lock);
 }
 
+/*
+ * Validate every offset embedded in a user-supplied process group (PG)
+ * blob before any other code in the driver dereferences it as a pointer.
+ * pg_size is the size of the kernel allocation backing pg, not the
+ * (attacker-controlled) pg->size field.
+ */
+int ipu_psys_pg_validate(const struct device *dev,
+			 struct ipu_fw_psys_process_group *pg, size_t pg_size)
+{
+	size_t terminal_size = max_t(size_t,
+				     sizeof(struct ipu_fw_psys_data_terminal),
+				     sizeof(struct ipu_fw_psys_param_terminal));
+	u16 *process_offset_table;
+	u16 *terminal_offset_table;
+	unsigned int i;
+
+	if (pg_size < sizeof(*pg))
+		goto inval;
+
+	if ((size_t)pg->processes_offset +
+	    (size_t)pg->process_count * sizeof(u16) > pg_size)
+		goto inval;
+
+	process_offset_table = (u16 *)((u8 *)pg + pg->processes_offset);
+	for (i = 0; i < pg->process_count; i++) {
+		struct ipu_fw_psys_process *process;
+		u16 poff = process_offset_table[i];
+		s32 parent;
+
+		if ((size_t)poff + sizeof(*process) > pg_size)
+			goto inval;
+
+		process = (struct ipu_fw_psys_process *)((u8 *)pg + poff);
+
+		parent = (s32)poff + process->parent_offset;
+		if (parent < 0 || (size_t)parent + sizeof(*pg) > pg_size)
+			goto inval;
+
+		if (process->process_extension_offset &&
+		    (size_t)poff + process->process_extension_offset +
+		    sizeof(struct ipu6_fw_psys_process_ext) > pg_size)
+			goto inval;
+	}
+
+	if ((size_t)pg->terminals_offset +
+	    (size_t)pg->terminal_count * sizeof(u16) > pg_size)
+		goto inval;
+
+	terminal_offset_table = (u16 *)((u8 *)pg + pg->terminals_offset);
+	for (i = 0; i < pg->terminal_count; i++) {
+		u16 toff = terminal_offset_table[i];
+
+		if ((size_t)toff + terminal_size > pg_size)
+			goto inval;
+	}
+
+	return 0;
+
+inval:
+	dev_err(dev, "invalid process group: offset out of bounds\n");
+	return -EINVAL;
+}
+
 int ipu_psys_try_allocate_resources(struct device *dev,
 				    struct ipu_fw_psys_process_group *pg,
 				    void *pg_manifest,
+				    size_t manifest_size,
 				    struct ipu_psys_resource_pool *pool)
 {
 	u32 id, idx;
@@ -488,7 +552,8 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 			goto free_out;
 		}
 
-		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
+		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest,
+						     manifest_size, process);
 		if (ret < 0) {
 			dev_err(dev, "can not get manifest\n");
 			goto free_out;
@@ -499,6 +564,11 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 			cell = res_defs->num_cells;
 		} else if ((pm.cell_id != res_defs->num_cells &&
 			    pm.cell_type_id == res_defs->num_cells_type)) {
+			if (pm.cell_id >= res_defs->num_cells) {
+				dev_err(dev, "invalid cell_id %u in manifest\n", pm.cell_id);
+				ret = -EINVAL;
+				goto free_out;
+			}
 			cell = pm.cell_id;
 		} else {
 			/* Find a free cell of desired type */
@@ -560,7 +630,7 @@ int ipu_psys_try_allocate_resources(struct device *dev,
 					bank = res_defs->cell_mem[idx];
 				}
 
-				if (bank == res_defs->num_ext_mem_ids)
+				if (bank >= res_defs->num_ext_mem_ids)
 					continue;
 
 				ret = __alloc_mem_resrc(dev, process,
@@ -596,6 +666,7 @@ free_out:
 int ipu_psys_allocate_resources(const struct device *dev,
 				struct ipu_fw_psys_process_group *pg,
 				void *pg_manifest,
+				size_t manifest_size,
 				struct ipu_psys_resource_alloc *alloc,
 				struct ipu_psys_resource_pool *pool)
 {
@@ -630,7 +701,8 @@ int ipu_psys_allocate_resources(const struct device *dev,
 			goto free_out;
 		}
 
-		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
+		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest,
+					      manifest_size, process);
 		if (ret < 0) {
 			dev_err(dev, "can not get manifest\n");
 			goto free_out;
@@ -641,6 +713,11 @@ int ipu_psys_allocate_resources(const struct device *dev,
 			cell = res_defs->num_cells;
 		} else if ((pm.cell_id != res_defs->num_cells &&
 			    pm.cell_type_id == res_defs->num_cells_type)) {
+			if (pm.cell_id >= res_defs->num_cells) {
+				dev_err(dev, "invalid cell_id %u in manifest\n", pm.cell_id);
+				ret = -EINVAL;
+				goto free_out;
+			}
 			cell = pm.cell_id;
 		} else {
 			/* Find a free cell of desired type */
@@ -756,7 +833,7 @@ int ipu_psys_allocate_resources(const struct device *dev,
 
 free_out:
 	dev_err(dev, "failed to allocate resources, ret %d\n", ret);
-	ipu_psys_reset_process_cell(dev, pg, pg_manifest, i + 1);
+	ipu_psys_reset_process_cell(dev, pg, pg_manifest, manifest_size, i + 1);
 	ipu_psys_free_resources(alloc, pool);
 	return ret;
 }
@@ -853,6 +930,7 @@ int ipu_psys_move_resources(const struct device *dev,
 void ipu_psys_reset_process_cell(const struct device *dev,
 				 struct ipu_fw_psys_process_group *pg,
 				 void *pg_manifest,
+				 size_t manifest_size,
 				 int process_count)
 {
 	int i;
@@ -874,7 +952,8 @@ void ipu_psys_reset_process_cell(const struct device *dev,
 		if (!process)
 			break;
 
-		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest, process);
+		ret = ipu_fw_psys_get_pgm_by_process(&pm, pg_manifest,
+						     manifest_size, process);
 		if (ret < 0) {
 			dev_err(dev, "can not get manifest\n");
 			break;

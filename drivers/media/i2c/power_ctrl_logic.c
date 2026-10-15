@@ -61,6 +61,7 @@ static int power_ctrl_logic_add(struct acpi_device *adev)
 	int i, ret;
 
 	dev_dbg(&adev->dev, "@%s, enter\n", __func__);
+	mutex_init(&pcl.status_lock);
 	set_primary_fwnode(&adev->dev, &adev->fwnode);
 
 	ret = acpi_dev_add_driver_gpios(adev, dsc1_acpi_gpios);
