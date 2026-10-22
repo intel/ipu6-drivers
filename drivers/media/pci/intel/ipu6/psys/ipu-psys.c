@@ -332,7 +332,7 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 {
 	struct vm_area_struct *vma;
 	unsigned long start, end;
-	unsigned long npage;
+	unsigned long npages;
 	size_t page_array_size;
 	struct page **pages;
 	struct sg_table *sgt;
