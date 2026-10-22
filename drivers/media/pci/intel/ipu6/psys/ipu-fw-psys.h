@@ -299,6 +299,7 @@ struct ipu6_psys_hw_res_variant {
 				u16 type_id, u16 mem_id, u16 offset);
 	int (*get_pgm_by_proc)(struct ipu_fw_generic_program_manifest *gen_pm,
 			       const struct ipu_fw_psys_pgm *pg_manifest,
+			       size_t manifest_size,
 			       struct ipu_fw_psys_process *process);
 };
 
@@ -364,6 +365,7 @@ int ipu_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
 int
 ipu_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
 			       const struct ipu_fw_psys_pgm *pg_manifest,
+			       size_t manifest_size,
 			       struct ipu_fw_psys_process *process);
 int ipu6_fw_psys_set_proc_dev_chn(struct ipu_fw_psys_process *ptr, u16 offset,
 				  u16 value);
@@ -375,6 +377,7 @@ int ipu6_fw_psys_set_process_ext_mem(struct ipu_fw_psys_process *ptr,
 int
 ipu6_fw_psys_get_pgm_by_process(struct ipu_fw_generic_program_manifest *gen_pm,
 				const struct ipu_fw_psys_pgm *pg_manifest,
+				size_t manifest_size,
 				struct ipu_fw_psys_process *process);
 void ipu6_fw_psys_pg_dump(struct ipu_psys *psys,
 			  struct ipu_psys_kcmd *kcmd, const char *note);

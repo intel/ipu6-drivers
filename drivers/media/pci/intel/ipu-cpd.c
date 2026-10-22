@@ -167,6 +167,11 @@ static int ipu_cpd_parse_module_data(struct ipu_device *isp,
 
 	module_data_hdr = module_data;
 	dir_hdr = module_data + module_data_hdr->hdr_len;
+	if (dir_hdr->ent_cnt > MAX_PKG_DIR_ENT_CNT - 1) {
+		dev_err(&isp->pdev->dev, "Too many pkg_dir entries (%u)\n",
+				dir_hdr->ent_cnt);
+		return -EINVAL;
+	}
 	len = dir_hdr->hdr_len;
 	dir_ent = (struct ipu_cpd_ent *)(((u8 *)dir_hdr) + len);
 

@@ -13,6 +13,7 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/overflow.h>
 #include <linux/version.h>
 #include <linux/poll.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
@@ -331,16 +332,23 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 {
 	struct vm_area_struct *vma;
 	unsigned long start, end;
-	int npages, array_size;
+	unsigned long npages;
+	size_t page_array_size;
 	struct page **pages;
 	struct sg_table *sgt;
 	int nr = 0;
 	int ret = -ENOMEM;
 
 	start = (unsigned long)attach->userptr;
-	end = PAGE_ALIGN(start + attach->len);
+	if (check_add_overflow(start, (unsigned long)attach->len, &end))
+		return -EINVAL;
+	end = PAGE_ALIGN(end);
 	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
-	array_size = npages * sizeof(struct page *);
+	if (!npages || npages > INT_MAX)
+		return -EINVAL;
+	page_array_size = array_size(npages, sizeof(struct page *));
+	if (page_array_size == SIZE_MAX)
+		return -ENOMEM;
 
 	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
 	if (!sgt)
@@ -353,7 +361,7 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 		goto skip_pages;
 	}
 
-	pages = kvzalloc(array_size, GFP_KERNEL);
+	pages = kvzalloc(page_array_size, GFP_KERNEL);
 	if (!pages)
 		goto free_sgt;
 
@@ -442,7 +450,7 @@ error:
 		while (nr > 0)
 			put_page(pages[--nr]);
 
-	if (array_size <= PAGE_SIZE)
+	if (page_array_size <= PAGE_SIZE)
 		kfree(pages);
 	else
 		vfree(pages);
@@ -479,17 +487,24 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 {
 	struct vm_area_struct *vma;
 	unsigned long start, end;
-	int npages, array_size;
+	int npages;
+	size_t page_array_size;
 	struct page **pages;
 	struct sg_table *sgt;
 	int ret = -ENOMEM;
 	int nr = 0;
 	u32 flags;
 
-	start = attach->userptr;
-	end = PAGE_ALIGN(start + attach->len);
+	start = (unsigned long)attach->userptr;
+	if (check_add_overflow(start, (unsigned long)attach->len, &end))
+		return -EINVAL;
+	end = PAGE_ALIGN(end);
 	npages = (end - (start & PAGE_MASK)) >> PAGE_SHIFT;
-	array_size = npages * sizeof(struct page *);
+	if (!npages || npages > INT_MAX)
+		return -EINVAL;
+	page_array_size = array_size(npages, sizeof(struct page *));
+	if (page_array_size == SIZE_MAX)
+		return -ENOMEM;
 
 	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
 	if (!sgt)
@@ -497,7 +512,7 @@ static int ipu_psys_get_userpages(struct ipu_dma_buf_attach *attach)
 
 	WARN_ON_ONCE(attach->npages);
 
-	pages = kvzalloc(array_size, GFP_KERNEL);
+	pages = kvzalloc(page_array_size, GFP_KERNEL);
 	if (!pages)
 		goto free_sgt;
 
@@ -1122,6 +1137,17 @@ static int ipu_psys_getbuf(struct ipu_psys_buffer *buf, struct ipu_psys_fh *fh)
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 	struct dma_buf *dbuf;
 	int ret;
+
+	if (!buf->len || buf->len > SZ_1G) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+		dev_err(&psys->adev->dev, "Invalid buffer length %llu\n",
+				(unsigned long long)buf->len);
+#else
+		dev_err(dev, "Invalid buffer length %llu\n",
+				(unsigned long long)buf->len);
+#endif
+		return -EINVAL;
+	}
 
 	if (!buf->base.userptr) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)

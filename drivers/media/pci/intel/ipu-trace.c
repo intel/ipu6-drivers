@@ -638,6 +638,14 @@ static ssize_t wptraceconf_write(struct file *file, const char __user *buf,
 	mutex_lock(&isp->trace->lock);
 	wpt_buffer = (struct config_value *)(wpt_info_buffer + sizeof(u32));
 	for (i = 0; i < wp_node_number; i++) {
+		if (wpt_buffer[i].reg < isp->trace->psys.offset ||
+				wpt_buffer[i].reg >= isp->trace->psys.offset +
+				TRACE_REG_MAX_PSYS_OFFSET) {
+			dev_info(&isp->pdev->dev,
+					"WPT addr 0x%08x out of range, ignored\n",
+					wpt_buffer[i].reg);
+			continue;
+		}
 		if (wpt->fill_level < MAX_TRACE_REGISTERS) {
 			wpt->config[wpt->fill_level].reg = wpt_buffer[i].reg;
 			wpt->config[wpt->fill_level].value =

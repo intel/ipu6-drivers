@@ -175,6 +175,7 @@ static int ipu_psys_detect_resource_contention(struct ipu_psys_ppg *kppg)
 	ret = ipu_psys_try_allocate_resources(dev, kppg->kpg->pg,
 #endif
 					      kppg->manifest,
+					      kppg->manifest_size,
 					      try_res_pool);
 
 	ipu_psys_res_pool_cleanup(try_res_pool);
