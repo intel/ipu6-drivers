@@ -161,6 +161,7 @@ jobs:
                         - name: Prepare environment
                           shell: bash
                           run: |
+                                  sed -i -e 's/stonking\-backports/stonking\-backports resolute\-updates/g' /etc/apt/sources.list.d/ubuntu.sources
                                   apt-get update --quiet;
                                   apt-get install --yes --no-install-recommends dkms gpg-agent kmod software-properties-common sudo
 
