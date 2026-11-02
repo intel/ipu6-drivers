@@ -102,7 +102,17 @@ int ipu_isys_csi2_get_link_freq(struct ipu_isys_csi2 *csi2, s64 *link_freq)
 	bpp = ipu_isys_mbus_code_to_bpp(csi2->asd.ffmt->code);
 	lanes = csi2->nlanes;
 
-	ret = v4l2_get_link_freq(ext_sd->ctrl_handler, bpp, lanes * 2);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	/*
+	* From kernel 6.15+, v4l2_get_link_freq() supports a pad-based
+	* lookup via struct media_pad *. The IVSC CSI driver dropped its
+	* V4L2_CID_LINK_FREQ control in 6.15, so the old ctrl_handler path
+	* returns -ENOENT. Use the pad instead.
+	*/
+	ret = v4l2_get_link_freq(pipe->external, bpp, lanes * 2);
+#else
+ 	ret = v4l2_get_link_freq(ext_sd->ctrl_handler, bpp, lanes * 2);
+#endif
 	if (ret < 0) {
 		dev_err(dev, "can't get link frequency (%lld)\n", ret);
 		return ret;
