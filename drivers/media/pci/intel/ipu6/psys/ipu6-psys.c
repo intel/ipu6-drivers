@@ -542,7 +542,11 @@ static void ipu_buttress_set_psys_ratio(struct ipu6_device *isp,
 					unsigned int psys_divisor,
 					unsigned int psys_qos_floor)
 {
-	struct ipu6_buttress_ctrl *ctrl = isp->psys->ctrl;
+	/*
+	 * The in-tree driver stores a const pointer, but hands PSYS a writable per-device copy
+	 * (devm_kmemdup() in ipu6_pci_probe()), so updating ratio/qos_floor here is fine.
+	 */
+	struct ipu6_buttress_ctrl *ctrl = (struct ipu6_buttress_ctrl *)isp->psys->ctrl;
 
 	mutex_lock(&isp->buttress.power_mutex);
 
