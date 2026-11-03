@@ -2535,6 +2535,27 @@ static void ipu6_psys_remove(struct auxiliary_device *auxdev)
 #endif
 	struct ipu_psys_pg *kpg, *kpg0;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	{
+		/*
+		 * ipu6_buttress_isr() calls adev->auxdrv_data->isr() of every
+		 * bus device on each interrupt. Probe pointed both fields at
+		 * this module's data, so clear them before the module goes
+		 * away or the next interrupt jumps through freed memory.
+		 * disable_irq() waits for a running handler, so the ISR sees
+		 * either both pointers or neither.
+		 */
+		struct ipu6_bus_device *bdev =
+			container_of(auxdev, struct ipu6_bus_device, auxdev);
+		int irq = bdev->isp->pdev->irq;
+
+		disable_irq(irq);
+		bdev->auxdrv_data = NULL;
+		bdev->auxdrv = NULL;
+		enable_irq(irq);
+	}
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
 #ifdef CONFIG_DEBUG_FS
 	if (isp->ipu_dir)
