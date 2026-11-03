@@ -851,17 +851,22 @@ int ipu_isys_subdev_init(struct ipu_isys_subdev *asd,
 		return -ENOMEM;
 
 	rval = media_entity_pads_init(&asd->sd.entity, num_pads, asd->pad);
-	if (rval)
+	if (rval) {
+		dev_err(&asd->isys->adev->dev, "%s: media_entity_pads_init(%d) err %d\n", __func__, num_pads, rval);
 		goto out_mutex_destroy;
+	}
 
 	if (asd->ctrl_init) {
 		rval = v4l2_ctrl_handler_init(&asd->ctrl_handler, nr_ctrls);
-		if (rval)
+		if (rval) {
+			dev_err(&asd->isys->adev->dev, "%s: v4l2_ctrl_handler_init() err %d\n", __func__, rval);
 			goto out_media_entity_cleanup;
+		}
 
 		asd->ctrl_init(&asd->sd);
 		if (asd->ctrl_handler.error) {
 			rval = asd->ctrl_handler.error;
+			dev_err(&asd->isys->adev->dev, "%s: ctrl_handler.error %d\n", __func__, rval);
 			goto out_v4l2_ctrl_handler_free;
 		}
 
