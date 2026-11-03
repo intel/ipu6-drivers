@@ -1511,6 +1511,9 @@ static int ov02c10_identify_module(struct ov02c10 *ov02c10)
 	if (ret)
 		return ret;
 
+	if (val == 0)
+		return -EPROBE_DEFER;
+
 	if (val != OV02C10_CHIP_ID) {
 		dev_err(&client->dev, "chip id mismatch: %x!=%x",
 			OV02C10_CHIP_ID, val);
