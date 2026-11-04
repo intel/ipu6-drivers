@@ -341,6 +341,14 @@ static struct ipu_psys_kcmd *ipu_psys_copy_cmd(struct ipu_psys_command *cmd,
 
 	memcpy(kcmd->kpg->pg, kcmd->pg_user, kcmd->kpg->pg_size);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 10, 0)
+	if (ipu_psys_pg_validate(&psys->adev->dev, kcmd->kpg->pg,
+				 kcmd->kpg->pg_size))
+#else
+	if (ipu_psys_pg_validate(dev, kcmd->kpg->pg, kcmd->kpg->pg_size))
+#endif
+		goto error;
+
 	kcmd->pg_manifest = kzalloc(cmd->pg_manifest_size, GFP_KERNEL);
 	if (!kcmd->pg_manifest)
 		goto error;
@@ -738,6 +746,7 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 	}
 	memcpy(kppg->manifest, kcmd->pg_manifest,
 	       kcmd->pg_manifest_size);
+	kppg->manifest_size = kcmd->pg_manifest_size;
 
 	queue_id = ipu_psys_allocate_cmd_queue_res(rpr);
 	if (queue_id == -ENOSPC) {
@@ -748,7 +757,6 @@ static int ipu_psys_kcmd_send_to_ppg_start(struct ipu_psys_kcmd *kcmd)
 #endif
 		kfree(kppg->manifest);
 		kfree(kppg);
-		mutex_unlock(&psys->mutex);
 		return -ENOMEM;
 	}
 

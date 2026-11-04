@@ -454,9 +454,7 @@ void *ipu_send_get_token(struct ipu_fw_com_context *ctx, int q_nbr)
 		return NULL;
 	}
 
-	index = curr_index(q_dmem, DIR_SEND);
-
-	return (void *)(unsigned long)q->host_address + (index * q->token_size);
+	return (void *)(unsigned long)q->host_address + (wr * q->token_size);
 }
 EXPORT_SYMBOL_GPL(ipu_send_get_token);
 
