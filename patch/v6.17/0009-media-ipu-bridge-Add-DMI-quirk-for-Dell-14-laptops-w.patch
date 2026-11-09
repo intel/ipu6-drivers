@@ -1,7 +1,7 @@
-From 7744ef632d2b2dbb367f8f73df4a1b9f6e20e2fd Mon Sep 17 00:00:00 2001
+From 59e285bba789062de197f731f474848852a830ea Mon Sep 17 00:00:00 2001
 From: Jimmy Su <jimmy.su@intel.com>
 Date: Tue, 24 Mar 2026 14:25:32 +0800
-Subject: [PATCH 3/3] media: ipu-bridge: Add DMI quirk for Dell 14 laptops with
+Subject: [PATCH] media: ipu-bridge: Add DMI quirk for Dell 14 laptops with
  upside down sensors
 
 The Dell 14 PA14260 has upside down issue by mechanical design.
@@ -11,9 +11,13 @@ ID to distinguish the product.
 The rotation value should be reported by 180 degree by module ID.
 
 Signed-off-by: Jimmy Su <jimmy.su@intel.com>
+Signed-off-by: You-Sheng Yang <vicamo.yang@canonical.com>
+---
+ drivers/media/pci/intel/ipu-bridge.c | 76 ++++++++++++++++++++++++++--
+ 1 file changed, 71 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/media/pci/intel/ipu-bridge.c b/drivers/media/pci/intel/ipu-bridge.c
-index f9c7ac8f4147..52302b3b7705 100644
+index d6769f6679998..321337e3a8459 100644
 --- a/drivers/media/pci/intel/ipu-bridge.c
 +++ b/drivers/media/pci/intel/ipu-bridge.c
 @@ -36,6 +36,14 @@
@@ -31,55 +35,107 @@ index f9c7ac8f4147..52302b3b7705 100644
  /*
   * Extend this array with ACPI Hardware IDs of devices known to be working
   * plus the number of link-frequencies expected by their drivers, along with
-@@ -121,6 +129,20 @@ static const struct dmi_system_id upside_down_sensor_dmi_ids[] = {
- 		},
- 		.driver_data = "OVTI08F4",
- 	},
-+	{
-+		.matches = {
-+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Dell Pro 14 Premium PA14260"),
-+		},
-+		.driver_data = "CJFOE90_B",
-+	},
-+	{
-+		.matches = {
-+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Dell Pro 14 Premium PA14260"),
-+		},
-+		.driver_data = "BBG809N3A_B",
-+	},
- 	{} /* Terminating entry */
+@@ -98,6 +106,17 @@ static const struct ipu_sensor_config ipu_supported_sensors[] = {
+ 	IPU_SENSOR_CONFIG("TBE20A0" , 1, 200000000),
  };
  
-@@ -275,11 +297,27 @@ static u32 ipu_bridge_parse_rotation(struct acpi_device *adev,
- 				     struct ipu_sensor_ssdb *ssdb)
- {
++enum upside_down_match_type {
++	UPSIDE_DOWN_MATCH_HID,
++	UPSIDE_DOWN_MATCH_DSM,
++};
++
++struct upside_down_match_info {
++	enum upside_down_match_type type;
++	const guid_t guid;
++	const char * const ids[3];
++};
++
+ /*
+  * DMI matches for laptops which have their sensor mounted upside-down
+  * without reporting a rotation of 180° in neither the SSDB nor the _PLD.
+@@ -108,21 +127,41 @@ static const struct dmi_system_id upside_down_sensor_dmi_ids[] = {
+ 			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+ 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XPS 13 9350"),
+ 		},
+-		.driver_data = "OVTI02C1",
++		.driver_data = &(struct upside_down_match_info) {
++			.type = UPSIDE_DOWN_MATCH_HID,
++			.ids = { "OVTI02C1", NULL, },
++		},
+ 	},
+ 	{
+ 		.matches = {
+ 			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+ 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XPS 16 9640"),
+ 		},
+-		.driver_data = "OVTI02C1",
++		.driver_data = &(struct upside_down_match_info) {
++			.type = UPSIDE_DOWN_MATCH_HID,
++			.ids = { "OVTI02C1", NULL, },
++		},
+ 	},
+ 	{
+ 		.matches = {
+ 			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+ 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XPS 14 DA14260"),
+ 		},
+-		.driver_data = "OVTI08F4",
++		.driver_data = &(struct upside_down_match_info) {
++			.type = UPSIDE_DOWN_MATCH_HID,
++			.ids = { "OVTI08F4", NULL, },
++		},
++	},
++	{
++		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Dell Pro 14 Premium PA14260"),
++		},
++		.driver_data = &(struct upside_down_match_info) {
++			.type = UPSIDE_DOWN_MATCH_DSM,
++			.guid = sensor_module_guid,
++			.ids = { "CJFOE90_B", "BBG809N3A_B", NULL, },
++		},
+ 	},
+ 	{} /* Terminating entry */
+ };
+@@ -280,8 +319,35 @@ static u32 ipu_bridge_parse_rotation(struct acpi_device *adev,
  	const struct dmi_system_id *dmi_id;
-+	union acpi_object *obj;
  
  	dmi_id = dmi_first_match(upside_down_sensor_dmi_ids);
- 	if (dmi_id && acpi_dev_hid_match(adev, dmi_id->driver_data))
- 		return 180;
- 
-+	obj = acpi_evaluate_dsm_typed(adev->handle,
-+				      &sensor_module_guid, 0x00,
-+				      0x01, NULL, ACPI_TYPE_STRING);
+-	if (dmi_id && acpi_dev_hid_match(adev, dmi_id->driver_data))
+-		return 180;
++	if (dmi_id) {
++		const struct upside_down_match_info *match = dmi_id->driver_data;
++		union acpi_object *obj;
++		int i;
 +
-+	if (obj) {
-+		if (dmi_id && (!strcmp(dmi_id->driver_data, obj->string.pointer))) {
++		switch (match->type) {
++		case UPSIDE_DOWN_MATCH_HID:
++			for (i = 0; match->ids[i]; i++)
++				if (acpi_dev_hid_match(adev, match->ids[i]))
++					return 180;
++
++			break;
++		case UPSIDE_DOWN_MATCH_DSM:
++			obj = acpi_evaluate_dsm_typed(adev->handle,
++						      &match->guid, 0x00,
++						      0x01, NULL, ACPI_TYPE_STRING);
++			if (!obj)
++				break;
++
++			for (i = 0; match->ids[i]; i++)
++				if (!strcmp(match->ids[i], obj->string.pointer)) {
++					ACPI_FREE(obj);
++					return 180;
++				}
++
 +			ACPI_FREE(obj);
-+			return 180;
++			break;
 +		}
-+		ACPI_FREE(obj);
-+	} else {
-+		dev_err(ADEV_DEV(adev), "ACPI _DSM call failed or returned wrong type\n");
-+		ACPI_FREE(obj);
 +	}
-+
+ 
  	switch (ssdb->degree) {
  	case IPU_SENSOR_ROTATION_NORMAL:
- 		return 0;
 -- 
-2.34.1
+2.53.0
 
