@@ -26,7 +26,7 @@ Three ways are available:
 3. and build with dkms
 
 ### 1. Build with kernel source tree
-- Tested with kernel v6.10
+- Tested with kernel v6.10 - v6.17
 - Check out kernel
 - Apply patches (please check detail comments below):
 	```sh
