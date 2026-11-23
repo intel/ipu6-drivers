@@ -51,6 +51,7 @@
 #define MAX9X_DEV_ID 0xD
 #define MAX9X_DEV_REV_FIELD GENMASK(3, 0)
 
+
 /*Used for device attributes*/
 #define ATTR_NAME_LEN (30) /* arbitrary number used to allocate an attribute */
 #define ATTR_READ_ONLY (0444)

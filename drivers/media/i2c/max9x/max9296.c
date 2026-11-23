@@ -136,6 +136,7 @@ static int max9296_set_phy_dpll_freq(struct max9x_common *common, unsigned int c
 		MAX9X_FIELD_PREP(MAX9296_DPLL_FREQ_FIELD, freq_mhz / MAX9296_DPLL_FREQ_MHZ_MULTIPLE));
 }
 
+
 static int max9296_set_mipi_lane_cnt(struct max9x_common *common, unsigned int csi_id, int num_lanes)
 {
 	struct device *dev = common->dev;

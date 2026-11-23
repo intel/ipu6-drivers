@@ -120,7 +120,9 @@
 #define MAX96717_FRONTTOP_0_START_PORT(x)	BIT((x) + 4)
 
 #define MAX96717_FRONTTOP_1(p)			(0x309 + (p) * 0x2)
+#define MAX96717_FRONTTOP_1_VC_SELX_L		GENMASK(7, 0)
 #define MAX96717_FRONTTOP_2(p)			(0x30a + (p) * 0x2)
+#define MAX96717_FRONTTOP_2_VC_SELX_H		GENMASK(7, 0)
 
 #define MAX96717_FRONTTOP_9			0x311
 #define MAX96717_FRONTTOP_9_START_PORT(p, x)	BIT((p) + (x) * 4)
@@ -925,13 +927,15 @@ static int max96717_set_pipe_vcs(struct max_ser *ser,
 	unsigned int index = max96717_pipe_id(priv, pipe);
 	int ret;
 
-	ret = regmap_write(priv->regmap, MAX96717_FRONTTOP_1(index),
-			   (vcs >> 0) & 0xff);
+	ret = regmap_update_bits(priv->regmap, MAX96717_FRONTTOP_1(index),
+				 MAX96717_FRONTTOP_1_VC_SELX_L,
+				 vcs & MAX96717_FRONTTOP_1_VC_SELX_L);
 	if (ret)
 		return ret;
 
-	return regmap_write(priv->regmap, MAX96717_FRONTTOP_2(index),
-			      (vcs >> 8) & 0xff);
+	return regmap_update_bits(priv->regmap, MAX96717_FRONTTOP_2(index),
+				  MAX96717_FRONTTOP_2_VC_SELX_H,
+				  (vcs >> 8) & MAX96717_FRONTTOP_2_VC_SELX_H);
 }
 
 static int max96717_log_status(struct max_ser *ser)

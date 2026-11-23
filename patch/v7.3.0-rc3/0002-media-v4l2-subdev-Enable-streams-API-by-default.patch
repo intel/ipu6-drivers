@@ -1,0 +1,26 @@
+From bfb159e047789f9d937a073a847baab5a15d0310 Mon Sep 17 00:00:00 2001
+From: hepengpx <pengpengx.he@intel.com>
+Date: Wed, 27 Aug 2025 11:10:06 +0800
+Subject: [PATCH 2/7] media: v4l2-subdev: Enable streams API by default
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+---
+ drivers/media/v4l2-core/v4l2-subdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-subdev.c b/drivers/media/v4l2-core/v4l2-subdev.c
+index e9f81b9be9e2..c2036f3431e9 100644
+--- a/drivers/media/v4l2-core/v4l2-subdev.c
++++ b/drivers/media/v4l2-core/v4l2-subdev.c
+@@ -56,7 +56,7 @@ struct v4l2_subdev_stream_config {
+  * 'v4l2_subdev_enable_streams_api' to 1 below.
+  */
+
+-static bool v4l2_subdev_enable_streams_api;
++static bool v4l2_subdev_enable_streams_api = true;
+ #endif
+
+ /*
+--
+2.53.0
+

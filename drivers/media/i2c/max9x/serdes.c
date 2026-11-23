@@ -1,7 +1,7 @@
 /*
  * serdes.c
  *
- * Copyright (c) 2018-2020 D3 Engineering.  All rights reserved.
+ * Copyright (c) 2018-2026 D3 Engineering.  All rights reserved.
  * Copyright (c) 2023, Define Design Deploy Corp.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -28,7 +28,6 @@
 #include <linux/sysfs.h>
 #include <linux/slab.h>
 #include <linux/pm.h>
-#include <linux/of_gpio.h>
 #include <linux/overflow.h>
 
 #include "serdes.h"
@@ -297,6 +296,11 @@ static void parse_sensor_pdata(struct device *dev, const char *sensor_name, char
 
 	/* NOTE: i2c_dev_set_name() will prepend "i2c-" to this name */
 	char *dev_name = devm_kzalloc(dev, I2C_NAME_SIZE, GFP_KERNEL);
+
+	if (!dev_name) {
+		dev_err(dev, "Failed to allocate memory for sensor dev_name");
+		return;
+	}
 
 	snprintf(dev_name, I2C_NAME_SIZE, "%s %s", sensor_name, suffix);
 	ser_pdata->subdevs[0].board_info.dev_name = dev_name;
@@ -906,6 +910,7 @@ struct max9x_common *max9x_client_to_common(struct i2c_client *client)
 	return max9x_sd_to_common(i2c_get_clientdata(client));
 }
 EXPORT_SYMBOL(max9x_client_to_common);
+
 
 int max9x_soft_reset(struct max9x_common *common)
 {

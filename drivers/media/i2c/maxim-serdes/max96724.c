@@ -139,7 +139,9 @@
 #define MAX96724_MIPI_TX10_CSI2_LANE_CNT	GENMASK(7, 6)
 
 #define MAX96724_MIPI_TX11(p)			(0x90b + (p) * 0x40)
+#define MAX96724_MIPI_TX11_MAP_EN_L		GENMASK(7, 0)
 #define MAX96724_MIPI_TX12(p)			(0x90c + (p) * 0x40)
+#define MAX96724_MIPI_TX12_MAP_EN_H		GENMASK(7, 0)
 
 #define MAX96724_MIPI_TX13(p, x)		(0x90d + (p) * 0x40 + (x) * 0x2)
 #define MAX96724_MIPI_TX13_MAP_SRC_DT		GENMASK(5, 0)
@@ -972,21 +974,25 @@ static int max96724_set_pipe_remap(struct max_des *des,
 
 	/* Set source Data Type and Virtual Channel. */
 	/* TODO: implement extended Virtual Channel. */
-	ret = regmap_write(priv->regmap, MAX96724_MIPI_TX13(index, i),
-			   FIELD_PREP(MAX96724_MIPI_TX13_MAP_SRC_DT,
-				      remap->from_dt) |
-			   FIELD_PREP(MAX96724_MIPI_TX13_MAP_SRC_VC,
-				      remap->from_vc));
+	ret = regmap_update_bits(priv->regmap, MAX96724_MIPI_TX13(index, i),
+				 MAX96724_MIPI_TX13_MAP_SRC_DT |
+				 MAX96724_MIPI_TX13_MAP_SRC_VC,
+				 FIELD_PREP(MAX96724_MIPI_TX13_MAP_SRC_DT,
+					    remap->from_dt) |
+				 FIELD_PREP(MAX96724_MIPI_TX13_MAP_SRC_VC,
+					    remap->from_vc));
 	if (ret)
 		return ret;
 
 	/* Set destination Data Type and Virtual Channel. */
 	/* TODO: implement extended Virtual Channel. */
-	ret = regmap_write(priv->regmap, MAX96724_MIPI_TX14(index, i),
-			   FIELD_PREP(MAX96724_MIPI_TX14_MAP_DST_DT,
-				      remap->to_dt) |
-			   FIELD_PREP(MAX96724_MIPI_TX14_MAP_DST_VC,
-				      remap->to_vc));
+	ret = regmap_update_bits(priv->regmap, MAX96724_MIPI_TX14(index, i),
+				 MAX96724_MIPI_TX14_MAP_DST_DT |
+				 MAX96724_MIPI_TX14_MAP_DST_VC,
+				 FIELD_PREP(MAX96724_MIPI_TX14_MAP_DST_DT,
+					    remap->to_dt) |
+				 FIELD_PREP(MAX96724_MIPI_TX14_MAP_DST_VC,
+					    remap->to_vc));
 	if (ret)
 		return ret;
 
@@ -1005,11 +1011,15 @@ static int max96724_set_pipe_remaps_enable(struct max_des *des,
 	unsigned int index = pipe->index;
 	int ret;
 
-	ret = regmap_write(priv->regmap, MAX96724_MIPI_TX11(index), mask);
+	ret = regmap_update_bits(priv->regmap, MAX96724_MIPI_TX11(index),
+				 MAX96724_MIPI_TX11_MAP_EN_L,
+				 mask & MAX96724_MIPI_TX11_MAP_EN_L);
 	if (ret)
 		return ret;
 
-	return regmap_write(priv->regmap, MAX96724_MIPI_TX12(index), mask >> 8);
+	return regmap_update_bits(priv->regmap, MAX96724_MIPI_TX12(index),
+				  MAX96724_MIPI_TX12_MAP_EN_H,
+				  (mask >> 8) & MAX96724_MIPI_TX12_MAP_EN_H);
 }
 
 static int max96724_set_pipe_tunnel_phy(struct max_des *des,
