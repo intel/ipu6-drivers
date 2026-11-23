@@ -109,6 +109,7 @@ enum max96724_virtual_channel_size {
 
 #define MAX96724_DPLL_FREQ_MHZ_MULTIPLE 100
 
+
 #define MAX96724_FLD_OFS(n, bits_per_field, count) (((n) % (count)) * (bits_per_field))
 #define MAX96724_OFFSET_GENMASK(offset, h, l) GENMASK(offset + h, offset + l)
 

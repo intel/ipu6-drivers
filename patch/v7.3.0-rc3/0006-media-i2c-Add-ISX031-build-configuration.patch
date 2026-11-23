@@ -1,0 +1,46 @@
+From 8499c1c68a02f2a52526838a48ff55e0089caa07 Mon Sep 17 00:00:00 2001
+From: linya14x <linx.yang@intel.com>
+Date: Sat, 25 Oct 2025 16:46:35 +0800
+Subject: [PATCH 6/7] media: i2c: Add ISX031 build configuration
+
+Signed-off-by: hepengpx <pengpengx.he@intel.com>
+Signed-off-by: linya14x <linx.yang@intel.com>
+---
+ drivers/media/i2c/Kconfig  | 8 ++++++++
+ drivers/media/i2c/Makefile | 1 +
+ 2 files changed, 9 insertions(+)
+
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 886a7be3030b..463d6fb17f64 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -321,6 +321,14 @@ config VIDEO_LT6911GXD
+           To compile this driver as a module, choose M here: the
+           module will be called lt6911gxd.
+
++config VIDEO_ISX031
++	tristate "ISX031 sensor support"
++	depends on VIDEO_DEV && I2C
++	select VIDEO_V4L2_SUBDEV_API
++	depends on MEDIA_CAMERA_SUPPORT
++	help
++	  This is a Video4Linux2 sensor-level driver for ISX031 camera.
++
+ config VIDEO_MAX9271_LIB
+ 	tristate
+
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index f7c294c66603..654b8c6b9873 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -65,6 +65,7 @@ obj-$(CONFIG_VIDEO_IMX678) += imx678.o
+ obj-$(CONFIG_VIDEO_IMX471) += imx471.o
+ obj-$(CONFIG_VIDEO_IR_I2C) += ir-kbd-i2c.o
+ obj-$(CONFIG_VIDEO_ISL7998X) += isl7998x.o
++obj-$(CONFIG_VIDEO_ISX031) += isx031.o
+ obj-$(CONFIG_VIDEO_KS0127) += ks0127.o
+ obj-$(CONFIG_VIDEO_LM3560) += lm3560.o
+ obj-$(CONFIG_VIDEO_LM3646) += lm3646.o
+--
+2.53.0
+

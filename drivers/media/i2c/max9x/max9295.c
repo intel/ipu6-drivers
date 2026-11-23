@@ -804,7 +804,7 @@ static int max9295_reset(struct max9x_common *common)
 
 	/* Reset entire chip by CTRL0_RST_ALL: 0x10[7]*/
 	TRY(ret, regmap_write(map, MAX9295_CTRL0, MAX9295_CTRL0_RST_ALL));
-	usleep_range(45000, 45050);
+	msleep(60);
 
 	return 0;
 }

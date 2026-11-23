@@ -153,7 +153,9 @@
 #define MAX9296A_MIPI_TX10_CSI2_CPHY_EN		BIT(5)
 
 #define MAX9296A_MIPI_TX11(p)			(0x40b + (p) * 0x40)
+#define MAX9296A_MIPI_TX11_MAP_EN_L		GENMASK(7, 0)
 #define MAX9296A_MIPI_TX12(p)			(0x40c + (p) * 0x40)
+#define MAX9296A_MIPI_TX12_MAP_EN_H		GENMASK(7, 0)
 
 #define MAX9296A_MIPI_TX13(p, x)		(0x40d + (p) * 0x40 + (x) * 0x2)
 #define MAX9296A_MIPI_TX13_MAP_SRC_DT		GENMASK(5, 0)
@@ -650,21 +652,25 @@ static int max9296a_set_pipe_remap(struct max_des *des,
 
 	/* Set source Data Type and Virtual Channel. */
 	/* TODO: implement extended Virtual Channel. */
-	ret = regmap_write(priv->regmap, MAX9296A_MIPI_TX13(index, i),
-			   FIELD_PREP(MAX9296A_MIPI_TX13_MAP_SRC_DT,
-				      remap->from_dt) |
-			   FIELD_PREP(MAX9296A_MIPI_TX13_MAP_SRC_VC,
-				      remap->from_vc));
+	ret = regmap_update_bits(priv->regmap, MAX9296A_MIPI_TX13(index, i),
+				 MAX9296A_MIPI_TX13_MAP_SRC_DT |
+				 MAX9296A_MIPI_TX13_MAP_SRC_VC,
+				 FIELD_PREP(MAX9296A_MIPI_TX13_MAP_SRC_DT,
+					    remap->from_dt) |
+				 FIELD_PREP(MAX9296A_MIPI_TX13_MAP_SRC_VC,
+					    remap->from_vc));
 	if (ret)
 		return ret;
 
 	/* Set destination Data Type and Virtual Channel. */
 	/* TODO: implement extended Virtual Channel. */
-	ret = regmap_write(priv->regmap, MAX9296A_MIPI_TX14(index, i),
-			   FIELD_PREP(MAX9296A_MIPI_TX14_MAP_DST_DT,
-				      remap->to_dt) |
-			   FIELD_PREP(MAX9296A_MIPI_TX14_MAP_DST_VC,
-				      remap->to_vc));
+	ret = regmap_update_bits(priv->regmap, MAX9296A_MIPI_TX14(index, i),
+				 MAX9296A_MIPI_TX14_MAP_DST_DT |
+				 MAX9296A_MIPI_TX14_MAP_DST_VC,
+				 FIELD_PREP(MAX9296A_MIPI_TX14_MAP_DST_DT,
+					    remap->to_dt) |
+				 FIELD_PREP(MAX9296A_MIPI_TX14_MAP_DST_VC,
+					    remap->to_vc));
 	if (ret)
 		return ret;
 
@@ -683,11 +689,15 @@ static int max9296a_set_pipe_remaps_enable(struct max_des *des,
 	unsigned int index = max9296a_pipe_id(priv, pipe);
 	int ret;
 
-	ret = regmap_write(priv->regmap, MAX9296A_MIPI_TX11(index), mask);
+	ret = regmap_update_bits(priv->regmap, MAX9296A_MIPI_TX11(index),
+				 MAX9296A_MIPI_TX11_MAP_EN_L,
+				 mask & MAX9296A_MIPI_TX11_MAP_EN_L);
 	if (ret)
 		return ret;
 
-	return regmap_write(priv->regmap, MAX9296A_MIPI_TX12(index), mask >> 8);
+	return regmap_update_bits(priv->regmap, MAX9296A_MIPI_TX12(index),
+				  MAX9296A_MIPI_TX12_MAP_EN_H,
+				  (mask >> 8) & MAX9296A_MIPI_TX12_MAP_EN_H);
 }
 
 static int max9296a_set_pipe_enable(struct max_des *des, struct max_des_pipe *pipe,

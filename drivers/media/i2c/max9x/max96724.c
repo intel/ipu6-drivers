@@ -37,6 +37,7 @@ int max96724_serial_link_timeout_ms = MAX96724_DEFAULT_SERIAL_LINK_TIMEOUT_MS;
 module_param(max96724_serial_link_timeout_ms, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(max96724_serial_link_timeout_ms, "Timeout for serial link in milliseconds");
 
+
 // Declarations
 static int max96724_set_phy_mode(struct max9x_common *common, unsigned int phy_mode);
 static int max96724_set_phy_enabled(struct max9x_common *common, unsigned int csi_id, bool enable);
@@ -654,6 +655,7 @@ err_unlock:
 
 	return ret;
 }
+
 
 static int max96724_csi_double_pixel(struct max9x_common *common,
 				     unsigned int csi_id,

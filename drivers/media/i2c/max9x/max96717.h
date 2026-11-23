@@ -80,6 +80,7 @@ enum max96717_gpio_pull_updn_sel {
 #define MAX96717_FRONTTOP_2X_BPP_EN_FIELD BIT(5)
 #define MAX96717_FRONTTOP_2X_BPP_FIELD GENMASK(4, 0)
 
+
 #define MAX96717_MIPI_RX (0x330)
 #define MAX96717_MIPI_RX_1 (MAX96717_MIPI_RX + 1)
 #define MAX96717_MIPI_RX_1_SEL_CSI_LANES_FIELD(csi_id) (GENMASK(1, 0) << ((csi_id + 1) * 4))
